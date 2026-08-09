@@ -1,7 +1,7 @@
 # Zotero Markdown
 
 [![zotero target version](https://img.shields.io/badge/Zotero-7%2F8-green?style=flat-square&logo=zotero&logoColor=CC2936)](https://www.zotero.org)
-[![version](https://img.shields.io/badge/version-0.1.0-blue?style=flat-square)](https://github.com/l0o0/zotero-markdown)
+[![version](https://img.shields.io/badge/version-0.0.1-blue?style=flat-square)](https://github.com/l0o0/zotero-markdown)
 [![license](https://img.shields.io/badge/license-AGPL--3.0-orange?style=flat-square)](./LICENSE)
 
 **Native Markdown for Zotero.** Treat `.md` files as first-class attachments — open, edit, preview, and create them inside Zotero.
@@ -64,6 +64,29 @@ pnpm install
 pnpm run build
 # XPI: .scaffold/build/zotero-markdown.xpi
 ```
+
+### Publish a release (XPI)
+
+CI builds the XPI and creates a GitHub Release when you push a version tag.
+
+1. Bump `version` in `package.json` (e.g. `0.1.1`)
+2. Commit the bump
+3. Tag and push:
+
+```bash
+git tag v0.1.1
+git push origin main
+git push origin v0.1.1
+```
+
+Or use **Actions → Release → Run workflow** and enter the tag (e.g. `v0.1.1`).
+
+Assets on the release:
+
+- `zotero-markdown.xpi` — installable plugin
+- `update.json` / `update-beta.json` — auto-update manifests (also on the floating `release` tag used by `updateURL` in `zotero-plugin.config.ts`)
+
+No extra secrets are required for public repos (`GITHUB_TOKEN` is enough).
 
 ---
 

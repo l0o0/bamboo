@@ -1,7 +1,7 @@
 {
   "name": "zotero-markdown",
   "type": "module",
-  "version": "0.1.0",
+  "version": "0.0.1",
   "description": "Native Markdown attachment support for Zotero — open, edit, and create .md files as first-class citizens.",
   "config": {
     "addonName": "Zotero Markdown",
@@ -20,6 +20,10 @@
   },
   "homepage": "https://github.com/l0o0/zotero-markdown#readme",
   "license": "AGPL-3.0-or-later",
+  "packageManager": "pnpm@9.15.9",
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "start": "zotero-plugin serve",
     "build": "zotero-plugin build && tsc --noEmit",

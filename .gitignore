@@ -3,8 +3,8 @@
 
 # Node.js
 node_modules
-pnpm-lock.yaml
 yarn.lock
+# Keep pnpm-lock.yaml committed for reproducible CI/release installs
 
 # TSC
 tsconfig.tsbuildinfo

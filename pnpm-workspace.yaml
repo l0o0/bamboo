@@ -1,4 +1,8 @@
-# pnpm project settings (pnpm v10+)
+# Single-package project; keep workspace root explicit for pnpm.
+packages:
+  - "."
+
+# Settings (pnpm 10+)
 blockExoticSubdeps: false
 
 allowBuilds:

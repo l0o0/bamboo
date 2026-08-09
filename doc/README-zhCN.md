@@ -1,7 +1,7 @@
 # Zotero Markdown
 
 [![zotero target version](https://img.shields.io/badge/Zotero-7%2F8-green?style=flat-square&logo=zotero&logoColor=CC2936)](https://www.zotero.org)
-[![version](https://img.shields.io/badge/version-0.1.0-blue?style=flat-square)](https://github.com/l0o0/zotero-markdown)
+[![version](https://img.shields.io/badge/version-0.0.1-blue?style=flat-square)](https://github.com/l0o0/zotero-markdown)
 [![license](https://img.shields.io/badge/license-AGPL--3.0-orange?style=flat-square)](../LICENSE)
 
 **让 Zotero 原生支持 Markdown。** 把 `.md` 文件当作一等公民附件——在 Zotero 内打开、编辑、预览、创建。
@@ -64,6 +64,29 @@ pnpm install
 pnpm run build
 # 产物：.scaffold/build/zotero-markdown.xpi
 ```
+
+### 发布 Release（自动生成 XPI）
+
+推送版本 tag 后，GitHub Actions 会构建 XPI 并创建 Release。
+
+1. 修改 `package.json` 中的 `version`（例如 `0.1.1`）
+2. 提交版本号
+3. 打 tag 并推送：
+
+```bash
+git tag v0.1.1
+git push origin main
+git push origin v0.1.1
+```
+
+也可在 GitHub：**Actions → Release → Run workflow**，填写 tag（如 `v0.1.1`）。
+
+Release 资源：
+
+- `zotero-markdown.xpi` — 可安装插件
+- `update.json` / `update-beta.json` — 自动更新清单（同时挂在 floating `release` tag 上，供 `updateURL` 使用）
+
+公开仓库一般只需默认 `GITHUB_TOKEN`，无需额外 Secrets。
 
 ---
 
