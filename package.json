@@ -1,0 +1,68 @@
+{
+  "name": "zotero-markdown",
+  "type": "module",
+  "version": "0.1.0",
+  "description": "Native Markdown attachment support for Zotero — open, edit, and create .md files as first-class citizens.",
+  "config": {
+    "addonName": "Zotero Markdown",
+    "addonID": "zotero-markdown@l0o0.github.io",
+    "addonRef": "zoteromarkdown",
+    "addonInstance": "ZoteroMarkdown",
+    "prefsPrefix": "extensions.zotero.zoteromarkdown"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/l0o0/zotero-markdown.git"
+  },
+  "author": "l0o0",
+  "bugs": {
+    "url": "https://github.com/l0o0/zotero-markdown/issues"
+  },
+  "homepage": "https://github.com/l0o0/zotero-markdown#readme",
+  "license": "AGPL-3.0-or-later",
+  "scripts": {
+    "start": "zotero-plugin serve",
+    "build": "zotero-plugin build && tsc --noEmit",
+    "lint:check": "prettier --check . && eslint .",
+    "lint:fix": "prettier --write . && eslint . --fix",
+    "release": "zotero-plugin release",
+    "test": "zotero-plugin test",
+    "update-deps": "pnpm update --save"
+  },
+  "dependencies": {
+    "markdown-it": "^14.3.0",
+    "zotero-plugin-toolkit": "5.1.0-beta.13"
+  },
+  "devDependencies": {
+    "@types/chai": "^5.2.3",
+    "@types/markdown-it": "^14.1.2",
+    "@types/mocha": "^10.0.10",
+    "@types/node": "^24.10.0",
+    "@zotero-plugin/eslint-config": "^0.6.7",
+    "chai": "^6.2.1",
+    "eslint": "^9.39.2",
+    "mocha": "^11.7.5",
+    "prettier": "^3.7.4",
+    "typescript": "^5.9.3",
+    "zotero-plugin-scaffold": "^0.8.2",
+    "zotero-types": "^4.1.0-beta.4"
+  },
+  "prettier": {
+    "printWidth": 80,
+    "tabWidth": 2,
+    "endOfLine": "lf",
+    "overrides": [
+      {
+        "files": [
+          "*.xhtml"
+        ],
+        "options": {
+          "htmlWhitespaceSensitivity": "css"
+        }
+      }
+    ]
+  },
+  "pnpm": {
+    "blockExoticSubdeps": false
+  }
+}

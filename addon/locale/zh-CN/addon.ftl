@@ -1,0 +1,5 @@
+startup-begin = Zotero Markdown 加载中
+startup-finish = Zotero Markdown 已就绪
+menuitem-create-md = 新建 Markdown…
+menuitem-open-md = 用 Markdown 编辑器打开
+prefs-title = Zotero Markdown

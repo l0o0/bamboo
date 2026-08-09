@@ -1,0 +1,7 @@
+# pnpm project settings (pnpm v10+)
+blockExoticSubdeps: false
+
+allowBuilds:
+  "@swc/core": true
+  es5-ext: true
+  esbuild: true
