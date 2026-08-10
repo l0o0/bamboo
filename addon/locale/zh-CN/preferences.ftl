@@ -4,4 +4,7 @@ pref-enable =
 pref-frontmatter =
     .label = 新建笔记时写入 YAML frontmatter
 pref-font-size = 编辑器字号
+pref-shortcut-standalone =
+    .label = 新建独立 Markdown 快捷键
+pref-shortcut-standalone-help = 格式：accel,shift,M（accel 在 Windows/Linux 为 Ctrl，macOS 为 ⌘）
 pref-help = { $name } { $version } · 构建于 { $time }

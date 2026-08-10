@@ -4,4 +4,7 @@ pref-enable =
 pref-frontmatter =
     .label = Insert YAML frontmatter when creating new notes
 pref-font-size = Editor font size
+pref-shortcut-standalone =
+    .label = Shortcut for new standalone Markdown
+pref-shortcut-standalone-help = Format: accel,shift,M (accel = Ctrl on Windows/Linux, ⌘ on macOS)
 pref-help = { $name } { $version } · Built { $time }

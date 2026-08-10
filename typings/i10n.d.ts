@@ -3,12 +3,16 @@
 /* eslint-disable */
 // @ts-nocheck
 export type FluentMessageId =
+  | 'menuitem-create-item-md'
   | 'menuitem-create-md'
+  | 'menuitem-create-standalone-md'
   | 'menuitem-open-md'
   | 'pref-enable'
   | 'pref-font-size'
   | 'pref-frontmatter'
   | 'pref-help'
+  | 'pref-shortcut-standalone'
+  | 'pref-shortcut-standalone-help'
   | 'pref-title'
   | 'prefs-title'
   | 'startup-begin'

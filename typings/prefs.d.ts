@@ -10,6 +10,7 @@ declare namespace _ZoteroTypes {
       "enable": boolean;
       "frontmatter": boolean;
       "fontSize": number;
+      "shortcutNewStandaloneMd": string;
     };
   }
 }
