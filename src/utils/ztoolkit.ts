@@ -1,4 +1,6 @@
-import { ZoteroToolkit } from "zotero-plugin-toolkit";
+import { BasicTool, UITool, unregister } from "zotero-plugin-toolkit";
+// ZoteroToolkit is only exported from the /ztoolkit subpath since 5.2.0
+import { ZoteroToolkit } from "zotero-plugin-toolkit/ztoolkit";
 import { config } from "../../package.json";
 
 export { createZToolkit };
@@ -30,9 +32,6 @@ function initZToolkit(_ztoolkit: ReturnType<typeof createZToolkit>) {
     `chrome://${config.addonRef}/content/icons/favicon.png`,
   );
 }
-
-import { BasicTool, unregister } from "zotero-plugin-toolkit";
-import { UITool } from "zotero-plugin-toolkit";
 
 class MyToolkit extends BasicTool {
   UI: UITool;

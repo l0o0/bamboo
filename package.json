@@ -35,16 +35,16 @@
   },
   "dependencies": {
     "markdown-it": "^15.0.0",
-    "zotero-plugin-toolkit": "5.1.0-beta.13"
+    "zotero-plugin-toolkit": "5.2.0"
   },
   "devDependencies": {
     "@types/chai": "^5.2.3",
     "@types/markdown-it": "^14.1.2",
     "@types/mocha": "^10.0.10",
     "@types/node": "^26.1.2",
-    "@zotero-plugin/eslint-config": "^0.6.7",
+    "@zotero-plugin/eslint-config": "^0.6.10",
     "chai": "^6.2.1",
-    "eslint": "^9.39.2",
+    "eslint": "^10.8.0",
     "mocha": "^11.7.5",
     "prettier": "^3.7.4",
     "typescript": "^6.0.3",

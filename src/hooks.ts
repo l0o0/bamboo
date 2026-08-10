@@ -4,7 +4,9 @@ import {
   registerFileOpenInterceptor,
   registerMarkdownTabHooks,
   registerMenus,
+  registerShortcuts,
   unregisterFileOpenInterceptor,
+  unregisterMenus,
 } from "./modules/markdown";
 import { ensureDOMGlobals } from "./utils/dom";
 import { getString, initLocale } from "./utils/locale";
@@ -20,6 +22,7 @@ async function onStartup() {
   initLocale();
   registerPrefs();
   registerFileOpenInterceptor();
+  // MenuManager is global (not tied to a toolkit instance)
   registerMenus();
 
   await Promise.all(
@@ -40,6 +43,9 @@ async function onMainWindowLoad(win: _ZoteroTypes.MainWindow): Promise<void> {
   win.MozXULElement.insertFTLIfNeeded(
     `${addon.data.config.addonRef}-mainWindow.ftl`,
   );
+
+  // Keyboard shortcuts bind to the current ztoolkit instance
+  registerShortcuts();
 
   registerMarkdownTabHooks(win);
   injectMarkdownStyles(win);
@@ -64,6 +70,7 @@ async function onMainWindowUnload(_win: Window): Promise<void> {
 async function onShutdown(): Promise<void> {
   await flushAllSessions();
   unregisterFileOpenInterceptor();
+  unregisterMenus();
   ztoolkit.unregisterAll();
   addon.data.alive = false;
   // @ts-expect-error - Plugin instance is not typed

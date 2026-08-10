@@ -78,7 +78,7 @@ export async function openMarkdownTab(
     return null;
   }
 
-  let content = "";
+  let content: string;
   try {
     content = (await Zotero.File.getContentsAsync(path)) as string;
   } catch (e) {
