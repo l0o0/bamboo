@@ -34,7 +34,7 @@
     "update-deps": "pnpm update --save"
   },
   "dependencies": {
-    "markdown-it": "^14.3.0",
+    "markdown-it": "^15.0.0",
     "zotero-plugin-toolkit": "5.1.0-beta.13"
   },
   "devDependencies": {
