@@ -50,22 +50,56 @@ export async function createMarkdownAttachment(
 
   try {
     const pane = Zotero.getActiveZoteroPane();
+    // Standalone attachments need a real libraryID; fall back to user library.
+    // Child attachments inherit library from parentItemID (do not pass both
+    // parentItemID and collections — Zotero throws).
     const libraryID =
       parent?.libraryID ??
-      (pane?.getSelectedLibraryID?.() as number | undefined);
+      (pane?.getSelectedLibraryID?.() as number | undefined) ??
+      Zotero.Libraries.userLibraryID;
+
+    const collection = !parent
+      ? (pane?.getSelectedCollection?.(true) as number | false | undefined)
+      : undefined;
+    const collections =
+      typeof collection === "number" && collection > 0
+        ? [collection]
+        : undefined;
+
+    ztoolkit.log("createMarkdownAttachment import", {
+      tmpPath,
+      parentItemID: parent?.id,
+      libraryID: parent ? undefined : libraryID,
+      collections,
+    });
 
     const attachment = await Zotero.Attachments.importFromFile({
       file: tmpPath,
       parentItemID: parent?.id,
+      // Only for top-level items; parent path uses parentItemID alone
       libraryID: parent ? undefined : libraryID,
+      collections,
       title: filename,
       contentType: "text/markdown",
       charset: "utf-8",
     });
 
+    if (!attachment?.id) {
+      throw new Error("importFromFile returned no attachment item");
+    }
+
     if (attachment.attachmentContentType !== "text/markdown") {
       attachment.attachmentContentType = "text/markdown";
       await attachment.saveTx({ skipSelect: true });
+    }
+
+    // Select so the item is visible in the library / item list
+    try {
+      if (pane?.selectItem) {
+        await pane.selectItem(attachment.id);
+      }
+    } catch (e) {
+      ztoolkit.log("selectItem after create failed", e);
     }
 
     if (open) {
@@ -73,6 +107,15 @@ export async function createMarkdownAttachment(
     }
 
     return attachment;
+  } catch (e) {
+    ztoolkit.log("createMarkdownAttachment failed", e);
+    new ztoolkit.ProgressWindow(addon.data.config.addonName)
+      .createLine({
+        text: `Create failed: ${e instanceof Error ? e.message : String(e)}`,
+        type: "fail",
+      })
+      .show();
+    return null;
   } finally {
     try {
       if (await IOUtils.exists(tmpPath)) {
@@ -135,5 +178,8 @@ export async function createMarkdownForSelection(): Promise<void> {
     }
   }
 
+  // No regular parent found: still create standalone in current library
+  // (toolbar "item md" with only attachments selected used to silently
+  // create orphaned top-level items without collection membership).
   await createMarkdownAttachment(parent, { open: true });
 }
