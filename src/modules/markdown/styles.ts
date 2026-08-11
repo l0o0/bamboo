@@ -327,10 +327,14 @@ tab-content.zotero-markdown-tab-content {
   flex-direction: column;
 }
 
-.zotero-markdown-root.mode-edit .zotero-markdown-editor-host {
+.zotero-markdown-root.mode-edit .zotero-markdown-editor-host,
+.zotero-markdown-root.mode-live .zotero-markdown-editor-host,
+.zotero-markdown-root.mode-source .zotero-markdown-editor-host {
   display: flex;
 }
-.zotero-markdown-root.mode-edit .zotero-markdown-preview-host {
+.zotero-markdown-root.mode-edit .zotero-markdown-preview-host,
+.zotero-markdown-root.mode-live .zotero-markdown-preview-host,
+.zotero-markdown-root.mode-source .zotero-markdown-preview-host {
   display: none;
 }
 .zotero-markdown-root.mode-preview .zotero-markdown-editor-host {

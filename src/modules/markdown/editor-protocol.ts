@@ -7,6 +7,9 @@ export const EDITOR_MESSAGE_SOURCE = "zotero-markdown-editor" as const;
 
 export type EditorTheme = "light" | "dark";
 
+/** Live Preview (document-like) vs full raw source. */
+export type EditorMode = "live" | "source";
+
 export interface EditorStats {
   chars: number;
   lines: number;
@@ -18,6 +21,8 @@ export interface EditorInitPayload {
   readOnly: boolean;
   fontSize: number;
   theme: EditorTheme;
+  /** Default interpreted as `"live"` by the iframe bootstrap. */
+  mode?: EditorMode;
 }
 
 /** Parent → iframe */
@@ -35,6 +40,11 @@ export type ParentToEditorMessage =
   | { source: typeof EDITOR_MESSAGE_SOURCE; type: "setTheme"; payload: { theme: EditorTheme } }
   | { source: typeof EDITOR_MESSAGE_SOURCE; type: "setFontSize"; payload: { fontSize: number } }
   | { source: typeof EDITOR_MESSAGE_SOURCE; type: "setReadOnly"; payload: { readOnly: boolean } }
+  | {
+      source: typeof EDITOR_MESSAGE_SOURCE;
+      type: "setMode";
+      payload: { mode: EditorMode };
+    }
   | { source: typeof EDITOR_MESSAGE_SOURCE; type: "destroy" };
 
 /** iframe → parent */

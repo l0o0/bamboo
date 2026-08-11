@@ -8,11 +8,14 @@ import {
   EDITOR_MESSAGE_SOURCE,
   computeStats,
   isEditorProtocolMessage,
+  type EditorMode,
   type EditorStats,
   type EditorTheme,
   type EditorToParentMessage,
   type ParentToEditorMessage,
 } from "./editor-protocol";
+
+export type { EditorMode };
 
 export interface MarkdownEditorHandle {
   ready: Promise<void>;
@@ -31,6 +34,8 @@ export interface MarkdownEditorHandle {
   prefixLine: (prefix: string) => void;
   /** Push light/dark to the iframe CM theme (also auto-synced from OS/Zotero). */
   setTheme: (theme: EditorTheme) => void;
+  /** Switch Live Preview vs full Source mode inside the iframe. */
+  setMode: (mode: EditorMode) => void;
 }
 
 /** Shared dark-mode detection (Zotero follows prefers-color-scheme). */
@@ -68,6 +73,7 @@ type PendingCommand =
           | "setTheme"
           | "setFontSize"
           | "setReadOnly"
+          | "setMode"
           | "init";
       }
     >;
@@ -143,16 +149,19 @@ export function createMarkdownEditor(
     return true;
   };
 
+  let currentMode: EditorMode = "live";
+
   const sendOrQueue = (message: PendingCommand) => {
     if (destroyed) return;
     if (!iframeReady) {
-      // Keep only the latest setValue / init / setTheme / setFontSize / setReadOnly
+      // Keep only the latest setValue / init / setTheme / setFontSize / setReadOnly / setMode
       if (
         message.type === "setValue" ||
         message.type === "init" ||
         message.type === "setTheme" ||
         message.type === "setFontSize" ||
-        message.type === "setReadOnly"
+        message.type === "setReadOnly" ||
+        message.type === "setMode"
       ) {
         for (let i = pending.length - 1; i >= 0; i--) {
           if (pending[i].type === message.type) pending.splice(i, 1);
@@ -204,6 +213,7 @@ export function createMarkdownEditor(
             readOnly,
             fontSize: resolveFontSize(),
             theme: currentTheme,
+            mode: currentMode,
           },
         });
         flushPending();
@@ -328,6 +338,15 @@ export function createMarkdownEditor(
     },
     setTheme: (theme: EditorTheme) => {
       applyTheme(theme);
+    },
+    setMode: (mode: EditorMode) => {
+      if (destroyed) return;
+      currentMode = mode === "source" ? "source" : "live";
+      sendOrQueue({
+        source: EDITOR_MESSAGE_SOURCE,
+        type: "setMode",
+        payload: { mode: currentMode },
+      });
     },
     destroy: () => {
       if (destroyed) return;

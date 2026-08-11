@@ -17,7 +17,7 @@ interface OpenSession {
   editor?: MarkdownEditorHandle;
   dirty: boolean;
   saving: boolean;
-  mode: "edit" | "preview";
+  mode: "live" | "source" | "preview";
   rootEl?: HTMLElement;
   statusEl?: HTMLElement;
   metaEl?: HTMLElement;
@@ -124,7 +124,7 @@ export async function openMarkdownTab(
     path,
     dirty: false,
     saving: false,
-    mode: "edit",
+    mode: "live",
     storageLabel,
     win,
   };
@@ -273,7 +273,7 @@ function mountEditorUI(
     },
     classList: [
       "zotero-markdown-root",
-      "mode-edit",
+      "mode-live",
       ...(dark ? ["theme-dark"] : ["theme-light"]),
     ],
     children: [
@@ -314,10 +314,20 @@ function mountEditorUI(
                     tag: "button",
                     namespace: "html",
                     classList: ["zotero-markdown-btn", "active"],
-                    properties: { type: "button", innerText: "Edit" },
+                    properties: { type: "button", innerText: "Live" },
                     attributes: {
-                      "data-action": "edit",
-                      title: "Source editor",
+                      "data-action": "live",
+                      title: "Live preview (document view)",
+                    },
+                  },
+                  {
+                    tag: "button",
+                    namespace: "html",
+                    classList: ["zotero-markdown-btn"],
+                    properties: { type: "button", innerText: "Source" },
+                    attributes: {
+                      "data-action": "source",
+                      title: "Full Markdown source",
                     },
                   },
                   {
@@ -327,7 +337,7 @@ function mountEditorUI(
                     properties: { type: "button", innerText: "Preview" },
                     attributes: {
                       "data-action": "preview",
-                      title: "Rendered preview",
+                      title: "Read-only rendered preview",
                     },
                   },
                 ],
@@ -481,7 +491,8 @@ function mountEditorUI(
     const btn = t?.closest?.("[data-action]") as HTMLElement | null;
     if (!btn || !root.contains(btn)) return;
     const action = btn.getAttribute("data-action");
-    if (action === "edit") setMode(session, "edit");
+    if (action === "live") setMode(session, "live");
+    else if (action === "source") setMode(session, "source");
     else if (action === "preview") setMode(session, "preview");
     else if (action === "save") void saveSession(session, { explicit: true });
     else if (action === "bold") session.editor?.wrapSelection("**");
@@ -499,8 +510,11 @@ function mountEditorUI(
   ) as HTMLElement;
   const statusEl = root.querySelector(".zotero-markdown-status") as HTMLElement;
   const metaEl = root.querySelector(".zotero-markdown-meta") as HTMLElement;
-  const btnEdit = root.querySelector(
-    '[data-action="edit"]',
+  const btnLive = root.querySelector(
+    '[data-action="live"]',
+  ) as HTMLButtonElement;
+  const btnSource = root.querySelector(
+    '[data-action="source"]',
   ) as HTMLButtonElement;
   const btnPreview = root.querySelector(
     '[data-action="preview"]',
@@ -511,10 +525,11 @@ function mountEditorUI(
   session.previewEl = previewEl;
   session.statusEl = statusEl;
   session.metaEl = metaEl;
-  (session as any)._btnEdit = btnEdit;
+  (session as any)._btnLive = btnLive;
+  (session as any)._btnSource = btnSource;
   (session as any)._btnPreview = btnPreview;
 
-  applyModeVisibility(session, "edit");
+  applyModeVisibility(session, "live");
 
   const readOnly = !item.isEditable();
   session.editor = createMarkdownEditor(editorHost, {
@@ -531,13 +546,15 @@ function mountEditorUI(
       void saveSession(session, { explicit: true });
     },
   });
+  // Default iframe mode is live (init.mode)
+  session.editor.setMode("live");
 
   bindSessionTheme(win, session);
   updateMeta(session);
 
   const measure = () => {
     session.editor?.view.requestMeasure();
-    if (session.mode === "edit") {
+    if (session.mode === "live" || session.mode === "source") {
       session.editor?.focus();
     }
   };
@@ -546,35 +563,51 @@ function mountEditorUI(
   win.setTimeout(measure, 200);
 }
 
-function applyModeVisibility(session: OpenSession, mode: "edit" | "preview") {
+function applyModeVisibility(
+  session: OpenSession,
+  mode: "live" | "source" | "preview",
+) {
   const root = session.rootEl;
   const editorHost = session.editorHost;
   const previewEl = session.previewEl;
 
   if (root) {
-    root.classList.toggle("mode-edit", mode === "edit");
+    root.classList.toggle("mode-live", mode === "live");
+    root.classList.toggle("mode-source", mode === "source");
     root.classList.toggle("mode-preview", mode === "preview");
+    root.classList.toggle("mode-edit", mode === "live" || mode === "source");
   }
 
   if (editorHost) {
-    editorHost.style.display = mode === "edit" ? "flex" : "none";
+    editorHost.style.display =
+      mode === "live" || mode === "source" ? "flex" : "none";
   }
   if (previewEl) {
     previewEl.style.display = mode === "preview" ? "block" : "none";
   }
 }
 
-function setMode(session: OpenSession, mode: "edit" | "preview") {
+function setMode(
+  session: OpenSession,
+  mode: "live" | "source" | "preview",
+) {
   session.mode = mode;
-  const btnEdit = (session as any)._btnEdit as HTMLButtonElement | undefined;
+  const btnLive = (session as any)._btnLive as HTMLButtonElement | undefined;
+  const btnSource = (session as any)._btnSource as
+    | HTMLButtonElement
+    | undefined;
   const btnPreview = (session as any)._btnPreview as
-    HTMLButtonElement | undefined;
+    | HTMLButtonElement
+    | undefined;
 
   applyModeVisibility(session, mode);
 
-  if (mode === "edit") {
-    btnEdit?.classList.add("active");
-    btnPreview?.classList.remove("active");
+  btnLive?.classList.toggle("active", mode === "live");
+  btnSource?.classList.toggle("active", mode === "source");
+  btnPreview?.classList.toggle("active", mode === "preview");
+
+  if (mode === "live" || mode === "source") {
+    session.editor?.setMode(mode);
     setStatus(session, session.dirty ? "Unsaved…" : "Ready");
     updateMeta(session);
     session.win.requestAnimationFrame(() => {
@@ -593,8 +626,6 @@ function setMode(session: OpenSession, mode: "edit" | "preview") {
         setStatus(session, "Preview (plain)");
       }
     }
-    btnPreview?.classList.add("active");
-    btnEdit?.classList.remove("active");
     updateMeta(session);
   }
 }

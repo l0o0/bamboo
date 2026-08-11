@@ -38,46 +38,65 @@ import {
   computeStats,
   isEditorProtocolMessage,
   type EditorInitPayload,
+  type EditorMode,
   type EditorTheme,
   type ParentToEditorMessage,
 } from "../modules/markdown/editor-protocol";
 import { editorThemeExtension } from "./theme";
+import { livePreviewWhen } from "./live-preview";
 
 const themeCompartment = new Compartment();
 const readOnlyCompartment = new Compartment();
-const fontCompartment = new Compartment();
+const liveCompartment = new Compartment();
+const guttersCompartment = new Compartment();
+const modeAttrCompartment = new Compartment();
 
 let view: EditorView | null = null;
 let currentTheme: EditorTheme = "light";
 let currentFontSize = 14;
+let currentMode: EditorMode = "live";
 
 function postToParent(message: {
   type: "ready" | "change" | "save" | "error";
   payload?: unknown;
 }) {
-  // Parent is the Zotero chrome window that hosts the iframe
   window.parent?.postMessage(
     { source: EDITOR_MESSAGE_SOURCE, ...message },
     "*",
   );
 }
 
+function guttersForMode(mode: EditorMode): Extension {
+  if (mode === "source") {
+    return [
+      lineNumbers(),
+      highlightActiveLineGutter(),
+      foldGutter(),
+    ];
+  }
+  return [];
+}
+
+function modeUiForMode(mode: EditorMode): Extension {
+  return EditorView.editorAttributes.of({
+    class: mode === "live" ? "zmd-mode-live" : "zmd-mode-source",
+  });
+}
+
 function buildExtensions(init: EditorInitPayload): Extension[] {
   currentTheme = init.theme;
   currentFontSize = init.fontSize;
+  currentMode = init.mode === "source" ? "source" : "live";
 
   return [
-    lineNumbers(),
-    highlightActiveLineGutter(),
+    guttersCompartment.of(guttersForMode(currentMode)),
     highlightActiveLine(),
     drawSelection(),
     dropCursor(),
     history(),
-    foldGutter(),
     bracketMatching(),
     highlightSelectionMatches(),
     EditorView.lineWrapping,
-    // Avoid @codemirror/language-data (multi-MB). Fenced code stays plain text.
     markdown(),
     syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
     keymap.of([
@@ -136,8 +155,11 @@ function buildExtensions(init: EditorInitPayload): Extension[] {
         },
       },
     ]),
-    themeCompartment.of(editorThemeExtension(init.theme, init.fontSize)),
-    fontCompartment.of([]),
+    themeCompartment.of(
+      editorThemeExtension(init.theme, init.fontSize, currentMode),
+    ),
+    liveCompartment.of(livePreviewWhen(currentMode === "live")),
+    modeAttrCompartment.of(modeUiForMode(currentMode)),
     readOnlyCompartment.of([
       EditorState.readOnly.of(!!init.readOnly),
       EditorView.editable.of(!init.readOnly),
@@ -150,10 +172,22 @@ function buildExtensions(init: EditorInitPayload): Extension[] {
         payload: { value, stats: computeStats(value) },
       });
     }),
-    EditorView.domEventHandlers({
-      // prevent Zotero chrome from swallowing some keys inconsistently
-    }),
   ];
+}
+
+function applyMode(mode: EditorMode) {
+  if (!view) return;
+  currentMode = mode === "source" ? "source" : "live";
+  view.dispatch({
+    effects: [
+      liveCompartment.reconfigure(livePreviewWhen(currentMode === "live")),
+      guttersCompartment.reconfigure(guttersForMode(currentMode)),
+      modeAttrCompartment.reconfigure(modeUiForMode(currentMode)),
+      themeCompartment.reconfigure(
+        editorThemeExtension(currentTheme, currentFontSize, currentMode),
+      ),
+    ],
+  });
 }
 
 function wrapSelectionInView(v: EditorView, before: string, after: string) {
@@ -206,9 +240,6 @@ function createOrResetEditor(init: EditorInitPayload) {
     state,
     parent: host,
   });
-
-  // Do not post initial change — parent already has the doc cache.
-  // Posting would falsely mark the session dirty on open.
 }
 
 function handleParentMessage(data: ParentToEditorMessage) {
@@ -253,7 +284,7 @@ function handleParentMessage(data: ParentToEditorMessage) {
       currentTheme = data.payload.theme;
       view.dispatch({
         effects: themeCompartment.reconfigure(
-          editorThemeExtension(currentTheme, currentFontSize),
+          editorThemeExtension(currentTheme, currentFontSize, currentMode),
         ),
       });
       break;
@@ -263,7 +294,7 @@ function handleParentMessage(data: ParentToEditorMessage) {
       currentFontSize = data.payload.fontSize;
       view.dispatch({
         effects: themeCompartment.reconfigure(
-          editorThemeExtension(currentTheme, currentFontSize),
+          editorThemeExtension(currentTheme, currentFontSize, currentMode),
         ),
       });
       break;
@@ -277,6 +308,10 @@ function handleParentMessage(data: ParentToEditorMessage) {
           EditorView.editable.of(!readOnly),
         ]),
       });
+      break;
+    }
+    case "setMode": {
+      applyMode(data.payload.mode === "source" ? "source" : "live");
       break;
     }
     case "destroy": {
@@ -299,6 +334,7 @@ const PARENT_TO_EDITOR_TYPES = new Set([
   "setTheme",
   "setFontSize",
   "setReadOnly",
+  "setMode",
   "destroy",
 ]);
 
@@ -320,7 +356,6 @@ function onWindowMessage(event: MessageEvent) {
 
 function boot() {
   window.addEventListener("message", onWindowMessage);
-  // Signal readiness so parent can send init
   postToParent({ type: "ready" });
 }
 

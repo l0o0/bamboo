@@ -1,8 +1,8 @@
 # Live Preview 中间编辑区设计
 
-> 状态：已确认  
+> 状态：L1/L2 已实现（待实机验收）  
 > 日期：2026-08-11  
-> 相关：`docs/editor/codemirror-iframe-plan.md`（iframe + CodeMirror 6 基建）
+> 相关：`docs/editor/codemirror-iframe-plan.md`、`docs/superpowers/plans/2026-08-11-live-preview.md`
 
 ## 1. 背景
 
@@ -172,3 +172,14 @@ v0.1.0 已将 Markdown 源码编辑从 XUL `textarea` 迁到 **chrome iframe + C
 ## 11. 确认记录
 
 - 2026-08-11：用户选择产品形态 **2（Obsidian 式）**，露源码粒度 **A（行级）**，设计草案确认 **ok**。
+- 2026-08-11：实现计划确认；子代理 API 不可用时由主会话内联完成 L1–L8 代码路径。
+
+## 12. 实现状态
+
+| 阶段 | 状态 |
+|------|------|
+| L1 模式 + 标题/强调 + 行级活跃 | 已落地 |
+| L2 列表/引用/链接/行内代码 | 已落地 |
+| IME composition | 已落地（plugin eventHandlers） |
+| 工具栏 Live \| Source \| Preview | 已落地 |
+| 实机验收 | 待用户在 Zotero 中验证 |
