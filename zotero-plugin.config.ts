@@ -36,6 +36,14 @@ export default defineConfig({
         target: "firefox115",
         outfile: `.scaffold/build/addon/content/scripts/${pkg.config.addonRef}.js`,
       },
+      // CodeMirror runs inside chrome:// iframe (stable Web document)
+      {
+        entryPoints: ["src/editor/bootstrap.ts"],
+        bundle: true,
+        minify: true,
+        target: "firefox115",
+        outfile: `.scaffold/build/addon/content/editor/editor.js`,
+      },
     ],
   },
 

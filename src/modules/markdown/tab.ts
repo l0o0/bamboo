@@ -1,7 +1,12 @@
-import { createMarkdownEditor, MarkdownEditorHandle } from "./editor";
+import {
+  createMarkdownEditor,
+  MarkdownEditorHandle,
+  resolveEditorTheme,
+} from "./editor";
 import { mountPreviewHtml } from "./preview";
 import { MARKDOWN_TAB_TYPE, resolveMarkdownTabTitle } from "./tabHooks";
 import { ensureDOMGlobals, getDOMDocument } from "../../utils/dom";
+import type { EditorTheme } from "./editor-protocol";
 
 const AUTOSAVE_MS = 800;
 
@@ -21,6 +26,8 @@ interface OpenSession {
   autosaveTimer?: number;
   storageLabel: string;
   win: _ZoteroTypes.MainWindow;
+  /** Tear down live theme listeners when the tab closes */
+  unbindTheme?: () => void;
 }
 
 const sessions = new Map<string, OpenSession>();
@@ -174,24 +181,71 @@ function ensureTabTitle(
   })();
 }
 
-function isDarkTheme(win: Window): boolean {
+function applyShellTheme(root: HTMLElement | undefined, theme: EditorTheme) {
+  if (!root) return;
+  root.classList.toggle("theme-dark", theme === "dark");
+  root.classList.toggle("theme-light", theme === "light");
+}
+
+/**
+ * Keep shell + iframe CM in sync when Zotero/OS color scheme changes.
+ * Mirrors Zotero's own Ace/Monaco tools (matchMedia change listener).
+ */
+function bindSessionTheme(
+  win: _ZoteroTypes.MainWindow,
+  session: OpenSession,
+) {
+  session.unbindTheme?.();
+
+  const sync = () => {
+    const theme = resolveEditorTheme(win);
+    applyShellTheme(session.rootEl, theme);
+    session.editor?.setTheme(theme);
+  };
+
+  let mql: MediaQueryList | null = null;
+  const onMql = () => sync();
   try {
-    if (win.matchMedia?.("(prefers-color-scheme: dark)")?.matches) {
-      return true;
+    mql = win.matchMedia?.("(prefers-color-scheme: dark)") || null;
+    mql?.addEventListener?.("change", onMql);
+  } catch {
+    // ignore
+  }
+
+  let observer: MutationObserver | null = null;
+  try {
+    const rootEl = win.document?.documentElement;
+    if (rootEl && typeof win.MutationObserver === "function") {
+      let last = resolveEditorTheme(win);
+      const obs = new win.MutationObserver(() => {
+        const next = resolveEditorTheme(win);
+        if (next !== last) {
+          last = next;
+          sync();
+        }
+      });
+      obs.observe(rootEl, {
+        attributes: true,
+        attributeFilter: ["class", "data-theme", "theme", "style"],
+      });
+      observer = obs;
     }
   } catch {
     // ignore
   }
-  try {
-    const root = win.document?.documentElement;
-    const theme =
-      root?.getAttribute("data-theme") || root?.getAttribute("theme") || "";
-    if (/dark/i.test(theme)) return true;
-    if (root?.classList?.contains("theme-dark")) return true;
-  } catch {
-    // ignore
-  }
-  return false;
+
+  session.unbindTheme = () => {
+    try {
+      mql?.removeEventListener?.("change", onMql);
+    } catch {
+      // ignore
+    }
+    try {
+      observer?.disconnect();
+    } catch {
+      // ignore
+    }
+  };
 }
 
 function mountEditorUI(
@@ -203,7 +257,7 @@ function mountEditorUI(
 ) {
   ensureDOMGlobals(win);
   const doc = getDOMDocument(win);
-  const dark = isDarkTheme(win);
+  const dark = resolveEditorTheme(win) === "dark";
 
   const root = ztoolkit.UI.createElement(doc, "div", {
     namespace: "html",
@@ -478,6 +532,7 @@ function mountEditorUI(
     },
   });
 
+  bindSessionTheme(win, session);
   updateMeta(session);
 
   const measure = () => {
@@ -643,6 +698,11 @@ async function closeSession(tabID: string, opts: { flush?: boolean } = {}) {
     await saveSession(session, { explicit: true });
   }
 
+  try {
+    session.unbindTheme?.();
+  } catch {
+    // ignore
+  }
   session.editor?.destroy();
   itemToTab.delete(session.itemID);
   sessions.delete(tabID);

@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Zotero Markdown Editor</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        background: transparent;
+      }
+      #editor-root {
+        width: 100%;
+        height: 100%;
+        min-height: 0;
+        box-sizing: border-box;
+      }
+      /* CodeMirror fills host */
+      #editor-root .cm-editor {
+        height: 100%;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="editor-root"></div>
+    <script src="chrome://zoteromarkdown/content/editor/editor.js"></script>
+  </body>
+</html>

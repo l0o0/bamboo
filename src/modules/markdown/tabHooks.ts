@@ -27,12 +27,27 @@ export function registerMarkdownTabHooks(win: _ZoteroTypes.MainWindow) {
 
   // Avoid focusing nowhere after select
   tabs.tabHooks.refocus[MARKDOWN_TAB_TYPE] = async (tab: { id: string }) => {
-    const root = win.document
+    const host = win.document
       .getElementById(tab.id)
-      ?.querySelector(
-        ".zotero-markdown-editor-host .zmd-textarea",
-      ) as HTMLElement | null;
-    root?.focus?.();
+      ?.querySelector(".zotero-markdown-editor-host") as HTMLElement | null;
+    if (!host) return;
+    const iframe = host.querySelector(
+      "iframe.zmd-codemirror-iframe",
+    ) as HTMLIFrameElement | null;
+    if (iframe) {
+      try {
+        iframe.focus();
+        iframe.contentWindow?.postMessage(
+          { source: "zotero-markdown-editor", type: "focus" },
+          "*",
+        );
+      } catch {
+        // ignore focus failures
+      }
+      return;
+    }
+    const legacy = host.querySelector(".zmd-textarea") as HTMLElement | null;
+    legacy?.focus?.();
   };
 
   tabs.tabHooks.focusFirst[MARKDOWN_TAB_TYPE] =

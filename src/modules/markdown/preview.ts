@@ -42,7 +42,12 @@ export function mountPreviewHtml(host: HTMLElement, source: string): void {
   const html = renderMarkdown(source);
   const doc = host.ownerDocument || (globalThis as any).document;
   try {
-    const parsed = new doc.defaultView.DOMParser().parseFromString(
+    const view = doc.defaultView;
+    if (!view?.DOMParser) {
+      host.innerHTML = html;
+      return;
+    }
+    const parsed = new view.DOMParser().parseFromString(
       `<div class="zotero-markdown-preview-inner">${html}</div>`,
       "text/html",
     );

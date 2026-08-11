@@ -341,10 +341,10 @@ tab-content.zotero-markdown-tab-content {
   overflow: auto;
 }
 
-/* ========== editor ========== */
+/* ========== editor (iframe + CodeMirror) ========== */
 .zmd-editor-wrap {
   display: flex;
-  flex-direction: row;
+  flex-direction: column;
   align-items: stretch;
   width: 100%;
   height: 100%;
@@ -354,22 +354,20 @@ tab-content.zotero-markdown-tab-content {
   box-sizing: border-box;
 }
 
-.zmd-gutter {
-  flex: 0 0 auto;
-  min-width: 3.4em;
-  padding: 14px 10px 14px 12px;
-  margin: 0;
+.zmd-codemirror-iframe {
+  flex: 1 1 auto;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
   border: none;
-  border-right: 1px solid var(--zmd-border);
-  background: var(--zmd-surface-2);
-  color: var(--zmd-text-faint);
-  text-align: right;
-  white-space: pre;
-  overflow: hidden;
-  user-select: none;
-  -moz-user-select: none;
-  box-sizing: border-box;
-  font-variant-numeric: tabular-nums;
+  display: block;
+  background: var(--zmd-surface);
+}
+
+/* legacy textarea (kept for emergency fallback; unused by default) */
+.zmd-gutter {
+  display: none;
 }
 
 .zmd-textarea {
@@ -390,19 +388,6 @@ tab-content.zotero-markdown-tab-content {
   white-space: pre;
   overflow: auto;
   tab-size: 4;
-}
-
-.zmd-textarea::placeholder {
-  color: var(--zmd-text-faint);
-}
-
-.zmd-textarea:focus {
-  outline: none;
-  background: var(--zmd-surface);
-}
-
-.zmd-textarea::selection {
-  background: var(--zmd-accent-soft);
 }
 
 /* ========== preview prose ========== */

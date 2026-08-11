@@ -1,12 +1,21 @@
+/**
+ * Parent-side markdown editor: mounts a chrome:// iframe that runs
+ * CodeMirror 6 in a stable Web document, and bridges via postMessage.
+ */
 import { getPref } from "../../utils/prefs";
 import { ensureDOMGlobals } from "../../utils/dom";
-
-/**
- * Plain-textarea markdown editor with synced line numbers.
- * Stable under Zotero XUL (unlike CodeMirror virtualization).
- */
+import {
+  EDITOR_MESSAGE_SOURCE,
+  computeStats,
+  isEditorProtocolMessage,
+  type EditorStats,
+  type EditorTheme,
+  type EditorToParentMessage,
+  type ParentToEditorMessage,
+} from "./editor-protocol";
 
 export interface MarkdownEditorHandle {
+  ready: Promise<void>;
   view: {
     requestMeasure: () => void;
     focus: () => void;
@@ -17,15 +26,61 @@ export interface MarkdownEditorHandle {
   setValue: (value: string) => void;
   focus: () => void;
   destroy: () => void;
-  getStats: () => { chars: number; lines: number; words: number };
-  /** Toolbar / shortcut helpers */
+  getStats: () => EditorStats;
   wrapSelection: (before: string, after?: string) => void;
   prefixLine: (prefix: string) => void;
+  /** Push light/dark to the iframe CM theme (also auto-synced from OS/Zotero). */
+  setTheme: (theme: EditorTheme) => void;
 }
 
-const LINE_HEIGHT = "22px";
-const FONT_FAMILY =
-  'ui-monospace, "Sarasa Mono SC", "Noto Sans Mono CJK SC", "JetBrains Mono", SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace';
+/** Shared dark-mode detection (Zotero follows prefers-color-scheme). */
+export function resolveEditorTheme(win?: Window): EditorTheme {
+  try {
+    if (win?.matchMedia?.("(prefers-color-scheme: dark)")?.matches) {
+      return "dark";
+    }
+  } catch {
+    // ignore
+  }
+  try {
+    const root = win?.document?.documentElement;
+    const theme =
+      root?.getAttribute("data-theme") || root?.getAttribute("theme") || "";
+    if (/dark/i.test(theme)) return "dark";
+    if (root?.classList?.contains("theme-dark")) return "dark";
+    if (root?.classList?.contains("theme-light")) return "light";
+  } catch {
+    // ignore
+  }
+  return "light";
+}
+
+type PendingCommand =
+  | Extract<
+      ParentToEditorMessage,
+      {
+        type:
+          | "setValue"
+          | "wrapSelection"
+          | "prefixLine"
+          | "focus"
+          | "requestMeasure"
+          | "setTheme"
+          | "setFontSize"
+          | "setReadOnly"
+          | "init";
+      }
+    >;
+
+function editorPageURL(): string {
+  const ref = addon.data.config.addonRef;
+  return `chrome://${ref}/content/editor/index.html`;
+}
+
+function resolveFontSize(): number {
+  const n = Number(getPref("fontSize") || 14);
+  return Number.isFinite(n) ? Math.min(22, Math.max(11, n)) : 14;
+}
 
 export function createMarkdownEditor(
   parent: HTMLElement,
@@ -50,222 +105,254 @@ export function createMarkdownEditor(
 
   while (parent.firstChild) parent.removeChild(parent.firstChild);
 
-  const fontSize = resolveFontSize();
-
   const wrap = documentRef.createElement("div");
   wrap.className = "zmd-editor-wrap";
 
-  const gutter = documentRef.createElement("div");
-  gutter.className = "zmd-gutter";
-  gutter.setAttribute("aria-hidden", "true");
-
-  const textarea = documentRef.createElement("textarea");
-  textarea.className = "zmd-textarea";
-  textarea.value = doc;
-  textarea.spellcheck = false;
-  textarea.wrap = "off";
-  textarea.setAttribute("autocapitalize", "off");
-  textarea.setAttribute("autocomplete", "off");
-  textarea.setAttribute("autocorrect", "off");
-  textarea.setAttribute("placeholder", "Start writing in Markdown…");
-  if (readOnly) textarea.readOnly = true;
-
-  const metrics = {
-    fontFamily: FONT_FAMILY,
-    fontSize,
-    lineHeight: LINE_HEIGHT,
-    tabSize: "4",
-  };
-  Object.assign(textarea.style, {
-    fontFamily: metrics.fontFamily,
-    fontSize: metrics.fontSize,
-    lineHeight: metrics.lineHeight,
-    tabSize: metrics.tabSize,
-  });
-  Object.assign(gutter.style, {
-    fontFamily: metrics.fontFamily,
-    fontSize: metrics.fontSize,
-    lineHeight: metrics.lineHeight,
+  const iframe = documentRef.createElement("iframe") as HTMLIFrameElement;
+  iframe.className = "zmd-codemirror-iframe";
+  iframe.setAttribute("src", editorPageURL());
+  Object.assign(iframe.style, {
+    border: "none",
+    width: "100%",
+    height: "100%",
+    flex: "1 1 auto",
+    minHeight: "0",
+    minWidth: "0",
+    display: "block",
+    background: "transparent",
   });
 
-  wrap.append(gutter, textarea);
+  wrap.appendChild(iframe);
   parent.appendChild(wrap);
 
   let destroyed = false;
+  let iframeReady = false;
+  let lastValue = doc;
+  let lastStats: EditorStats = computeStats(doc);
+  const pending: PendingCommand[] = [];
 
-  const countLines = (text: string) => {
-    if (!text) return 1;
-    let n = 1;
-    for (let i = 0; i < text.length; i++) {
-      if (text.charCodeAt(i) === 10) n++;
-    }
-    return n;
-  };
-
-  const countWords = (text: string) => {
-    const t = text.trim();
-    if (!t) return 0;
-    const cjk = t.match(/[\u4e00-\u9fff\u3400-\u4dbf]/g);
-    const rest = t
-      .replace(/[\u4e00-\u9fff\u3400-\u4dbf]/g, " ")
-      .trim()
-      .split(/\s+/)
-      .filter(Boolean);
-    return (cjk?.length || 0) + rest.length;
-  };
-
-  const renderGutter = () => {
-    if (destroyed) return;
-    const lines = countLines(textarea.value);
-    const parts = new Array(lines);
-    for (let i = 0; i < lines; i++) parts[i] = String(i + 1);
-    gutter.textContent = parts.join("\n");
-  };
-
-  const syncScroll = () => {
-    gutter.scrollTop = textarea.scrollTop;
-  };
-
-  const onInput = () => {
-    renderGutter();
-    syncScroll();
-    onChange?.(textarea.value);
-  };
-
-  const wrapSelection = (before: string, after: string = before) => {
-    const start = textarea.selectionStart;
-    const end = textarea.selectionEnd;
-    const v = textarea.value;
-    const selected = v.slice(start, end);
-    textarea.value =
-      v.slice(0, start) + before + selected + after + v.slice(end);
-    if (selected) {
-      textarea.selectionStart = start;
-      textarea.selectionEnd = end + before.length + after.length;
-    } else {
-      textarea.selectionStart = textarea.selectionEnd = start + before.length;
-    }
-    textarea.focus();
-    onInput();
-  };
-
-  const prefixLine = (prefix: string) => {
-    const start = textarea.selectionStart;
-    const v = textarea.value;
-    const lineStart = v.lastIndexOf("\n", start - 1) + 1;
-    const lineEndIdx = v.indexOf("\n", start);
-    const lineEnd = lineEndIdx === -1 ? v.length : lineEndIdx;
-    const line = v.slice(lineStart, lineEnd);
-    const stripped = line.replace(/^#{1,6}\s+/, "");
-    const newLine = prefix + stripped;
-    textarea.value = v.slice(0, lineStart) + newLine + v.slice(lineEnd);
-    const pos = lineStart + newLine.length;
-    textarea.selectionStart = textarea.selectionEnd = pos;
-    textarea.focus();
-    onInput();
-  };
-
-  const onKeyDown = (ev: KeyboardEvent) => {
-    const mod = ev.ctrlKey || ev.metaKey;
-
-    if (ev.key === "Tab" && !mod && !ev.altKey) {
-      ev.preventDefault();
-      const start = textarea.selectionStart;
-      const end = textarea.selectionEnd;
-      const v = textarea.value;
-      const insert = "  ";
-      textarea.value = v.slice(0, start) + insert + v.slice(end);
-      textarea.selectionStart = textarea.selectionEnd = start + insert.length;
-      onInput();
-      return;
-    }
-
-    if (mod && (ev.key === "s" || ev.key === "S")) {
-      ev.preventDefault();
-      onSave?.();
-      return;
-    }
-    if (mod && !ev.altKey && (ev.key === "b" || ev.key === "B")) {
-      ev.preventDefault();
-      wrapSelection("**");
-      return;
-    }
-    if (mod && !ev.altKey && (ev.key === "i" || ev.key === "I")) {
-      ev.preventDefault();
-      wrapSelection("*");
-      return;
-    }
-    if (mod && !ev.altKey && (ev.key === "k" || ev.key === "K")) {
-      ev.preventDefault();
-      wrapSelection("[", "](url)");
-      return;
-    }
-    if (mod && (ev.key === "1" || ev.key === "2" || ev.key === "3")) {
-      ev.preventDefault();
-      prefixLine("#".repeat(Number(ev.key)) + " ");
-    }
-  };
-
-  textarea.addEventListener("input", onInput);
-  textarea.addEventListener("scroll", syncScroll, { passive: true });
-  textarea.addEventListener("keydown", onKeyDown);
-
-  renderGutter();
-
-  const win = ownerWin || documentRef.defaultView;
-  win?.requestAnimationFrame?.(() => {
-    renderGutter();
-    syncScroll();
+  let resolveReady!: () => void;
+  const ready = new Promise<void>((resolve) => {
+    resolveReady = resolve;
   });
-  win?.setTimeout?.(() => {
-    renderGutter();
-    syncScroll();
-  }, 50);
+
+  const post = (message: ParentToEditorMessage) => {
+    const target = iframe.contentWindow;
+    if (!target) return false;
+    target.postMessage(message, "*");
+    return true;
+  };
+
+  const sendOrQueue = (message: PendingCommand) => {
+    if (destroyed) return;
+    if (!iframeReady) {
+      // Keep only the latest setValue / init / setTheme / setFontSize / setReadOnly
+      if (
+        message.type === "setValue" ||
+        message.type === "init" ||
+        message.type === "setTheme" ||
+        message.type === "setFontSize" ||
+        message.type === "setReadOnly"
+      ) {
+        for (let i = pending.length - 1; i >= 0; i--) {
+          if (pending[i].type === message.type) pending.splice(i, 1);
+        }
+      }
+      pending.push(message);
+      return;
+    }
+    post(message);
+  };
+
+  const flushPending = () => {
+    const queue = pending.splice(0, pending.length);
+    for (const cmd of queue) {
+      post(cmd);
+    }
+  };
+
+  let currentTheme = resolveEditorTheme(ownerWin);
+
+  const applyTheme = (theme: EditorTheme) => {
+    if (destroyed) return;
+    if (theme === currentTheme) return;
+    currentTheme = theme;
+    sendOrQueue({
+      source: EDITOR_MESSAGE_SOURCE,
+      type: "setTheme",
+      payload: { theme },
+    });
+  };
+
+  const onMessage = (event: MessageEvent) => {
+    if (destroyed) return;
+    // Only accept messages from our iframe
+    if (event.source && event.source !== iframe.contentWindow) return;
+    if (!isEditorProtocolMessage(event.data)) return;
+
+    const data = event.data as EditorToParentMessage;
+    switch (data.type) {
+      case "ready": {
+        iframeReady = true;
+        // Re-resolve at ready time (theme may have changed while loading)
+        currentTheme = resolveEditorTheme(ownerWin);
+        post({
+          source: EDITOR_MESSAGE_SOURCE,
+          type: "init",
+          payload: {
+            doc: lastValue,
+            readOnly,
+            fontSize: resolveFontSize(),
+            theme: currentTheme,
+          },
+        });
+        flushPending();
+        resolveReady();
+        break;
+      }
+      case "change": {
+        lastValue = data.payload.value;
+        lastStats = data.payload.stats;
+        onChange?.(lastValue);
+        break;
+      }
+      case "save": {
+        onSave?.();
+        break;
+      }
+      case "error": {
+        ztoolkit.log("Markdown editor iframe error:", data.payload.message);
+        break;
+      }
+      default:
+        break;
+    }
+  };
+
+  ownerWin?.addEventListener("message", onMessage);
+
+  // Live-sync when Zotero/OS color scheme changes (same pattern as Zotero's
+  // Ace/Monaco tools: matchMedia('(prefers-color-scheme: dark)').change).
+  let colorSchemeMql: MediaQueryList | null = null;
+  const onColorSchemeChange = () => {
+    applyTheme(resolveEditorTheme(ownerWin));
+  };
+  try {
+    colorSchemeMql = ownerWin?.matchMedia?.("(prefers-color-scheme: dark)") || null;
+    colorSchemeMql?.addEventListener?.("change", onColorSchemeChange);
+  } catch {
+    // ignore
+  }
+
+  // Fallback: Zotero may also flip documentElement attributes/classes
+  let themeObserver: MutationObserver | null = null;
+  try {
+    const rootEl = ownerWin?.document?.documentElement;
+    if (rootEl && ownerWin?.MutationObserver) {
+      const obs = new ownerWin.MutationObserver(() => {
+        const next = resolveEditorTheme(ownerWin);
+        if (next !== currentTheme) applyTheme(next);
+      });
+      obs.observe(rootEl, {
+        attributes: true,
+        attributeFilter: ["class", "data-theme", "theme", "style"],
+      });
+      themeObserver = obs;
+    }
+  } catch {
+    // ignore
+  }
+
+  // Fallback: if ready never arrives, still resolve after timeout so callers don't hang
+  ownerWin?.setTimeout?.(() => {
+    if (!iframeReady && !destroyed) {
+      ztoolkit.log(
+        "Markdown editor iframe ready timeout; commands will queue until ready",
+      );
+      // Do not resolve yet — keep waiting; getValue still works via cache
+    }
+  }, 8000);
 
   return {
+    ready,
     view: {
       requestMeasure: () => {
-        renderGutter();
-        syncScroll();
+        sendOrQueue({
+          source: EDITOR_MESSAGE_SOURCE,
+          type: "requestMeasure",
+        });
       },
-      focus: () => textarea.focus(),
-      contentDOM: textarea,
-      scrollDOM: textarea,
+      focus: () => {
+        try {
+          iframe.focus();
+        } catch {
+          // ignore
+        }
+        sendOrQueue({ source: EDITOR_MESSAGE_SOURCE, type: "focus" });
+      },
+      contentDOM: iframe,
+      scrollDOM: iframe,
     },
-    getValue: () => textarea.value,
+    getValue: () => lastValue,
     setValue: (value: string) => {
-      const start = textarea.selectionStart;
-      const end = textarea.selectionEnd;
-      textarea.value = value;
-      const len = value.length;
-      textarea.selectionStart = Math.min(start, len);
-      textarea.selectionEnd = Math.min(end, len);
-      renderGutter();
-      syncScroll();
+      lastValue = value;
+      lastStats = computeStats(value);
+      sendOrQueue({
+        source: EDITOR_MESSAGE_SOURCE,
+        type: "setValue",
+        payload: { value },
+      });
     },
-    focus: () => textarea.focus(),
-    getStats: () => {
-      const value = textarea.value;
-      return {
-        chars: value.length,
-        lines: countLines(value),
-        words: countWords(value),
-      };
+    focus: () => {
+      try {
+        iframe.focus();
+      } catch {
+        // ignore
+      }
+      sendOrQueue({ source: EDITOR_MESSAGE_SOURCE, type: "focus" });
     },
-    wrapSelection,
-    prefixLine,
+    getStats: () => lastStats,
+    wrapSelection: (before: string, after: string = before) => {
+      sendOrQueue({
+        source: EDITOR_MESSAGE_SOURCE,
+        type: "wrapSelection",
+        payload: { before, after },
+      });
+    },
+    prefixLine: (prefix: string) => {
+      sendOrQueue({
+        source: EDITOR_MESSAGE_SOURCE,
+        type: "prefixLine",
+        payload: { prefix },
+      });
+    },
+    setTheme: (theme: EditorTheme) => {
+      applyTheme(theme);
+    },
     destroy: () => {
+      if (destroyed) return;
       destroyed = true;
-      textarea.removeEventListener("input", onInput);
-      textarea.removeEventListener("scroll", syncScroll);
-      textarea.removeEventListener("keydown", onKeyDown);
-      while (parent.firstChild) parent.removeChild(parent.firstChild);
+      try {
+        colorSchemeMql?.removeEventListener?.("change", onColorSchemeChange);
+      } catch {
+        // ignore
+      }
+      try {
+        themeObserver?.disconnect();
+      } catch {
+        // ignore
+      }
+      try {
+        post({ source: EDITOR_MESSAGE_SOURCE, type: "destroy" });
+      } catch {
+        // ignore
+      }
+      ownerWin?.removeEventListener("message", onMessage);
+      try {
+        while (parent.firstChild) parent.removeChild(parent.firstChild);
+      } catch {
+        // ignore
+      }
     },
   };
-}
-
-function resolveFontSize(): string {
-  const n = Number(getPref("fontSize") || 14);
-  const size = Number.isFinite(n) ? Math.min(22, Math.max(11, n)) : 14;
-  return `${size}px`;
 }
