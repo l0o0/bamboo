@@ -1,7 +1,7 @@
 /**
  * Zotero plugin code runs in a sandbox without browser DOM globals.
- * Libraries like CodeMirror expect `document` / `window` / `HTMLElement`
- * on the global object. Bridge them from a real chrome window.
+ * DOM libraries and the markdown editor expect `document` / `window` /
+ * `HTMLElement` on the global object. Bridge them from a real chrome window.
  *
  * Prefer ztoolkit.getGlobal when available; fall back to the given window.
  */
@@ -33,7 +33,7 @@ export function ensureDOMGlobals(win?: Window): Window {
   g.self = target;
   g.document = target.document;
 
-  // Constructors / APIs CodeMirror and friends touch
+  // Constructors / APIs the editor and DOM code touch
   const fromWin = [
     "HTMLElement",
     "HTMLDivElement",

@@ -29,9 +29,9 @@ export function registerMarkdownTabHooks(win: _ZoteroTypes.MainWindow) {
   tabs.tabHooks.refocus[MARKDOWN_TAB_TYPE] = async (tab: { id: string }) => {
     const root = win.document
       .getElementById(tab.id)
-      ?.querySelector(".zotero-markdown-editor-host .cm-content") as
-      | HTMLElement
-      | null;
+      ?.querySelector(
+        ".zotero-markdown-editor-host .zmd-textarea",
+      ) as HTMLElement | null;
     root?.focus?.();
   };
 

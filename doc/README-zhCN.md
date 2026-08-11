@@ -18,12 +18,12 @@ Zotero 擅长文献收集与组织。在 AI 时代，**纯 Markdown 文件**才�
 
 **Zotero Markdown** 补上这块短板：
 
-| | Better Notes | **Zotero Markdown** |
-|--|--|--|
-| 主战场 | Zotero Note（富文本笔记） | 真正的 **`.md` 附件文件** |
-| 磁盘文件 | 可选同步 / 导出 | 文件本身就是笔记 |
-| Obsidian / AI | 桥接 / 导出 | 直接可用的纯文本 |
-| 关系 | — | **互补**——我们不碰 Note |
+|               | Better Notes              | **Zotero Markdown**       |
+| ------------- | ------------------------- | ------------------------- |
+| 主战场        | Zotero Note（富文本笔记） | 真正的 **`.md` 附件文件** |
+| 磁盘文件      | 可选同步 / 导出           | 文件本身就是笔记          |
+| Obsidian / AI | 桥接 / 导出               | 直接可用的纯文本          |
+| 关系          | —                         | **互补**——我们不碰 Note   |
 
 > Make Zotero Great Again — 让知识管理在 Zotero 里重新长出 Markdown 这一支。
 
@@ -32,7 +32,7 @@ Zotero 擅长文献收集与组织。在 AI 时代，**纯 Markdown 文件**才�
 ## 功能（v0.1）
 
 - **打开** `.md` / `.markdown` 附件：在主窗口 **Tab** 中打开（不再调系统默认应用）
-- **编辑**：[CodeMirror 6](https://codemirror.net/)（高亮、换行、撤销、搜索）
+- **编辑**：内置轻量编辑器——行号、Tab 缩进、字数/字符统计，以及常用 Markdown 语法工具栏快捷按钮（粗体、斜体、标题、链接）
 - **预览**：一键切换 Edit / Preview
 - **保存**：防抖自动保存 + **Ctrl/Cmd+S**
 - **新建 Markdown…**：条目右键菜单（默认 Stored 附件）
@@ -128,13 +128,13 @@ pnpm start          # 构建并启动 Zotero，支持热重载
 
 ### 常用命令
 
-| 命令 | 说明 |
-|------|------|
-| `pnpm start` | 开发模式 + 热重载 |
-| `pnpm run build` | 生产构建 + 类型检查 |
-| `pnpm test` | 插件测试 |
-| `pnpm run lint:check` | Prettier + ESLint |
-| `pnpm run lint:fix` | 自动修复 |
+| 命令                  | 说明                |
+| --------------------- | ------------------- |
+| `pnpm start`          | 开发模式 + 热重载   |
+| `pnpm run build`      | 生产构建 + 类型检查 |
+| `pnpm test`           | 插件测试            |
+| `pnpm run lint:check` | Prettier + ESLint   |
+| `pnpm run lint:fix`   | 自动修复            |
 
 ### 目录结构
 
@@ -146,7 +146,7 @@ src/
     create.ts              # 新建 stored .md
     open.ts                # 拦截 FileHandlers
     tab.ts                 # Tab UI、自动保存
-    editor.ts              # CodeMirror 6
+    editor.ts              # 内置编辑器（行号、快捷键、统计）
     preview.ts             # markdown-it 渲染
     menu.ts                # 右键菜单
     styles.ts              # 样式注入
@@ -176,8 +176,9 @@ addon/                     # bootstrap、语言包、偏好、图标
 **会取代 Better Notes 吗？**  
 不会。Better Notes 增强 Zotero Note；本插件只处理真正的 **Markdown 文件**附件。可以同时安装。
 
-**文件存在哪里？**  
-- **新建 Markdown…** 创建的是 Zotero storage 下的 **Stored** 附件。  
+**文件存在哪里？**
+
+- **新建 Markdown…** 创建的是 Zotero storage 下的 **Stored** 附件。
 - 也可以添加 **Linked** 附件，指向 Obsidian vault 或任意文件夹。
 
 **会随 Zotero 同步吗？**  
@@ -197,7 +198,7 @@ Stored 附件遵循 Zotero 文件同步（若已开启）。Linked 文件不会�
 ## 致谢
 
 - 基于 [zotero-plugin-template](https://github.com/windingwind/zotero-plugin-template)
-- [CodeMirror](https://codemirror.net/)、[markdown-it](https://github.com/markdown-it/markdown-it)
+- [markdown-it](https://github.com/markdown-it/markdown-it)
 - 灵感来自 Obsidian 工作流与 Zotero 社区
 
 ---

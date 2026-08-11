@@ -5,6 +5,7 @@ import { isMarkdownAttachment } from "./detect";
 import { openMarkdownAttachment } from "./open";
 
 const registeredMenuIDs: string[] = [];
+let shortcutCallback: ((ev: KeyboardEvent, options: any) => void) | null = null;
 const icon = () =>
   `chrome://${addon.data.config.addonRef}/content/icons/favicon@0.5x.png`;
 
@@ -111,13 +112,29 @@ export function unregisterMenus() {
 }
 
 /**
+ * Unregister the standalone-markdown keyboard shortcut (idempotent).
+ */
+export function unregisterShortcuts() {
+  if (shortcutCallback) {
+    ztoolkit.Keyboard.unregister(shortcutCallback);
+    shortcutCallback = null;
+  }
+}
+
+/**
  * Register keyboard shortcut for creating a standalone Markdown note.
- * Prefer calling after createZToolkit() so ztoolkit.Keyboard is the active instance.
+ * Idempotent: safe to call once per main window; re-registration first
+ * unregisters the previous callback (KeyboardManager is per-instance).
  */
 export function registerShortcuts() {
   const raw = getPref("shortcutNewStandaloneMd") || "accel,shift,M";
 
-  ztoolkit.Keyboard.register((ev, options) => {
+  if (shortcutCallback) {
+    ztoolkit.Keyboard.unregister(shortcutCallback);
+    shortcutCallback = null;
+  }
+
+  shortcutCallback = (ev, options) => {
     if (options.type !== "keyup" || !options.keyboard) return;
     if (!options.keyboard.equals(raw)) return;
 
@@ -134,7 +151,9 @@ export function registerShortcuts() {
 
     // Skip when a non-library tab might be editing
     void createMarkdownAttachment(null, { open: true });
-  });
+  };
+
+  ztoolkit.Keyboard.register(shortcutCallback);
 }
 
 function track(id: string | false) {

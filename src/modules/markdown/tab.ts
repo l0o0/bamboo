@@ -1,9 +1,6 @@
 import { createMarkdownEditor, MarkdownEditorHandle } from "./editor";
 import { mountPreviewHtml } from "./preview";
-import {
-  MARKDOWN_TAB_TYPE,
-  resolveMarkdownTabTitle,
-} from "./tabHooks";
+import { MARKDOWN_TAB_TYPE, resolveMarkdownTabTitle } from "./tabHooks";
 import { ensureDOMGlobals, getDOMDocument } from "../../utils/dom";
 
 const AUTOSAVE_MS = 800;
@@ -188,9 +185,7 @@ function isDarkTheme(win: Window): boolean {
   try {
     const root = win.document?.documentElement;
     const theme =
-      root?.getAttribute("data-theme") ||
-      root?.getAttribute("theme") ||
-      "";
+      root?.getAttribute("data-theme") || root?.getAttribute("theme") || "";
     if (/dark/i.test(theme)) return true;
     if (root?.classList?.contains("theme-dark")) return true;
   } catch {
@@ -362,7 +357,10 @@ function mountEditorUI(
               {
                 tag: "button",
                 namespace: "html",
-                classList: ["zotero-markdown-btn", "zotero-markdown-btn-primary"],
+                classList: [
+                  "zotero-markdown-btn",
+                  "zotero-markdown-btn-primary",
+                ],
                 properties: { type: "button", innerText: "Save" },
                 attributes: {
                   "data-action": "save",
@@ -445,12 +443,8 @@ function mountEditorUI(
   const previewEl = root.querySelector(
     ".zotero-markdown-preview-host",
   ) as HTMLElement;
-  const statusEl = root.querySelector(
-    ".zotero-markdown-status",
-  ) as HTMLElement;
-  const metaEl = root.querySelector(
-    ".zotero-markdown-meta",
-  ) as HTMLElement;
+  const statusEl = root.querySelector(".zotero-markdown-status") as HTMLElement;
+  const metaEl = root.querySelector(".zotero-markdown-meta") as HTMLElement;
   const btnEdit = root.querySelector(
     '[data-action="edit"]',
   ) as HTMLButtonElement;
@@ -497,10 +491,7 @@ function mountEditorUI(
   win.setTimeout(measure, 200);
 }
 
-function applyModeVisibility(
-  session: OpenSession,
-  mode: "edit" | "preview",
-) {
+function applyModeVisibility(session: OpenSession, mode: "edit" | "preview") {
   const root = session.rootEl;
   const editorHost = session.editorHost;
   const previewEl = session.previewEl;
@@ -522,8 +513,7 @@ function setMode(session: OpenSession, mode: "edit" | "preview") {
   session.mode = mode;
   const btnEdit = (session as any)._btnEdit as HTMLButtonElement | undefined;
   const btnPreview = (session as any)._btnPreview as
-    | HTMLButtonElement
-    | undefined;
+    HTMLButtonElement | undefined;
 
   applyModeVisibility(session, mode);
 
@@ -609,7 +599,11 @@ function setStatus(session: OpenSession, text: string) {
     session.statusEl.classList.add("is-error");
   } else if (t.includes("unsaved") || t.includes("saving")) {
     session.statusEl.classList.add("is-dirty");
-  } else if (t.includes("saved") || t.includes("ready") || t.includes("preview")) {
+  } else if (
+    t.includes("saved") ||
+    t.includes("ready") ||
+    t.includes("preview")
+  ) {
     session.statusEl.classList.add("is-saved");
   }
 }
@@ -637,10 +631,7 @@ function shortenPath(path: string, max: number): string {
   return "…" + path.slice(-(max - 1));
 }
 
-async function closeSession(
-  tabID: string,
-  opts: { flush?: boolean } = {},
-) {
+async function closeSession(tabID: string, opts: { flush?: boolean } = {}) {
   const session = sessions.get(tabID);
   if (!session) return;
 

@@ -43,8 +43,7 @@ export function createMarkdownEditor(
     options.win || parent.ownerDocument?.defaultView || undefined;
   ensureDOMGlobals(ownerWin || undefined);
 
-  const documentRef =
-    parent.ownerDocument || (globalThis as any).document;
+  const documentRef = parent.ownerDocument || (globalThis as any).document;
   if (!documentRef) {
     throw new Error("No document available for markdown editor");
   }

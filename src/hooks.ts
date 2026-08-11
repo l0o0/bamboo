@@ -7,10 +7,10 @@ import {
   registerShortcuts,
   unregisterFileOpenInterceptor,
   unregisterMenus,
+  unregisterShortcuts,
 } from "./modules/markdown";
 import { ensureDOMGlobals } from "./utils/dom";
 import { getString, initLocale } from "./utils/locale";
-import { createZToolkit } from "./utils/ztoolkit";
 
 async function onStartup() {
   await Promise.all([
@@ -34,17 +34,16 @@ async function onStartup() {
 }
 
 async function onMainWindowLoad(win: _ZoteroTypes.MainWindow): Promise<void> {
-  addon.data.ztoolkit = createZToolkit();
-
   // Plugin sandbox has no browser `document`; bridge from chrome window
-  // so CodeMirror / DOM libraries work (also via ztoolkit.getGlobal).
+  // so DOM libraries work (also via ztoolkit.getGlobal).
   ensureDOMGlobals(win);
 
   win.MozXULElement.insertFTLIfNeeded(
     `${addon.data.config.addonRef}-mainWindow.ftl`,
   );
 
-  // Keyboard shortcuts bind to the current ztoolkit instance
+  // Idempotent: KeyboardManager listens on all windows (via Services.wm),
+  // so shortcuts must be registered only once per ztoolkit instance.
   registerShortcuts();
 
   registerMarkdownTabHooks(win);
@@ -64,13 +63,19 @@ async function onMainWindowLoad(win: _ZoteroTypes.MainWindow): Promise<void> {
 }
 
 async function onMainWindowUnload(_win: Window): Promise<void> {
-  ztoolkit.unregisterAll();
+  // Do NOT call ztoolkit.unregisterAll() here: it is a global teardown that
+  // removes listeners from ALL windows (e.g. KeyboardManager removes every
+  // window's keydown listeners), breaking shortcuts in other windows.
+  // Per-window cleanup is handled by the toolkit's own Services.wm
+  // onCloseWindow callbacks (unInitKeyboardListener for the closing window).
+  void _win;
 }
 
 async function onShutdown(): Promise<void> {
   await flushAllSessions();
   unregisterFileOpenInterceptor();
   unregisterMenus();
+  unregisterShortcuts();
   ztoolkit.unregisterAll();
   addon.data.alive = false;
   // @ts-expect-error - Plugin instance is not typed

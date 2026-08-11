@@ -6,7 +6,12 @@ export {
   unregisterFileOpenInterceptor,
 } from "./open";
 export { openMarkdownTab, flushAllSessions } from "./tab";
-export { registerMenus, unregisterMenus, registerShortcuts } from "./menu";
+export {
+  registerMenus,
+  unregisterMenus,
+  registerShortcuts,
+  unregisterShortcuts,
+} from "./menu";
 export { injectMarkdownStyles } from "./styles";
 export { registerMarkdownTabHooks, MARKDOWN_TAB_TYPE } from "./tabHooks";
 export {

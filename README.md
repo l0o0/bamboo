@@ -18,12 +18,12 @@ Zotero is excellent for collecting and organizing research. In the AI era, **pla
 
 **Zotero Markdown** fills that gap:
 
-| | Better Notes | **Zotero Markdown** |
-|--|--|--|
-| Primary surface | Zotero Note (rich text) | Real **`.md` attachment files** |
-| File on disk | Optional sync/export | The file *is* the note |
-| Obsidian / AI | Bridge / export | Drop-in plain text |
-| Relationship | — | **Complementary** — we don’t touch Notes |
+|                 | Better Notes            | **Zotero Markdown**                      |
+| --------------- | ----------------------- | ---------------------------------------- |
+| Primary surface | Zotero Note (rich text) | Real **`.md` attachment files**          |
+| File on disk    | Optional sync/export    | The file _is_ the note                   |
+| Obsidian / AI   | Bridge / export         | Drop-in plain text                       |
+| Relationship    | —                       | **Complementary** — we don’t touch Notes |
 
 > Make Zotero great again for knowledge management — one native Markdown file at a time.
 
@@ -32,7 +32,7 @@ Zotero is excellent for collecting and organizing research. In the AI era, **pla
 ## Features (v0.1)
 
 - **Open** `.md` / `.markdown` attachments in a main-window **tab** (not the system app)
-- **Edit** with [CodeMirror 6](https://codemirror.net/) (syntax highlight, line wrap, undo, search)
+- **Edit** in a fast built-in editor — line numbers, Tab indentation, word/char counts, and toolbar shortcuts for common Markdown syntax (bold, italic, headings, links)
 - **Preview** rendered Markdown (toggle Edit / Preview)
 - **Autosave** (debounced) + **Ctrl/Cmd+S**
 - **New Markdown…** from the item context menu (stored attachment by default)
@@ -128,13 +128,13 @@ China mainland users: project `.npmrc` already uses [npmmirror](https://npmmirro
 
 ### Scripts
 
-| Command | Description |
-|---------|-------------|
-| `pnpm start` | Dev server + hot reload |
-| `pnpm run build` | Production build + typecheck |
-| `pnpm test` | Plugin tests |
-| `pnpm run lint:check` | Prettier + ESLint |
-| `pnpm run lint:fix` | Auto-fix lint |
+| Command               | Description                  |
+| --------------------- | ---------------------------- |
+| `pnpm start`          | Dev server + hot reload      |
+| `pnpm run build`      | Production build + typecheck |
+| `pnpm test`           | Plugin tests                 |
+| `pnpm run lint:check` | Prettier + ESLint            |
+| `pnpm run lint:fix`   | Auto-fix lint                |
 
 ### Layout
 
@@ -146,7 +146,7 @@ src/
     create.ts              # new stored .md
     open.ts                # FileHandlers interceptor
     tab.ts                 # tab UI, autosave
-    editor.ts              # CodeMirror 6
+    editor.ts              # built-in editor (line numbers, shortcuts, stats)
     preview.ts             # markdown-it render
     menu.ts                # context menus
     styles.ts              # injected CSS
@@ -176,8 +176,9 @@ See [`.env.example`](./.env.example). Typical keys:
 **Does this replace Better Notes?**  
 No. Better Notes improves Zotero Notes. This plugin only handles **real Markdown files** as attachments. Install both if you want.
 
-**Where are files stored?**  
-- *New Markdown…* creates a **stored** attachment under Zotero’s storage.  
+**Where are files stored?**
+
+- _New Markdown…_ creates a **stored** attachment under Zotero’s storage.
 - You can also attach **linked** files pointing at an Obsidian vault or any folder.
 
 **Will Zotero sync my `.md` files?**  
@@ -197,7 +198,7 @@ Issues and PRs welcome. For larger features, open an issue first so we can align
 ## Acknowledgments
 
 - Built on [zotero-plugin-template](https://github.com/windingwind/zotero-plugin-template)
-- [CodeMirror](https://codemirror.net/), [markdown-it](https://github.com/markdown-it/markdown-it)
+- [markdown-it](https://github.com/markdown-it/markdown-it)
 - Inspired by the knowledge workflows of Obsidian and the Zotero community
 
 ---
