@@ -247,6 +247,7 @@ Garden 使用 XUL `iframe` + `type="content"`。
 | 2026-08-11 | 方案定稿；开始 P0/P1：双入口 + iframe 桥 + CM6 |
 | 2026-08-11 | **已落地 P0–P2 骨架**：`editor-protocol`、父侧 `editor.ts` 桥、iframe `bootstrap.ts`+主题、`addon/content/editor/index.html`、双 esbuild 入口、styles/tabHooks；`pnpm build` 通过（editor.js ≈ 541KB minify） |
 | 2026-08-11 | **主题热切换**：监听 `prefers-color-scheme` change + `documentElement` MutationObserver；已打开 tab 同步 shell（`theme-dark`/`theme-light`）与 iframe `setTheme` |
+| 2026-08-11 | **下一阶段**：行级 Live Preview（Obsidian 式）设计已确认 → `docs/superpowers/specs/2026-08-11-live-preview-design.md` |
 
 ### 当前文件映射
 
