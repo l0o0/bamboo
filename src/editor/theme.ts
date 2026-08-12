@@ -12,38 +12,32 @@ const FONT_PROSE =
   'system-ui, -apple-system, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif';
 
 const livePreviewStyles = {
-  ".zmd-lp-hidden": {
-    opacity: "0",
-    fontSize: "0.01px",
-    letterSpacing: "-1em",
-    display: "inline-block",
-    overflow: "hidden",
-    width: "0",
-    maxWidth: "0",
-    verticalAlign: "baseline",
-  },
   // Visible MD markers on the active (source) line — muted, keep line metrics
   ".zmd-lp-syntax": {
     opacity: "0.45",
     fontWeight: "400",
   },
+  // IMPORTANT: no margin on .cm-line — vertical margins break CM posAtCoords
+  // (clicks land on the next/previous line). Use padding only.
   ".cm-line.zmd-lp-h1": {
     fontSize: "1.75em",
     fontWeight: "700",
     lineHeight: "1.3",
-    marginTop: "0.4em",
-    marginBottom: "0.25em",
+    paddingTop: "0.35em",
+    paddingBottom: "0.15em",
   },
   ".cm-line.zmd-lp-h2": {
     fontSize: "1.4em",
     fontWeight: "650",
     lineHeight: "1.35",
-    marginTop: "0.35em",
+    paddingTop: "0.3em",
+    paddingBottom: "0.1em",
   },
   ".cm-line.zmd-lp-h3": {
     fontSize: "1.2em",
     fontWeight: "600",
     lineHeight: "1.4",
+    paddingTop: "0.2em",
   },
   ".cm-line.zmd-lp-h4, .cm-line.zmd-lp-h5, .cm-line.zmd-lp-h6": {
     fontSize: "1.05em",

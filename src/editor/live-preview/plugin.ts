@@ -35,12 +35,25 @@ function asDocLines(state: EditorState): DocLines {
 }
 
 /**
+ * Hide a source range from the view (inactive live lines).
+ * Use Decoration.replace (not CSS width:0) so CodeMirror's posAtCoords
+ * maps clicks to the correct document offset / line.
+ */
+function hideRange(from: number, to: number) {
+  return Decoration.replace({}).range(from, to);
+}
+
+/** Muted visible syntax on the active (editing) line. */
+function syntaxRange(from: number, to: number) {
+  return Decoration.mark({ class: "zmd-lp-syntax" }).range(from, to);
+}
+
+/**
  * Build live-preview decorations.
  *
- * - Inactive lines: hide MD markers, keep rendered styles (Obsidian-like).
- * - Active (cursor/selection) lines: show source markers, but **keep** the same
- *   structural/inline styles so focusing a heading does not snap to plain text.
- * - Frontmatter: no live styling (always plain source).
+ * - Inactive lines: replace-hide MD markers (not CSS collapse — keeps click mapping accurate).
+ * - Active lines: show markers with muted style, keep structural/inline styles.
+ * - Frontmatter: no live styling.
  */
 function buildDecorations(
   state: EditorState,
@@ -62,25 +75,15 @@ function buildDecorations(
     const text = line.text;
     const base = line.from;
     const isActive = active.has(n);
-    // Hide markers only when the line is not being edited
     const hideMarks = !isActive;
 
     const heading = parseAtxHeading(text);
     if (heading) {
-      if (hideMarks && heading.markEnd > 0) {
+      if (heading.markEnd > 0) {
         ranges.push(
-          Decoration.mark({ class: "zmd-lp-hidden" }).range(
-            base,
-            base + heading.markEnd,
-          ),
-        );
-      } else if (!hideMarks && heading.markEnd > 0) {
-        // Visible `#` / `##` … still inherit heading metrics; mute slightly
-        ranges.push(
-          Decoration.mark({ class: "zmd-lp-syntax" }).range(
-            base,
-            base + heading.markEnd,
-          ),
+          hideMarks
+            ? hideRange(base, base + heading.markEnd)
+            : syntaxRange(base, base + heading.markEnd),
         );
       }
       ranges.push(
@@ -89,40 +92,20 @@ function buildDecorations(
     } else {
       const list = parseListPrefix(text);
       if (list) {
-        if (hideMarks) {
-          ranges.push(
-            Decoration.mark({ class: "zmd-lp-hidden" }).range(
-              base,
-              base + list.markEnd,
-            ),
-          );
-        } else {
-          ranges.push(
-            Decoration.mark({ class: "zmd-lp-syntax" }).range(
-              base,
-              base + list.markEnd,
-            ),
-          );
-        }
+        ranges.push(
+          hideMarks
+            ? hideRange(base, base + list.markEnd)
+            : syntaxRange(base, base + list.markEnd),
+        );
         ranges.push(Decoration.line({ class: "zmd-lp-list" }).range(base));
       } else {
         const quote = parseBlockQuotePrefix(text);
         if (quote) {
-          if (hideMarks) {
-            ranges.push(
-              Decoration.mark({ class: "zmd-lp-hidden" }).range(
-                base,
-                base + quote.markEnd,
-              ),
-            );
-          } else {
-            ranges.push(
-              Decoration.mark({ class: "zmd-lp-syntax" }).range(
-                base,
-                base + quote.markEnd,
-              ),
-            );
-          }
+          ranges.push(
+            hideMarks
+              ? hideRange(base, base + quote.markEnd)
+              : syntaxRange(base, base + quote.markEnd),
+          );
           ranges.push(Decoration.line({ class: "zmd-lp-quote" }).range(base));
         }
       }
@@ -134,17 +117,8 @@ function buildDecorations(
       const from = base + r.from;
       const to = base + r.to;
       if (r.kind === "mark") {
-        if (hideMarks) {
-          ranges.push(
-            Decoration.mark({ class: "zmd-lp-hidden" }).range(from, to),
-          );
-        } else {
-          ranges.push(
-            Decoration.mark({ class: "zmd-lp-syntax" }).range(from, to),
-          );
-        }
+        ranges.push(hideMarks ? hideRange(from, to) : syntaxRange(from, to));
       } else if (r.kind === "strong") {
-        // Content styles always applied (active + inactive)
         ranges.push(
           Decoration.mark({ class: "zmd-lp-strong" }).range(from, to),
         );
