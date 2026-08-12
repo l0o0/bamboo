@@ -3,6 +3,19 @@ import {
   MarkdownEditorHandle,
   resolveEditorTheme,
 } from "./editor";
+import {
+  iconBold,
+  iconH1,
+  iconH2,
+  iconItalic,
+  iconLink,
+  iconLive,
+  iconOnlyButtonHtml,
+  iconPreview,
+  iconSave,
+  iconSource,
+  modeButtonHtml,
+} from "./icons";
 import { mountPreviewHtml } from "./preview";
 import { MARKDOWN_TAB_TYPE, resolveMarkdownTabTitle } from "./tabHooks";
 import { ensureDOMGlobals, getDOMDocument } from "../../utils/dom";
@@ -314,7 +327,10 @@ function mountEditorUI(
                     tag: "button",
                     namespace: "html",
                     classList: ["zotero-markdown-btn", "active"],
-                    properties: { type: "button", innerText: "Live" },
+                    properties: {
+                      type: "button",
+                      innerHTML: modeButtonHtml(iconLive(), "Live"),
+                    },
                     attributes: {
                       "data-action": "live",
                       title: "Live preview (document view)",
@@ -324,7 +340,10 @@ function mountEditorUI(
                     tag: "button",
                     namespace: "html",
                     classList: ["zotero-markdown-btn"],
-                    properties: { type: "button", innerText: "Source" },
+                    properties: {
+                      type: "button",
+                      innerHTML: modeButtonHtml(iconSource(), "Source"),
+                    },
                     attributes: {
                       "data-action": "source",
                       title: "Full Markdown source",
@@ -334,7 +353,10 @@ function mountEditorUI(
                     tag: "button",
                     namespace: "html",
                     classList: ["zotero-markdown-btn"],
-                    properties: { type: "button", innerText: "Preview" },
+                    properties: {
+                      type: "button",
+                      innerHTML: modeButtonHtml(iconPreview(), "Preview"),
+                    },
                     attributes: {
                       "data-action": "preview",
                       title: "Read-only rendered preview",
@@ -356,51 +378,70 @@ function mountEditorUI(
                     tag: "button",
                     namespace: "html",
                     classList: ["zotero-markdown-btn"],
-                    properties: { type: "button", innerText: "B" },
+                    properties: {
+                      type: "button",
+                      innerHTML: iconOnlyButtonHtml(iconBold()),
+                    },
                     attributes: {
                       "data-action": "bold",
                       title: "Bold (Ctrl/Cmd+B)",
-                      style: "font-weight:700",
+                      "aria-label": "Bold",
                     },
                   },
                   {
                     tag: "button",
                     namespace: "html",
                     classList: ["zotero-markdown-btn"],
-                    properties: { type: "button", innerHTML: "<i>I</i>" },
+                    properties: {
+                      type: "button",
+                      innerHTML: iconOnlyButtonHtml(iconItalic()),
+                    },
                     attributes: {
                       "data-action": "italic",
                       title: "Italic (Ctrl/Cmd+I)",
+                      "aria-label": "Italic",
                     },
                   },
                   {
                     tag: "button",
                     namespace: "html",
                     classList: ["zotero-markdown-btn"],
-                    properties: { type: "button", innerText: "H1" },
+                    properties: {
+                      type: "button",
+                      innerHTML: iconOnlyButtonHtml(iconH1()),
+                    },
                     attributes: {
                       "data-action": "h1",
                       title: "Heading 1 (Ctrl/Cmd+1)",
+                      "aria-label": "Heading 1",
                     },
                   },
                   {
                     tag: "button",
                     namespace: "html",
                     classList: ["zotero-markdown-btn"],
-                    properties: { type: "button", innerText: "H2" },
+                    properties: {
+                      type: "button",
+                      innerHTML: iconOnlyButtonHtml(iconH2()),
+                    },
                     attributes: {
                       "data-action": "h2",
                       title: "Heading 2 (Ctrl/Cmd+2)",
+                      "aria-label": "Heading 2",
                     },
                   },
                   {
                     tag: "button",
                     namespace: "html",
                     classList: ["zotero-markdown-btn"],
-                    properties: { type: "button", innerText: "🔗" },
+                    properties: {
+                      type: "button",
+                      innerHTML: iconOnlyButtonHtml(iconLink()),
+                    },
                     attributes: {
                       "data-action": "link",
                       title: "Link (Ctrl/Cmd+K)",
+                      "aria-label": "Link",
                     },
                   },
                 ],
@@ -424,8 +465,12 @@ function mountEditorUI(
                 classList: [
                   "zotero-markdown-btn",
                   "zotero-markdown-btn-primary",
+                  "zotero-markdown-btn-save",
                 ],
-                properties: { type: "button", innerText: "Save" },
+                properties: {
+                  type: "button",
+                  innerHTML: modeButtonHtml(iconSave(), "Save"),
+                },
                 attributes: {
                   "data-action": "save",
                   title: "Save (Ctrl/Cmd+S)",

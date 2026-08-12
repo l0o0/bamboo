@@ -129,82 +129,111 @@ tab-content.zotero-markdown-tab-content {
   box-shadow: 0 1px 2px rgba(37, 99, 235, 0.35);
 }
 
-/* Segmented Edit / Preview */
-.zotero-markdown-seg {
+/* Shared chrome for mode segment + format group (aligned height/border) */
+.zotero-markdown-seg,
+.zotero-markdown-fmt {
   display: inline-flex;
-  padding: 3px;
-  border-radius: 10px;
-  background: var(--zmd-surface-2);
-  border: 1px solid var(--zmd-border);
+  align-items: center;
+  box-sizing: border-box;
+  height: 32px;
+  padding: 2px;
   gap: 2px;
+  border-radius: 8px;
+  border: 1px solid var(--zmd-border);
+  background: var(--zmd-surface);
+  vertical-align: middle;
 }
 
-.zotero-markdown-seg .zotero-markdown-btn {
+/* Mode segment sits on slightly softer track */
+.zotero-markdown-seg {
+  background: var(--zmd-surface-2);
+}
+
+.zotero-markdown-seg .zotero-markdown-btn,
+.zotero-markdown-fmt .zotero-markdown-btn {
+  box-sizing: border-box;
+  height: 26px;
+  min-height: 26px;
   border: none;
   background: transparent;
-  border-radius: 7px;
-  padding: 5px 12px;
-  min-width: 64px;
-  font-weight: 500;
-  color: var(--zmd-text-muted);
+  border-radius: 6px;
   box-shadow: none;
+  color: var(--zmd-text-muted);
+  font-weight: 500;
+  font-size: 12px;
+  line-height: 1;
+  padding: 0 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
-.zotero-markdown-seg .zotero-markdown-btn:hover {
-  background: rgba(0, 0, 0, 0.04);
-  color: var(--zmd-text);
+.zotero-markdown-fmt .zotero-markdown-btn {
+  min-width: 28px;
+  width: 28px;
+  padding: 0;
 }
 
-.zotero-markdown-root.theme-dark .zotero-markdown-seg .zotero-markdown-btn:hover {
-  background: rgba(255, 255, 255, 0.06);
+.zotero-markdown-seg .zotero-markdown-btn:hover,
+.zotero-markdown-fmt .zotero-markdown-btn:hover {
+  background: var(--zmd-accent-soft);
+  color: var(--zmd-accent);
+  border-color: transparent;
+}
+
+.zotero-markdown-root.theme-dark .zotero-markdown-seg .zotero-markdown-btn:hover,
+.zotero-markdown-root.theme-dark .zotero-markdown-fmt .zotero-markdown-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
 }
 
 .zotero-markdown-seg .zotero-markdown-btn.active {
   background: var(--zmd-surface);
   color: var(--zmd-accent);
-  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.08), 0 0 0 1px var(--zmd-border);
   font-weight: 600;
+  /* Inset highlight only — no extra outer ring (keeps outer border aligned) */
+  box-shadow: inset 0 0 0 1px var(--zmd-border);
 }
 
 .zotero-markdown-root.theme-dark .zotero-markdown-seg .zotero-markdown-btn.active {
-  background: var(--zmd-surface-2);
-  box-shadow: 0 0 0 1px var(--zmd-border-strong);
+  background: var(--zmd-bg);
+  box-shadow: inset 0 0 0 1px var(--zmd-border-strong);
 }
 
-/* Format group */
-.zotero-markdown-fmt {
+/* Icon + label layout */
+.zmd-btn-inner {
   display: inline-flex;
   align-items: center;
-  gap: 2px;
-  padding: 2px;
-  border-radius: 8px;
-  border: 1px solid var(--zmd-border);
-  background: var(--zmd-surface);
+  justify-content: center;
+  gap: 5px;
+  line-height: 1;
+  pointer-events: none; /* clicks hit the button, not SVG children */
 }
 
-.zotero-markdown-fmt .zotero-markdown-btn {
-  min-width: 30px;
-  padding: 4px 8px;
-  border: none;
-  background: transparent;
-  border-radius: 6px;
-  font-weight: 600;
+.zmd-btn-inner-icon {
+  gap: 0;
+}
+
+.zmd-btn-label {
   font-size: 12px;
-  color: var(--zmd-text-muted);
-  box-shadow: none;
+  font-weight: inherit;
+  letter-spacing: 0.01em;
 }
 
-.zotero-markdown-fmt .zotero-markdown-btn:hover {
-  background: var(--zmd-accent-soft);
-  color: var(--zmd-accent);
+.zmd-icon {
+  display: block;
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+  stroke: currentColor;
 }
 
 .zotero-markdown-sep {
   width: 1px;
-  height: 18px;
+  height: 20px;
   background: var(--zmd-border);
-  margin: 0 4px;
+  margin: 0 6px;
   flex: 0 0 auto;
+  align-self: center;
 }
 
 /* Generic buttons */
@@ -221,6 +250,15 @@ tab-content.zotero-markdown-tab-content {
   cursor: pointer;
   transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease,
     box-shadow 0.12s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.zotero-markdown-btn-save {
+  height: 32px;
+  padding: 0 12px;
+  box-sizing: border-box;
 }
 
 .zotero-markdown-btn:hover {
