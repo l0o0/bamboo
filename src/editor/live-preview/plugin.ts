@@ -11,7 +11,6 @@ import {
 import {
   activeLinesFromSelection,
   frontmatterLineNumbers,
-  shouldSkipLiveLine,
 } from "./active-lines";
 import { parseInlineL2 } from "./inline";
 import {
@@ -35,6 +34,14 @@ function asDocLines(state: EditorState): DocLines {
   };
 }
 
+/**
+ * Build live-preview decorations.
+ *
+ * - Inactive lines: hide MD markers, keep rendered styles (Obsidian-like).
+ * - Active (cursor/selection) lines: show source markers, but **keep** the same
+ *   structural/inline styles so focusing a heading does not snap to plain text.
+ * - Frontmatter: no live styling (always plain source).
+ */
 function buildDecorations(
   state: EditorState,
   composing: boolean,
@@ -49,16 +56,28 @@ function buildDecorations(
   const fm = frontmatterLineNumbers(state.doc.toString());
 
   for (let n = 1; n <= state.doc.lines; n++) {
-    if (shouldSkipLiveLine(n, active, fm)) continue;
+    if (fm.has(n)) continue;
+
     const line = state.doc.line(n);
     const text = line.text;
     const base = line.from;
+    const isActive = active.has(n);
+    // Hide markers only when the line is not being edited
+    const hideMarks = !isActive;
 
     const heading = parseAtxHeading(text);
     if (heading) {
-      if (heading.markEnd > 0) {
+      if (hideMarks && heading.markEnd > 0) {
         ranges.push(
           Decoration.mark({ class: "zmd-lp-hidden" }).range(
+            base,
+            base + heading.markEnd,
+          ),
+        );
+      } else if (!hideMarks && heading.markEnd > 0) {
+        // Visible `#` / `##` … still inherit heading metrics; mute slightly
+        ranges.push(
+          Decoration.mark({ class: "zmd-lp-syntax" }).range(
             base,
             base + heading.markEnd,
           ),
@@ -70,22 +89,40 @@ function buildDecorations(
     } else {
       const list = parseListPrefix(text);
       if (list) {
-        ranges.push(
-          Decoration.mark({ class: "zmd-lp-hidden" }).range(
-            base,
-            base + list.markEnd,
-          ),
-        );
+        if (hideMarks) {
+          ranges.push(
+            Decoration.mark({ class: "zmd-lp-hidden" }).range(
+              base,
+              base + list.markEnd,
+            ),
+          );
+        } else {
+          ranges.push(
+            Decoration.mark({ class: "zmd-lp-syntax" }).range(
+              base,
+              base + list.markEnd,
+            ),
+          );
+        }
         ranges.push(Decoration.line({ class: "zmd-lp-list" }).range(base));
       } else {
         const quote = parseBlockQuotePrefix(text);
         if (quote) {
-          ranges.push(
-            Decoration.mark({ class: "zmd-lp-hidden" }).range(
-              base,
-              base + quote.markEnd,
-            ),
-          );
+          if (hideMarks) {
+            ranges.push(
+              Decoration.mark({ class: "zmd-lp-hidden" }).range(
+                base,
+                base + quote.markEnd,
+              ),
+            );
+          } else {
+            ranges.push(
+              Decoration.mark({ class: "zmd-lp-syntax" }).range(
+                base,
+                base + quote.markEnd,
+              ),
+            );
+          }
           ranges.push(Decoration.line({ class: "zmd-lp-quote" }).range(base));
         }
       }
@@ -97,10 +134,17 @@ function buildDecorations(
       const from = base + r.from;
       const to = base + r.to;
       if (r.kind === "mark") {
-        ranges.push(
-          Decoration.mark({ class: "zmd-lp-hidden" }).range(from, to),
-        );
+        if (hideMarks) {
+          ranges.push(
+            Decoration.mark({ class: "zmd-lp-hidden" }).range(from, to),
+          );
+        } else {
+          ranges.push(
+            Decoration.mark({ class: "zmd-lp-syntax" }).range(from, to),
+          );
+        }
       } else if (r.kind === "strong") {
+        // Content styles always applied (active + inactive)
         ranges.push(
           Decoration.mark({ class: "zmd-lp-strong" }).range(from, to),
         );

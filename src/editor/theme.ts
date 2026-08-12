@@ -22,6 +22,11 @@ const livePreviewStyles = {
     maxWidth: "0",
     verticalAlign: "baseline",
   },
+  // Visible MD markers on the active (source) line — muted, keep line metrics
+  ".zmd-lp-syntax": {
+    opacity: "0.45",
+    fontWeight: "400",
+  },
   ".cm-line.zmd-lp-h1": {
     fontSize: "1.75em",
     fontWeight: "700",
