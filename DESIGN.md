@@ -110,14 +110,14 @@ Depth is primarily structural: separated surfaces use a one-pixel border and ton
 
 ### Toolbar
 
-The toolbar is a single, centered icon toolbelt. Its inner track is `max-width: 48rem`, matching the Live Preview text column. Use 28px inline and 4px block padding on the outer toolbar; keep functional groups separated by a 1px, 20px-high divider.
+The toolbar is a single, centered icon toolbelt. Its inner track may expand to `64rem` so controls remain legible while the Live Preview text column stays at `48rem`. Use 28px inline and 4px block padding on the outer toolbar; keep functional groups separated by a one-pixel divider.
 
 ### Toolbar Buttons
 
-- **Shape:** 36px square hit target, 7px radius, no resting border.
+- **Shape:** Responsive 36/40/44px square hit target, 7px radius, no resting border. Default to 40px.
 - **Default:** transparent background with muted text color.
 - **Hover:** `surface-muted` background with primary text color.
-- **Icons:** Lucide-style 16px stroke icons. Use a tooltip and an accessible label for every icon-only control.
+- **Icons:** Lucide-style 16/18/20px stroke icons that follow toolbar container width. Default to 18px; never scale directly from `devicePixelRatio`.
 - **Ordering:** save, history, text structure, list/task controls, inline/content insertion, then a right-aligned horizontal more menu.
 
 ### More Menu
@@ -156,3 +156,23 @@ The toolbar is a single, centered icon toolbelt. Its inner track is `max-width: 
 - **Don't** put controls in rounded group containers or use decorative glass effects.
 - **Don't** add floating cards, oversized shadows, gradients, or marketing-style composition to the editor shell.
 - **Don't** let status-bar content sit closer to the window edge than the toolbar or Live Preview content.
+
+## Table Editing
+
+The toolbar table control opens an anchored `8 x 8` grid. Hovering previews a contiguous rectangle and reports `columns x rows`; clicking inserts a valid GFM table with the first header cell selected. Row count describes visible table rows and excludes the Markdown delimiter line.
+
+In Live mode, inactive GFM table rows use a restrained grid with shared column widths, a tinted header, one-pixel borders, and Markdown alignment markers respected. The active row remains editable Markdown so CodeMirror stays the only document authority. The delimiter line is visually collapsed only while inactive.
+
+- `Tab` moves to the next logical cell.
+- `Shift+Tab` moves to the previous logical cell.
+- `Tab` in the final cell appends a new empty row and moves into its first cell.
+- Light and dark themes use the same geometry and differ only in semantic surface and border tokens.
+
+The table context menu is shared by Live and Source modes. It appears only when the pointer resolves to a logical GFM table cell; otherwise the native Zotero context menu remains available. Keep row, column, and alignment commands in stable groups separated by one-pixel dividers, without visible group headings.
+
+- The header is fixed and cannot be deleted or moved.
+- A table retains at least one column and its header/delimiter structure.
+- Boundary moves and deletion of the final column remain visible but disabled.
+- The current column alignment is marked with a restrained accent check.
+- Every successful structural command replaces the table in one CodeMirror transaction so one undo restores the previous table.
+- Context menus use compact 32px rows, an 8px radius, theme-aware surfaces, and viewport-clamped fixed positioning.

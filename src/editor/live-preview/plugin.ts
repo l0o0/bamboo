@@ -28,6 +28,7 @@ import {
 import type { ImageAssetMap } from "../../modules/markdown/editor-protocol";
 import { planLiveImageDecorations } from "./images";
 import { imageDebug } from "../image-debug";
+import { liveTableRows, type TableAlignment } from "../table";
 
 export const setLiveImageAssets = StateEffect.define<ImageAssetMap>();
 
@@ -166,6 +167,42 @@ class ImageWidget extends WidgetType {
   }
 }
 
+class TableCellWidget extends WidgetType {
+  constructor(
+    readonly value: string,
+    readonly alignment: TableAlignment,
+    readonly header: boolean,
+    readonly from: number,
+    readonly to: number,
+  ) {
+    super();
+  }
+
+  eq(other: TableCellWidget) {
+    return (
+      this.value === other.value &&
+      this.alignment === other.alignment &&
+      this.header === other.header &&
+      this.from === other.from &&
+      this.to === other.to
+    );
+  }
+
+  toDOM() {
+    const cell = document.createElement("span");
+    cell.className = `zmd-lp-table-cell zmd-lp-table-align-${this.alignment || "default"}`;
+    if (this.header) cell.classList.add("zmd-lp-table-header-cell");
+    cell.dataset.zmdTableCellFrom = String(this.from);
+    cell.dataset.zmdTableCellTo = String(this.to);
+    cell.textContent = this.value || " ";
+    return cell;
+  }
+
+  ignoreEvent(event: Event) {
+    return event.type !== "click" && event.type !== "contextmenu";
+  }
+}
+
 function intersects(
   from: number,
   to: number,
@@ -195,6 +232,14 @@ function buildDecorations(
   }
   const fm = frontmatterLineNumbers(state.doc.toString());
   const fencedCode = fencedCodeLineKinds(state.doc.toString());
+  const tableRows = new Map(
+    liveTableRows(state).map((row) => [row.line, row] as const),
+  );
+  const tableDelimiterLines = new Set(
+    [...tableRows.values()]
+      .filter((row) => row.kind === "header")
+      .map((row) => row.line + 1),
+  );
 
   for (let n = 1; n <= state.doc.lines; n++) {
     if (fm.has(n)) continue;
@@ -207,6 +252,64 @@ function buildDecorations(
     const images = parseMarkdownImages(text);
     const imagePlans = planLiveImageDecorations(text, isActive);
     const codeLineKind = fencedCode[n - 1];
+
+    const tableRow = tableRows.get(n);
+    if (tableRow) {
+      if (isActive) {
+        ranges.push(
+          Decoration.line({ class: "zmd-lp-table-source" }).range(base),
+        );
+      } else {
+        const rowClasses = [
+          "zmd-lp-table-row",
+          `zmd-lp-table-${tableRow.kind}`,
+        ];
+        if (tableRow.isLast) rowClasses.push("zmd-lp-table-last-row");
+        ranges.push(
+          Decoration.line({
+            attributes: {
+              class: rowClasses.join(" "),
+              style: `--zmd-table-columns: ${tableRow.columnCount}`,
+            },
+          }).range(base),
+        );
+        let cursor = line.from;
+        tableRow.cells.forEach((cell, index) => {
+          if (cursor < cell.from) ranges.push(hideRange(cursor, cell.from));
+          const widget = new TableCellWidget(
+            state.doc.sliceString(cell.from, cell.to),
+            tableRow.alignments[index] || null,
+            tableRow.kind === "header",
+            cell.from,
+            cell.to,
+          );
+          if (cell.from === cell.to) {
+            ranges.push(
+              Decoration.widget({ widget, side: index }).range(cell.from),
+            );
+          } else {
+            ranges.push(
+              Decoration.replace({ widget }).range(cell.from, cell.to),
+            );
+          }
+          cursor = cell.to;
+        });
+        if (cursor < line.to) ranges.push(hideRange(cursor, line.to));
+      }
+      continue;
+    }
+
+    if (tableDelimiterLines.has(n)) {
+      ranges.push(
+        Decoration.line({
+          class: isActive
+            ? "zmd-lp-table-delimiter-source"
+            : "zmd-lp-table-delimiter",
+        }).range(base),
+      );
+      if (!isActive && text.length) ranges.push(hideRange(base, line.to));
+      continue;
+    }
 
     if (codeLineKind) {
       if (codeLineKind === "content") {

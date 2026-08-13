@@ -95,6 +95,7 @@ The model preserves the raw Markdown content inside each logical cell. Structura
 
 Canonical serialization uses:
 
+<!-- prettier-ignore -->
 ```md
 | Header | Header |
 | --- | :---: |
@@ -162,4 +163,3 @@ Integration-level tests cover:
 - One CodeMirror transaction per successful operation.
 
 Manual Zotero verification covers menu placement, light/dark contrast, outside-click and Escape dismissal, native-menu fallback outside tables, undo behavior, and Live re-rendering after each operation.
-

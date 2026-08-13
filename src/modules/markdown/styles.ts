@@ -1,6 +1,29 @@
 /**
  * Inject polished editor styles into a Zotero main window.
  */
+export function responsiveToolbarSizingCSS(): string {
+  return `
+.zotero-markdown-toolbar {
+  container: zmd-toolbar / inline-size;
+  --zmd-toolbar-icon-size: 18px;
+  --zmd-toolbar-control-size: 40px;
+}
+
+@container zmd-toolbar (min-width: 1050px) {
+  .zotero-markdown-toolbar-inner {
+    --zmd-toolbar-icon-size: 20px;
+    --zmd-toolbar-control-size: 44px;
+  }
+}
+
+@container zmd-toolbar (max-width: 760px) {
+  .zotero-markdown-toolbar-inner {
+    --zmd-toolbar-icon-size: 16px;
+    --zmd-toolbar-control-size: 36px;
+  }
+}`;
+}
+
 export function injectMarkdownStyles(win: Window) {
   const doc = win.document;
   const id = `${addon.data.config.addonRef}-markdown-styles`;
@@ -79,6 +102,8 @@ tab-content.zotero-markdown-tab-content {
 }
 
 /* ========== toolbar ========== */
+${responsiveToolbarSizingCSS()}
+
 .zotero-markdown-toolbar {
   display: flex;
   align-items: center;
@@ -98,7 +123,7 @@ tab-content.zotero-markdown-tab-content {
   gap: 2px;
   min-width: 0;
   width: 100%;
-  max-width: 48rem;
+  max-width: 64rem;
 }
 
 .zotero-markdown-fmt {
@@ -108,7 +133,60 @@ tab-content.zotero-markdown-tab-content {
 }
 
 .zotero-markdown-fmt .zotero-markdown-btn {
-  width: 36px;
+  width: var(--zmd-toolbar-control-size);
+}
+
+.zotero-markdown-table-control {
+  position: relative;
+  display: inline-flex;
+}
+
+.zotero-markdown-table-picker {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  z-index: 12;
+  width: 190px;
+  padding: 10px;
+  border: 1px solid var(--zmd-border);
+  border-radius: 8px;
+  background: var(--zmd-surface);
+  box-shadow: 0 8px 24px rgba(16, 24, 40, 0.14);
+}
+
+.zotero-markdown-table-picker[hidden] {
+  display: none;
+}
+
+.zotero-markdown-table-grid {
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  gap: 4px;
+}
+
+.zotero-markdown-table-cell {
+  appearance: none;
+  aspect-ratio: 1;
+  min-width: 0;
+  padding: 0;
+  border: 1px solid var(--zmd-border-strong);
+  border-radius: 2px;
+  background: var(--zmd-surface-2);
+  cursor: pointer;
+}
+
+.zotero-markdown-table-cell.is-selected {
+  border-color: var(--zmd-accent);
+  background: var(--zmd-accent-soft);
+}
+
+.zotero-markdown-table-size {
+  min-height: 18px;
+  margin-top: 8px;
+  color: var(--zmd-text-muted);
+  font-size: 12px;
+  line-height: 18px;
+  text-align: center;
 }
 
 .zotero-markdown-toolbar-spacer {
@@ -118,7 +196,7 @@ tab-content.zotero-markdown-tab-content {
 .zotero-markdown-more-menu {
   position: absolute;
   top: calc(100% + 8px);
-  left: calc(100% - 36px);
+  left: calc(100% - var(--zmd-toolbar-control-size));
   z-index: 10;
   width: 220px;
   padding: 6px;
@@ -201,15 +279,15 @@ tab-content.zotero-markdown-tab-content {
 
 .zmd-icon {
   display: block;
-  width: 14px;
-  height: 14px;
+  width: var(--zmd-toolbar-icon-size);
+  height: var(--zmd-toolbar-icon-size);
   flex: 0 0 auto;
   stroke: currentColor;
 }
 
 .zotero-markdown-sep {
   width: 1px;
-  height: 20px;
+  height: calc(var(--zmd-toolbar-control-size) * 0.55);
   background: var(--zmd-border);
   margin: 0 10px;
   flex: 0 0 auto;
@@ -219,8 +297,8 @@ tab-content.zotero-markdown-tab-content {
 /* Generic buttons */
 .zotero-markdown-btn {
   appearance: none;
-  width: 36px;
-  height: 36px;
+  width: var(--zmd-toolbar-control-size);
+  height: var(--zmd-toolbar-control-size);
   border: none;
   background: transparent;
   color: var(--zmd-text-muted);
@@ -238,8 +316,8 @@ tab-content.zotero-markdown-tab-content {
 
 .zotero-markdown-btn-save,
 .zotero-markdown-more {
-  width: 36px;
-  height: 36px;
+  width: var(--zmd-toolbar-control-size);
+  height: var(--zmd-toolbar-control-size);
 }
 
 .zotero-markdown-btn:hover {

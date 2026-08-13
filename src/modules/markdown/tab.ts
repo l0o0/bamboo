@@ -65,6 +65,8 @@ interface OpenSession {
   pendingExplicitSave?: boolean;
   pendingImageCleanup?: boolean;
   closeMoreMenu?: () => void;
+  closeTablePicker?: () => void;
+  unbindTablePicker?: () => void;
   storageLabel: string;
   win: _ZoteroTypes.MainWindow;
   /** Tear down live theme listeners when the tab closes */
@@ -489,18 +491,61 @@ function mountEditorUI(
                     },
                   },
                   {
-                    tag: "button",
+                    tag: "div",
                     namespace: "html",
-                    classList: ["zotero-markdown-btn"],
-                    properties: {
-                      type: "button",
-                      innerHTML: iconOnlyButtonHtml(iconTable()),
-                    },
-                    attributes: {
-                      "data-action": "table",
-                      title: "Insert table",
-                      "aria-label": "Insert table",
-                    },
+                    classList: ["zotero-markdown-table-control"],
+                    children: [
+                      {
+                        tag: "button",
+                        namespace: "html",
+                        classList: ["zotero-markdown-btn"],
+                        properties: {
+                          type: "button",
+                          innerHTML: iconOnlyButtonHtml(iconTable()),
+                        },
+                        attributes: {
+                          "data-action": "table",
+                          title: "Insert table",
+                          "aria-label": "Insert table",
+                          "aria-haspopup": "true",
+                          "aria-expanded": "false",
+                        },
+                      },
+                      {
+                        tag: "div",
+                        namespace: "html",
+                        classList: ["zotero-markdown-table-picker"],
+                        attributes: { hidden: "true" },
+                        children: [
+                          {
+                            tag: "div",
+                            namespace: "html",
+                            classList: ["zotero-markdown-table-grid"],
+                            children: Array.from({ length: 64 }, (_, index) => {
+                              const row = Math.floor(index / 8) + 1;
+                              const column = (index % 8) + 1;
+                              return {
+                                tag: "button",
+                                namespace: "html",
+                                classList: ["zotero-markdown-table-cell"],
+                                properties: { type: "button" },
+                                attributes: {
+                                  "data-table-rows": String(row),
+                                  "data-table-columns": String(column),
+                                  "aria-label": `Insert ${column} by ${row} table`,
+                                },
+                              };
+                            }),
+                          },
+                          {
+                            tag: "div",
+                            namespace: "html",
+                            classList: ["zotero-markdown-table-size"],
+                            properties: { innerText: "3 × 3" },
+                          },
+                        ],
+                      },
+                    ],
                   },
                   {
                     tag: "button",
@@ -607,6 +652,21 @@ function mountEditorUI(
 
   root.addEventListener("click", (ev) => {
     const t = ev.target as HTMLElement | null;
+    const tableCell = t?.closest?.(
+      "[data-table-rows][data-table-columns]",
+    ) as HTMLElement | null;
+    if (tableCell && root.contains(tableCell)) {
+      const rows = Number(tableCell.dataset.tableRows);
+      const columns = Number(tableCell.dataset.tableColumns);
+      const template = tableInsertTemplate(rows, columns);
+      session.editor?.insertText(
+        template.text,
+        template.selectionFrom,
+        template.selectionTo,
+      );
+      session.closeTablePicker?.();
+      return;
+    }
     const btn = t?.closest?.("[data-action]") as HTMLElement | null;
     if (!btn || !root.contains(btn)) return;
     const action = btn.getAttribute("data-action");
@@ -624,12 +684,7 @@ function mountEditorUI(
     else if (action === "code") session.editor?.wrapSelection("`");
     else if (action === "link") session.editor?.wrapSelection("[", "](url)");
     else if (action === "table") {
-      const template = tableInsertTemplate();
-      session.editor?.insertText(
-        template.text,
-        template.selectionFrom,
-        template.selectionTo,
-      );
+      toggleTablePicker(session);
     } else if (action === "image") {
       void chooseAndInsertImage(session);
     } else if (action === "more") {
@@ -655,6 +710,7 @@ function mountEditorUI(
   session.statusEl = statusEl;
   session.metaEl = metaEl;
   (session as any)._saveStatusEl = saveStatusEl;
+  bindTablePicker(session);
   mountMoreMenu(session);
 
   applyModeVisibility(session, "live");
@@ -863,7 +919,95 @@ function toggleMoreMenu(session: OpenSession) {
   const menu = session.rootEl?.querySelector(".zotero-markdown-more-menu") as
     HTMLElement | undefined;
   if (!menu) return;
+  session.closeTablePicker?.();
   menu.hidden = !menu.hidden;
+}
+
+function updateTablePickerSelection(
+  picker: HTMLElement,
+  rows: number,
+  columns: number,
+) {
+  for (const cell of picker.querySelectorAll<HTMLElement>(
+    ".zotero-markdown-table-cell",
+  )) {
+    cell.classList.toggle(
+      "is-selected",
+      Number(cell.dataset.tableRows) <= rows &&
+        Number(cell.dataset.tableColumns) <= columns,
+    );
+  }
+  const label = picker.querySelector<HTMLElement>(
+    ".zotero-markdown-table-size",
+  );
+  if (label) label.textContent = `${columns} × ${rows}`;
+}
+
+function bindTablePicker(session: OpenSession) {
+  const root = session.rootEl;
+  const picker = root?.querySelector<HTMLElement>(
+    ".zotero-markdown-table-picker",
+  );
+  const trigger = root?.querySelector<HTMLElement>('[data-action="table"]');
+  if (!root || !picker || !trigger) return;
+  updateTablePickerSelection(picker, 3, 3);
+
+  const close = () => {
+    picker.hidden = true;
+    trigger.setAttribute("aria-expanded", "false");
+  };
+  const onPointerOver = (event: PointerEvent) => {
+    const cell = (event.target as Element | null)?.closest?.(
+      "[data-table-rows][data-table-columns]",
+    ) as HTMLElement | null;
+    if (!cell || !picker.contains(cell)) return;
+    updateTablePickerSelection(
+      picker,
+      Number(cell.dataset.tableRows),
+      Number(cell.dataset.tableColumns),
+    );
+  };
+  const onPointerDown = (event: PointerEvent) => {
+    if (
+      !picker.hidden &&
+      !picker.contains(event.target as Node) &&
+      !trigger.contains(event.target as Node)
+    ) {
+      close();
+    }
+  };
+  const onKeyDown = (event: KeyboardEvent) => {
+    if (event.key === "Escape") close();
+  };
+  picker.addEventListener("pointerover", onPointerOver);
+  root.ownerDocument.addEventListener("pointerdown", onPointerDown);
+  root.ownerDocument.addEventListener("keydown", onKeyDown);
+  session.closeTablePicker = () => {
+    close();
+  };
+  session.unbindTablePicker = () => {
+    close();
+    picker.removeEventListener("pointerover", onPointerOver);
+    root.ownerDocument.removeEventListener("pointerdown", onPointerDown);
+    root.ownerDocument.removeEventListener("keydown", onKeyDown);
+  };
+}
+
+function toggleTablePicker(session: OpenSession) {
+  const picker = session.rootEl?.querySelector<HTMLElement>(
+    ".zotero-markdown-table-picker",
+  );
+  const trigger = session.rootEl?.querySelector<HTMLElement>(
+    '[data-action="table"]',
+  );
+  if (!picker || !trigger) return;
+  const opening = picker.hidden;
+  const moreMenu = session.rootEl?.querySelector<HTMLElement>(
+    ".zotero-markdown-more-menu",
+  );
+  if (moreMenu) moreMenu.hidden = true;
+  picker.hidden = !opening;
+  trigger.setAttribute("aria-expanded", String(opening));
 }
 
 function showUnavailableAction(action: MoreMenuAction) {
@@ -1272,6 +1416,7 @@ async function closeSession(tabID: string, opts: { flush?: boolean } = {}) {
   if (!session) return;
 
   session.closeMoreMenu?.();
+  session.unbindTablePicker?.();
   if (session.autosaveTimer) {
     session.win.clearTimeout(session.autosaveTimer);
   }

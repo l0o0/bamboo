@@ -27,6 +27,7 @@ import {
   undo,
 } from "@codemirror/commands";
 import { markdown } from "@codemirror/lang-markdown";
+import { GFM } from "@lezer/markdown";
 import {
   syntaxHighlighting,
   defaultHighlightStyle,
@@ -51,6 +52,17 @@ import {
 import { editorThemeExtension } from "./theme";
 import { imageDebug } from "./image-debug";
 import { livePreviewWhen, setLiveImageAssets } from "./live-preview";
+import { tableKeymap } from "./table";
+import {
+  planTableOperation,
+  tableTargetAt,
+  type TableAction,
+} from "./table-operations";
+import {
+  createTableContextMenu,
+  tableMenuItems,
+  type TableContextMenu,
+} from "./table-menu";
 
 const themeCompartment = new Compartment();
 const readOnlyCompartment = new Compartment();
@@ -63,6 +75,8 @@ let currentTheme: EditorTheme = "light";
 let currentFontSize = 14;
 let currentMode: EditorMode = "live";
 let removeImageDoubleClickListener: (() => void) | null = null;
+let tableContextMenu: TableContextMenu | null = null;
+let tableContextPosition: number | null = null;
 const editorChannel =
   new URL(window.location.href).searchParams.get("channel") || "";
 
@@ -177,9 +191,10 @@ function buildExtensions(init: EditorInitPayload): Extension[] {
     bracketMatching(),
     highlightSelectionMatches(),
     EditorView.lineWrapping,
-    markdown(),
+    markdown({ extensions: GFM }),
     syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
     keymap.of([
+      ...tableKeymap,
       ...defaultKeymap,
       ...searchKeymap,
       ...historyKeymap,
@@ -246,6 +261,7 @@ function buildExtensions(init: EditorInitPayload): Extension[] {
     ]),
     EditorView.updateListener.of((update) => {
       if (!update.docChanged) return;
+      tableContextMenu?.close();
       const value = update.state.doc.toString();
       postToParent({
         type: "change",
@@ -253,6 +269,43 @@ function buildExtensions(init: EditorInitPayload): Extension[] {
       });
     }),
     EditorView.domEventHandlers({
+      contextmenu(event, editorView) {
+        const target = event.target as Element | null;
+        const liveCell = target?.closest?.(
+          ".zmd-lp-table-cell",
+        ) as HTMLElement | null;
+        const widgetPosition = liveCell
+          ? Number(liveCell.dataset.zmdTableCellFrom)
+          : NaN;
+        const position = Number.isFinite(widgetPosition)
+          ? widgetPosition
+          : editorView.posAtCoords({ x: event.clientX, y: event.clientY });
+        if (position == null) return false;
+        const tableTarget = tableTargetAt(editorView.state, position);
+        if (!tableTarget || !tableContextMenu) return false;
+        tableContextPosition = position;
+        tableContextMenu.open(
+          event.clientX,
+          event.clientY,
+          tableMenuItems(tableTarget, editorView.state.readOnly),
+        );
+        event.preventDefault();
+        return true;
+      },
+      click(event) {
+        const target = event.target as Element | null;
+        const cell = target?.closest?.(
+          ".zmd-lp-table-cell",
+        ) as HTMLElement | null;
+        if (!cell || !view) return false;
+        const from = Number(cell.dataset.zmdTableCellFrom);
+        const to = Number(cell.dataset.zmdTableCellTo);
+        if (!Number.isFinite(from) || !Number.isFinite(to)) return false;
+        view.dispatch({ selection: { anchor: from, head: to } });
+        view.focus();
+        event.preventDefault();
+        return true;
+      },
       dblclick(event) {
         const target = event.target as Element | null;
         const image = target?.closest?.(".zmd-lp-image") as HTMLElement | null;
@@ -391,6 +444,9 @@ function createOrResetEditor(init: EditorInitPayload) {
 
   if (view) {
     removeImageDoubleClickListener?.();
+    tableContextMenu?.destroy();
+    tableContextMenu = null;
+    tableContextPosition = null;
     view.destroy();
     view = null;
   }
@@ -403,6 +459,23 @@ function createOrResetEditor(init: EditorInitPayload) {
   view = new EditorView({
     state,
     parent: host,
+  });
+  tableContextMenu = createTableContextMenu({
+    document,
+    parent: view.dom,
+    onAction: (action: TableAction) => {
+      if (!view || tableContextPosition == null || view.state.readOnly) return;
+      const target = tableTargetAt(view.state, tableContextPosition);
+      if (!target) return;
+      const plan = planTableOperation(view.state, target, action);
+      if (!plan) return;
+      view.dispatch({
+        changes: plan.changes,
+        selection: plan.selection,
+        scrollIntoView: true,
+      });
+      view.focus();
+    },
   });
   bindImageDoubleClick(host);
 }
@@ -507,6 +580,9 @@ function handleParentMessage(data: ParentToEditorMessage) {
     }
     case "destroy": {
       removeImageDoubleClickListener?.();
+      tableContextMenu?.destroy();
+      tableContextMenu = null;
+      tableContextPosition = null;
       view?.destroy();
       view = null;
       break;
