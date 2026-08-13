@@ -27,8 +27,33 @@ export function getExtension(filename: string): string {
   return base.slice(idx + 1).toLowerCase();
 }
 
-export function defaultMarkdownFilename(title?: string): string {
-  const raw = (title || "note").trim() || "note";
+export function defaultMarkdownFilename(
+  title?: string,
+  now: Date = new Date(),
+): string {
+  const raw = (title || "Note").trim() || "Note";
   const safe = Zotero.File.getValidFileName(raw).replace(/\.md$/i, "");
-  return `${safe || "note"}.md`;
+  return buildTimestampedMarkdownFilename(safe || "Note", now);
+}
+
+export function buildTimestampedMarkdownFilename(
+  title: string,
+  now: Date,
+): string {
+  const base = (title.trim() || "Note")
+    .replace(/\s+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
+  const timestamp = [
+    now.getFullYear(),
+    pad2(now.getMonth() + 1),
+    pad2(now.getDate()),
+    pad2(now.getHours()),
+    pad2(now.getMinutes()),
+  ].join("-");
+  return `${base || "Note"}-${timestamp}.md`;
+}
+
+function pad2(value: number): string {
+  return String(value).padStart(2, "0");
 }

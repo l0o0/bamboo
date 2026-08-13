@@ -1,10 +1,11 @@
-import { getLocaleID } from "../../utils/locale";
+import { getLocaleID, getString } from "../../utils/locale";
 import { getPref } from "../../utils/prefs";
 import { createMarkdownAttachment, createMarkdownForSelection } from "./create";
 import { isMarkdownAttachment } from "./detect";
 import { openMarkdownAttachment } from "./open";
 
 const registeredMenuIDs: string[] = [];
+const itemMenuCleanups = new Map<Window, () => void>();
 let shortcutCallback: ((ev: KeyboardEvent, options: any) => void) | null = null;
 const icon = () =>
   `chrome://${addon.data.config.addonRef}/content/icons/favicon@0.5x.png`;
@@ -18,49 +19,6 @@ export function registerMenus() {
 
   const pluginID = addon.data.config.addonID;
   const menuIcon = icon();
-
-  // Item context menu: create / open Markdown
-  track(
-    Zotero.MenuManager.registerMenu({
-      menuID: `${addon.data.config.addonRef}-item-menu`,
-      pluginID,
-      target: "main/library/item",
-      menus: [
-        {
-          menuType: "menuitem",
-          l10nID: getLocaleID("menuitem-create-md"),
-          icon: menuIcon,
-          onShowing: (_event, context) => {
-            const items = context.items || [];
-            const visible = items.some(
-              (item) =>
-                item.isRegularItem() ||
-                ((item.isAttachment() || item.isNote()) && !!item.parentItem) ||
-                item.isAttachment(),
-            );
-            context.setVisible(visible);
-          },
-          onCommand: () => {
-            void createMarkdownForSelection();
-          },
-        },
-        {
-          menuType: "menuitem",
-          l10nID: getLocaleID("menuitem-open-md"),
-          icon: menuIcon,
-          onShowing: (_event, context) => {
-            const items = context.items || [];
-            context.setVisible(
-              items.some((item) => isMarkdownAttachment(item)),
-            );
-          },
-          onCommand: () => {
-            void openSelectedMarkdown();
-          },
-        },
-      ],
-    }),
-  );
 
   // Toolbar #zotero-tb-note-add popup: standalone + child markdown notes
   track(
@@ -76,6 +34,9 @@ export function registerMenus() {
           menuType: "menuitem",
           l10nID: getLocaleID("menuitem-create-standalone-md"),
           icon: menuIcon,
+          onShowing: (_event, context) => {
+            setMenuLabel(context, "menuitem-create-standalone-md");
+          },
           onCommand: () => {
             void createMarkdownAttachment(null, { open: true });
           },
@@ -85,6 +46,7 @@ export function registerMenus() {
           l10nID: getLocaleID("menuitem-create-item-md"),
           icon: menuIcon,
           onShowing: (_event, context) => {
+            setMenuLabel(context, "menuitem-create-item-md");
             const items = context.items || [];
             const one =
               items.length === 1 &&
@@ -100,6 +62,79 @@ export function registerMenus() {
   );
 }
 
+/** Register item context commands like Jasminum's legacy toolkit Menu API. */
+export function registerItemContextMenu(win: _ZoteroTypes.MainWindow) {
+  unregisterItemContextMenu(win);
+  const doc = win.document;
+  const popup = doc.querySelector("#zotero-itemmenu") as HTMLElement | null;
+  if (!popup) {
+    ztoolkit.log(
+      "Missing #zotero-itemmenu; Markdown context menu not registered",
+    );
+    return;
+  }
+
+  const createItem = doc.createXULElement("menuitem") as HTMLElement;
+  createItem.id = `${addon.data.config.addonRef}-item-create-md`;
+  createItem.setAttribute("label", getString("menuitem-create-md"));
+  createItem.setAttribute("class", "menuitem-iconic");
+  createItem.style.listStyleImage = `url(${icon()})`;
+
+  const openItem = doc.createXULElement("menuitem") as HTMLElement;
+  openItem.id = `${addon.data.config.addonRef}-item-open-md`;
+  openItem.setAttribute("label", getString("menuitem-open-md"));
+  openItem.setAttribute("class", "menuitem-iconic");
+  openItem.style.listStyleImage = `url(${icon()})`;
+
+  const onCreate = () => void createMarkdownForSelection();
+  const onOpen = () => void openSelectedMarkdown(win);
+  const onShowing = () => {
+    const items = win.ZoteroPane?.getSelectedItems?.() || [];
+    const one = items.length === 1 ? items[0] : undefined;
+    const isMarkdown = !!one && isMarkdownAttachment(one);
+    createItem.hidden = !one || isMarkdown;
+    openItem.hidden = !isMarkdown;
+  };
+
+  createItem.addEventListener("command", onCreate);
+  openItem.addEventListener("command", onOpen);
+  popup.addEventListener("popupshowing", onShowing);
+  popup.append(createItem, openItem);
+
+  itemMenuCleanups.set(win, () => {
+    popup.removeEventListener("popupshowing", onShowing);
+    createItem.removeEventListener("command", onCreate);
+    openItem.removeEventListener("command", onOpen);
+    createItem.remove();
+    openItem.remove();
+  });
+}
+
+export function unregisterItemContextMenu(win: Window) {
+  itemMenuCleanups.get(win)?.();
+  itemMenuCleanups.delete(win);
+}
+
+/**
+ * MenuManager only accepts Fluent IDs. Some Zotero builds do not resolve an
+ * add-on's FTL resource for dynamically registered menus, leaving a blank
+ * selectable item. Set the XUL label during popup construction as a fallback.
+ */
+function setMenuLabel(
+  context: { menuElem?: Element },
+  id:
+    | "menuitem-create-md"
+    | "menuitem-open-md"
+    | "menuitem-create-standalone-md"
+    | "menuitem-create-item-md",
+) {
+  const label = getString(id);
+  const menuElem = context.menuElem;
+  if (menuElem && label) {
+    menuElem.setAttribute("label", label);
+  }
+}
+
 export function unregisterMenus() {
   for (const id of registeredMenuIDs) {
     try {
@@ -109,6 +144,8 @@ export function unregisterMenus() {
     }
   }
   registeredMenuIDs.length = 0;
+  for (const cleanup of itemMenuCleanups.values()) cleanup();
+  itemMenuCleanups.clear();
 }
 
 /**
@@ -162,8 +199,8 @@ function track(id: string | false) {
   }
 }
 
-async function openSelectedMarkdown() {
-  const pane = Zotero.getActiveZoteroPane();
+async function openSelectedMarkdown(win?: _ZoteroTypes.MainWindow) {
+  const pane = win?.ZoteroPane || Zotero.getActiveZoteroPane();
   const items = pane?.getSelectedItems?.() || [];
   for (const item of items) {
     if (isMarkdownAttachment(item)) {

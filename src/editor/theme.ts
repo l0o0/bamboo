@@ -44,7 +44,13 @@ const livePreviewStyles = {
     fontWeight: "600",
   },
   ".cm-line.zmd-lp-list": {
-    paddingLeft: "0.25em",
+    paddingLeft: "0",
+  },
+  ".zmd-lp-list-marker": {
+    display: "inline-block",
+    minWidth: "1.5em",
+    whiteSpace: "pre",
+    userSelect: "none",
   },
   ".cm-line.zmd-lp-quote": {
     borderLeft: "3px solid",
@@ -57,6 +63,9 @@ const livePreviewStyles = {
   ".zmd-lp-em": {
     fontStyle: "italic",
   },
+  ".zmd-lp-strike": {
+    textDecoration: "line-through",
+  },
   ".zmd-lp-code": {
     fontFamily: FONT_MONO,
     fontSize: "0.9em",
@@ -67,7 +76,46 @@ const livePreviewStyles = {
     textDecoration: "underline",
     cursor: "pointer",
   },
+  ".cm-line.zmd-lp-code-block": {
+    fontFamily: FONT_MONO,
+    fontSize: "0.9em",
+    backgroundColor: "var(--zmd-code-block-bg)",
+  },
+  ".cm-line.zmd-lp-code-fence": {
+    fontFamily: FONT_MONO,
+    fontSize: "0.9em",
+    backgroundColor: "var(--zmd-code-block-bg)",
+  },
+  ".zmd-lp-image": {
+    display: "block",
+    width: "100%",
+    padding: "0.55em 0",
+    boxSizing: "border-box",
+  },
+  ".zmd-lp-image img": {
+    display: "block",
+    maxWidth: "100%",
+    maxHeight: "32rem",
+    objectFit: "contain",
+    borderRadius: "4px",
+  },
+  ".zmd-lp-image-missing": {
+    fontSize: "0.9em",
+    padding: "0.65em 0.8em",
+    border: "1px dashed currentColor",
+    borderRadius: "4px",
+    opacity: "0.65",
+  },
 };
+
+export function liveEditorGeometry() {
+  return {
+    contentPadding: "20px 0 40px",
+    // CodeMirror's default line inset is 6px left and 2px right. Moving the
+    // former 28px content inset here keeps text fixed and selection geometry aligned.
+    linePadding: "0 30px 0 34px",
+  } as const;
+}
 
 export function editorThemeExtension(
   theme: EditorTheme,
@@ -78,7 +126,8 @@ export function editorThemeExtension(
   const isLive = mode === "live";
   const fontFamily = isLive ? FONT_PROSE : FONT_MONO;
   const lineHeight = isLive ? "1.7" : "1.55";
-  const contentPadding = isLive ? "20px 28px 40px" : "14px 8px";
+  const liveGeometry = liveEditorGeometry();
+  const contentPadding = isLive ? liveGeometry.contentPadding : "14px 8px";
 
   if (theme === "dark") {
     return EditorView.theme(
@@ -89,6 +138,7 @@ export function editorThemeExtension(
           fontFamily,
           backgroundColor: "#1a1d24",
           color: "#e8eaed",
+          "--zmd-code-block-bg": "rgba(255, 255, 255, 0.07)",
         },
         ".cm-scroller": {
           overflow: "auto",
@@ -100,6 +150,9 @@ export function editorThemeExtension(
           padding: contentPadding,
           maxWidth: isLive ? "48rem" : "none",
           margin: isLive ? "0 auto" : "0",
+        },
+        ".cm-line": {
+          padding: isLive ? liveGeometry.linePadding : "0 2px 0 6px",
         },
         ".cm-cursor, .cm-dropCursor": {
           borderLeftColor: "#60a5fa",
@@ -130,6 +183,16 @@ export function editorThemeExtension(
           borderLeftColor: "#3d4452",
           color: "#c5cad3",
         },
+        ".zmd-lp-list-marker": {
+          ...livePreviewStyles[".zmd-lp-list-marker"],
+          color: "#cbd5e1",
+          fontWeight: "600",
+        },
+        ".cm-line.zmd-lp-list .zmd-lp-syntax": {
+          color: "#cbd5e1",
+          opacity: "0.8",
+          fontWeight: "600",
+        },
         ".zmd-lp-code": {
           ...livePreviewStyles[".zmd-lp-code"],
           backgroundColor: "rgba(255, 255, 255, 0.08)",
@@ -150,6 +213,7 @@ export function editorThemeExtension(
       fontFamily,
       backgroundColor: "#ffffff",
       color: "#111827",
+      "--zmd-code-block-bg": "rgba(17, 24, 39, 0.055)",
     },
     ".cm-scroller": {
       overflow: "auto",
@@ -161,6 +225,9 @@ export function editorThemeExtension(
       padding: contentPadding,
       maxWidth: isLive ? "48rem" : "none",
       margin: isLive ? "0 auto" : "0",
+    },
+    ".cm-line": {
+      padding: isLive ? liveGeometry.linePadding : "0 2px 0 6px",
     },
     ".cm-cursor, .cm-dropCursor": {
       borderLeftColor: "#2563eb",

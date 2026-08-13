@@ -4,9 +4,11 @@ import {
   registerFileOpenInterceptor,
   registerMarkdownTabHooks,
   registerMenus,
+  registerItemContextMenu,
   registerShortcuts,
   unregisterFileOpenInterceptor,
   unregisterMenus,
+  unregisterItemContextMenu,
   unregisterShortcuts,
 } from "./modules/markdown";
 import { ensureDOMGlobals } from "./utils/dom";
@@ -22,7 +24,8 @@ async function onStartup() {
   initLocale();
   registerPrefs();
   registerFileOpenInterceptor();
-  // MenuManager is global (not tied to a toolkit instance)
+  // Register global toolbar menus first. registerMenus() performs a global
+  // cleanup, so per-window item context menus must be mounted afterwards.
   registerMenus();
 
   await Promise.all(
@@ -47,6 +50,7 @@ async function onMainWindowLoad(win: _ZoteroTypes.MainWindow): Promise<void> {
   registerShortcuts();
 
   registerMarkdownTabHooks(win);
+  registerItemContextMenu(win);
   injectMarkdownStyles(win);
 
   const popupWin = new ztoolkit.ProgressWindow(addon.data.config.addonName, {
@@ -68,7 +72,7 @@ async function onMainWindowUnload(_win: Window): Promise<void> {
   // window's keydown listeners), breaking shortcuts in other windows.
   // Per-window cleanup is handled by the toolkit's own Services.wm
   // onCloseWindow callbacks (unInitKeyboardListener for the closing window).
-  void _win;
+  unregisterItemContextMenu(_win);
 }
 
 async function onShutdown(): Promise<void> {

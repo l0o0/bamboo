@@ -7,10 +7,15 @@ export function livePreviewWhen(enabled: boolean): Extension {
 }
 
 export { livePreviewPlugin };
+export { setLiveImageAssets } from "./plugin";
 export {
   activeLinesFromSelection,
   frontmatterLineNumbers,
   shouldSkipLiveLine,
 } from "./active-lines";
-export { parseAtxHeading, parseListPrefix, parseBlockQuotePrefix } from "./structure";
+export {
+  parseAtxHeading,
+  parseListPrefix,
+  parseBlockQuotePrefix,
+} from "./structure";
 export { parseInlineL1, parseInlineL2 } from "./inline";

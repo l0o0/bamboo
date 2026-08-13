@@ -1,5 +1,7 @@
 import MarkdownIt from "markdown-it";
 import { stripFrontmatter } from "./frontmatter";
+import { normalizeAssetReference } from "./images/model";
+import type { ImageAssetMap } from "./editor-protocol";
 
 // esbuild / CJS interop: some builds expose the ctor on .default
 const MarkdownItCtor: typeof MarkdownIt =
@@ -61,6 +63,30 @@ export function mountPreviewHtml(host: HTMLElement, source: string): void {
   } catch (e) {
     ztoolkit.log("mountPreviewHtml fallback to innerHTML", e);
     host.innerHTML = html;
+  }
+}
+
+export function hydratePreviewImages(
+  host: HTMLElement,
+  assets: ImageAssetMap,
+): void {
+  for (const image of host.querySelectorAll("img")) {
+    const reference = normalizeAssetReference(image.getAttribute("src") || "");
+    if (!reference) continue;
+    const resolved = assets[reference];
+    if (resolved?.dataUrl) {
+      image.setAttribute("src", resolved.dataUrl);
+      continue;
+    }
+    const placeholder = host.ownerDocument.createElement("span");
+    placeholder.className = "zotero-markdown-image-missing";
+    placeholder.textContent = resolved?.error || "图片缺失或尚未同步";
+    placeholder.setAttribute("role", "img");
+    placeholder.setAttribute(
+      "aria-label",
+      image.getAttribute("alt") || "图片缺失",
+    );
+    image.replaceWith(placeholder);
   }
 }
 

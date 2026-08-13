@@ -8,6 +8,8 @@ export {
 export { openMarkdownTab, flushAllSessions } from "./tab";
 export {
   registerMenus,
+  registerItemContextMenu,
+  unregisterItemContextMenu,
   unregisterMenus,
   registerShortcuts,
   unregisterShortcuts,

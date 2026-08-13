@@ -60,6 +60,18 @@ function parseInline(
       }
     }
 
+    // Strikethrough ~~...~~
+    if (line[i] === "~" && line[i + 1] === "~") {
+      const close = line.indexOf("~~", i + 2);
+      if (close !== -1 && close > i + 2) {
+        out.push({ from: i, to: i + 2, kind: "mark" });
+        out.push({ from: i + 2, to: close, kind: "strike" });
+        out.push({ from: close, to: close + 2, kind: "mark" });
+        i = close + 2;
+        continue;
+      }
+    }
+
     // Emphasis *...* (single asterisk, not part of **)
     if (line[i] === "*" && line[i + 1] !== "*") {
       let j = i + 1;

@@ -82,9 +82,8 @@ tab-content.zotero-markdown-tab-content {
 .zotero-markdown-toolbar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 8px 12px;
+  justify-content: center;
+  padding: 4px 28px;
   border-bottom: 1px solid var(--zmd-border);
   background: linear-gradient(180deg, var(--zmd-surface) 0%, var(--zmd-surface-2) 100%);
   flex: 0 0 auto;
@@ -92,111 +91,92 @@ tab-content.zotero-markdown-tab-content {
   box-shadow: var(--zmd-shadow);
 }
 
-.zotero-markdown-toolbar-left,
-.zotero-markdown-toolbar-right,
-.zotero-markdown-toolbar-center {
+.zotero-markdown-toolbar-inner {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 2px;
   min-width: 0;
+  width: 100%;
+  max-width: 48rem;
 }
 
-.zotero-markdown-brand {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 0 4px 0 0;
-  margin-right: 4px;
-  color: var(--zmd-text-muted);
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-  user-select: none;
-}
-
-.zotero-markdown-brand-badge {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 22px;
-  height: 22px;
-  border-radius: 6px;
-  background: var(--zmd-accent);
-  color: #fff;
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: -0.02em;
-  box-shadow: 0 1px 2px rgba(37, 99, 235, 0.35);
-}
-
-/* Shared chrome for mode segment + format group (aligned height/border) */
-.zotero-markdown-seg,
 .zotero-markdown-fmt {
   display: inline-flex;
   align-items: center;
-  box-sizing: border-box;
-  height: 32px;
-  padding: 2px;
   gap: 2px;
-  border-radius: 8px;
-  border: 1px solid var(--zmd-border);
-  background: var(--zmd-surface);
-  vertical-align: middle;
 }
 
-/* Mode segment sits on slightly softer track */
-.zotero-markdown-seg {
+.zotero-markdown-fmt .zotero-markdown-btn {
+  width: 36px;
+}
+
+.zotero-markdown-toolbar-spacer {
+  flex: 1 1 auto;
+}
+
+.zotero-markdown-more-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: calc(100% - 36px);
+  z-index: 10;
+  width: 220px;
+  padding: 6px;
+  border: 1px solid var(--zmd-border);
+  border-radius: 8px;
+  background: var(--zmd-surface);
+  box-shadow: 0 8px 24px rgba(16, 24, 40, 0.14);
+}
+
+.zotero-markdown-more-menu[hidden],
+.zotero-markdown-mode-menu[hidden] {
+  display: none;
+}
+
+.zotero-markdown-more-menu-item {
+  appearance: none;
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-height: 32px;
+  padding: 0 9px;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--zmd-text);
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.zotero-markdown-more-menu-item:hover {
   background: var(--zmd-surface-2);
 }
 
-.zotero-markdown-seg .zotero-markdown-btn,
-.zotero-markdown-fmt .zotero-markdown-btn {
-  box-sizing: border-box;
-  height: 26px;
-  min-height: 26px;
-  border: none;
-  background: transparent;
-  border-radius: 6px;
-  box-shadow: none;
+.zotero-markdown-more-menu-shortcut,
+.zotero-markdown-more-menu-chevron {
+  margin-left: auto;
   color: var(--zmd-text-muted);
-  font-weight: 500;
-  font-size: 12px;
-  line-height: 1;
-  padding: 0 10px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
+  font-size: 11px;
 }
 
-.zotero-markdown-fmt .zotero-markdown-btn {
-  min-width: 28px;
-  width: 28px;
-  padding: 0;
+.zotero-markdown-more-menu-separator {
+  height: 1px;
+  margin: 6px 4px;
+  background: var(--zmd-border);
 }
 
-.zotero-markdown-seg .zotero-markdown-btn:hover,
-.zotero-markdown-fmt .zotero-markdown-btn:hover {
-  background: var(--zmd-accent-soft);
-  color: var(--zmd-accent);
-  border-color: transparent;
-}
-
-.zotero-markdown-root.theme-dark .zotero-markdown-seg .zotero-markdown-btn:hover,
-.zotero-markdown-root.theme-dark .zotero-markdown-fmt .zotero-markdown-btn:hover {
-  background: rgba(255, 255, 255, 0.08);
-}
-
-.zotero-markdown-seg .zotero-markdown-btn.active {
+.zotero-markdown-mode-menu {
+  position: absolute;
+  top: 86px;
+  left: calc(100% - 4px);
+  width: 132px;
+  padding: 6px;
+  border: 1px solid var(--zmd-border);
+  border-radius: 8px;
   background: var(--zmd-surface);
-  color: var(--zmd-accent);
-  font-weight: 600;
-  /* Inset highlight only — no extra outer ring (keeps outer border aligned) */
-  box-shadow: inset 0 0 0 1px var(--zmd-border);
-}
-
-.zotero-markdown-root.theme-dark .zotero-markdown-seg .zotero-markdown-btn.active {
-  background: var(--zmd-bg);
-  box-shadow: inset 0 0 0 1px var(--zmd-border-strong);
+  box-shadow: 0 8px 24px rgba(16, 24, 40, 0.14);
 }
 
 /* Icon + label layout */
@@ -231,7 +211,7 @@ tab-content.zotero-markdown-tab-content {
   width: 1px;
   height: 20px;
   background: var(--zmd-border);
-  margin: 0 6px;
+  margin: 0 10px;
   flex: 0 0 auto;
   align-self: center;
 }
@@ -239,31 +219,32 @@ tab-content.zotero-markdown-tab-content {
 /* Generic buttons */
 .zotero-markdown-btn {
   appearance: none;
-  border: 1px solid var(--zmd-border);
-  background: var(--zmd-surface);
-  color: var(--zmd-text);
-  border-radius: var(--zmd-radius-sm);
-  padding: 5px 12px;
+  width: 36px;
+  height: 36px;
+  border: none;
+  background: transparent;
+  color: var(--zmd-text-muted);
+  border-radius: 7px;
+  padding: 0;
   font-size: 12px;
   font-family: inherit;
   line-height: 1.2;
   cursor: pointer;
-  transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease,
-    box-shadow 0.12s ease;
+  transition: background 0.12s ease, color 0.12s ease;
   display: inline-flex;
   align-items: center;
   justify-content: center;
 }
 
-.zotero-markdown-btn-save {
-  height: 32px;
-  padding: 0 12px;
-  box-sizing: border-box;
+.zotero-markdown-btn-save,
+.zotero-markdown-more {
+  width: 36px;
+  height: 36px;
 }
 
 .zotero-markdown-btn:hover {
-  border-color: var(--zmd-border-strong);
   background: var(--zmd-surface-2);
+  color: var(--zmd-text);
 }
 
 .zotero-markdown-btn:active {
@@ -271,17 +252,12 @@ tab-content.zotero-markdown-tab-content {
 }
 
 .zotero-markdown-btn-primary {
-  background: var(--zmd-accent);
-  border-color: var(--zmd-accent);
-  color: #fff;
-  font-weight: 600;
-  box-shadow: 0 1px 2px rgba(37, 99, 235, 0.25);
+  color: var(--zmd-text);
 }
 
 .zotero-markdown-btn-primary:hover {
-  background: var(--zmd-accent-hover);
-  border-color: var(--zmd-accent-hover);
-  color: #fff;
+  background: var(--zmd-surface-2);
+  color: var(--zmd-text);
 }
 
 /* Status pill in toolbar */
@@ -565,7 +541,18 @@ tab-content.zotero-markdown-tab-content {
 
 .zotero-markdown-preview-host img {
   max-width: 100%;
+  max-height: 70vh;
+  object-fit: contain;
   border-radius: 8px;
+}
+
+.zotero-markdown-image-missing {
+  display: block;
+  padding: 12px 14px;
+  border: 1px dashed var(--zmd-border);
+  border-radius: 4px;
+  color: var(--zmd-text-muted);
+  font-size: 13px;
 }
 
 /* ========== status bar ========== */
@@ -573,8 +560,9 @@ tab-content.zotero-markdown-tab-content {
   flex: 0 0 auto;
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 5px 12px;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 5px 28px;
   border-top: 1px solid var(--zmd-border);
   background: var(--zmd-surface-2);
   font-size: 11px;
@@ -584,14 +572,57 @@ tab-content.zotero-markdown-tab-content {
 }
 
 .zotero-markdown-meta {
-  flex: 1 1 auto;
+  flex: 1 1 0;
   min-width: 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  user-select: text;
-  -moz-user-select: text;
+  user-select: none;
   font-variant-numeric: tabular-nums;
+}
+
+.zotero-markdown-save-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: 0 1 auto;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-variant-numeric: tabular-nums;
+}
+
+.zotero-markdown-save-status::before {
+  content: "✓";
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.zotero-markdown-save-status.is-saved {
+  color: var(--zmd-text-muted);
+}
+
+.zotero-markdown-save-status.is-saved::before {
+  color: var(--zmd-success);
+}
+
+.zotero-markdown-save-status.is-dirty {
+  color: var(--zmd-warn);
+}
+
+.zotero-markdown-save-status.is-dirty::before {
+  content: "•";
+  font-size: 17px;
+}
+
+.zotero-markdown-save-status.is-error {
+  color: var(--zmd-danger);
+}
+
+.zotero-markdown-save-status.is-error::before {
+  content: "!";
 }
 
 .zotero-markdown-chip {

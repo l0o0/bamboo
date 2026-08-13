@@ -7,11 +7,12 @@ import { ensureDOMGlobals } from "../../utils/dom";
 import {
   EDITOR_MESSAGE_SOURCE,
   computeStats,
-  isEditorProtocolMessage,
   type EditorMode,
+  type ImageAssetMap,
   type EditorStats,
   type EditorTheme,
   type EditorToParentMessage,
+  isEditorProtocolMessageForChannel,
   type ParentToEditorMessage,
 } from "./editor-protocol";
 
@@ -27,15 +28,23 @@ export interface MarkdownEditorHandle {
   };
   getValue: () => string;
   setValue: (value: string) => void;
+  replaceRange: (from: number, to: number, insert: string) => void;
   focus: () => void;
   destroy: () => void;
   getStats: () => EditorStats;
+  command: (command: "undo" | "redo" | "find") => void;
+  insertText: (
+    text: string,
+    selectionFrom?: number,
+    selectionTo?: number,
+  ) => void;
   wrapSelection: (before: string, after?: string) => void;
   prefixLine: (prefix: string) => void;
   /** Push light/dark to the iframe CM theme (also auto-synced from OS/Zotero). */
   setTheme: (theme: EditorTheme) => void;
   /** Switch Live Preview vs full Source mode inside the iframe. */
   setMode: (mode: EditorMode) => void;
+  setImageAssets: (assets: ImageAssetMap) => void;
 }
 
 /** Shared dark-mode detection (Zotero follows prefers-color-scheme). */
@@ -60,23 +69,26 @@ export function resolveEditorTheme(win?: Window): EditorTheme {
   return "light";
 }
 
-type PendingCommand =
-  | Extract<
-      ParentToEditorMessage,
-      {
-        type:
-          | "setValue"
-          | "wrapSelection"
-          | "prefixLine"
-          | "focus"
-          | "requestMeasure"
-          | "setTheme"
-          | "setFontSize"
-          | "setReadOnly"
-          | "setMode"
-          | "init";
-      }
-    >;
+type PendingCommand = Extract<
+  ParentToEditorMessage,
+  {
+    type:
+      | "setValue"
+      | "replaceRange"
+      | "insertText"
+      | "command"
+      | "wrapSelection"
+      | "prefixLine"
+      | "focus"
+      | "requestMeasure"
+      | "setTheme"
+      | "setFontSize"
+      | "setReadOnly"
+      | "setMode"
+      | "setImageAssets"
+      | "init";
+  }
+>;
 
 function editorPageURL(): string {
   const ref = addon.data.config.addonRef;
@@ -95,15 +107,28 @@ export function createMarkdownEditor(
     readOnly?: boolean;
     onChange?: (value: string) => void;
     onSave?: () => void;
+    onPasteImage?: (payload: {
+      bytes: ArrayBuffer;
+      mimeType: string;
+      name: string;
+    }) => void;
     win?: Window;
+    channel?: string;
   } = {},
 ): MarkdownEditorHandle {
-  const { doc = "", readOnly = false, onChange, onSave } = options;
+  const {
+    doc = "",
+    readOnly = false,
+    onChange,
+    onSave,
+    onPasteImage,
+  } = options;
 
   const ownerWin =
     options.win || parent.ownerDocument?.defaultView || undefined;
   ensureDOMGlobals(ownerWin || undefined);
 
+  const channel = options.channel || "";
   const documentRef = parent.ownerDocument || (globalThis as any).document;
   if (!documentRef) {
     throw new Error("No document available for markdown editor");
@@ -116,7 +141,10 @@ export function createMarkdownEditor(
 
   const iframe = documentRef.createElement("iframe") as HTMLIFrameElement;
   iframe.className = "zmd-codemirror-iframe";
-  iframe.setAttribute("src", editorPageURL());
+  iframe.setAttribute(
+    "src",
+    `${editorPageURL()}?channel=${encodeURIComponent(channel)}`,
+  );
   Object.assign(iframe.style, {
     border: "none",
     width: "100%",
@@ -145,7 +173,7 @@ export function createMarkdownEditor(
   const post = (message: ParentToEditorMessage) => {
     const target = iframe.contentWindow;
     if (!target) return false;
-    target.postMessage(message, "*");
+    target.postMessage({ ...message, channel }, "*");
     return true;
   };
 
@@ -157,11 +185,14 @@ export function createMarkdownEditor(
       // Keep only the latest setValue / init / setTheme / setFontSize / setReadOnly / setMode
       if (
         message.type === "setValue" ||
+        message.type === "replaceRange" ||
+        message.type === "insertText" ||
         message.type === "init" ||
         message.type === "setTheme" ||
         message.type === "setFontSize" ||
         message.type === "setReadOnly" ||
-        message.type === "setMode"
+        message.type === "setMode" ||
+        message.type === "setImageAssets"
       ) {
         for (let i = pending.length - 1; i >= 0; i--) {
           if (pending[i].type === message.type) pending.splice(i, 1);
@@ -197,7 +228,7 @@ export function createMarkdownEditor(
     if (destroyed) return;
     // Only accept messages from our iframe
     if (event.source && event.source !== iframe.contentWindow) return;
-    if (!isEditorProtocolMessage(event.data)) return;
+    if (!isEditorProtocolMessageForChannel(event.data, channel)) return;
 
     const data = event.data as EditorToParentMessage;
     switch (data.type) {
@@ -207,6 +238,7 @@ export function createMarkdownEditor(
         currentTheme = resolveEditorTheme(ownerWin);
         post({
           source: EDITOR_MESSAGE_SOURCE,
+          channel,
           type: "init",
           payload: {
             doc: lastValue,
@@ -230,6 +262,21 @@ export function createMarkdownEditor(
         onSave?.();
         break;
       }
+      case "pasteImage": {
+        onPasteImage?.(data.payload);
+        break;
+      }
+      case "imageDebug": {
+        const message = `[Zotero Markdown][ImageDebug] ${data.payload.event}`;
+        try {
+          Zotero.debug(
+            `${message} ${JSON.stringify(data.payload.details || {})}`,
+          );
+        } catch {
+          ztoolkit.log(message, data.payload.details || {});
+        }
+        break;
+      }
       case "error": {
         ztoolkit.log("Markdown editor iframe error:", data.payload.message);
         break;
@@ -248,7 +295,8 @@ export function createMarkdownEditor(
     applyTheme(resolveEditorTheme(ownerWin));
   };
   try {
-    colorSchemeMql = ownerWin?.matchMedia?.("(prefers-color-scheme: dark)") || null;
+    colorSchemeMql =
+      ownerWin?.matchMedia?.("(prefers-color-scheme: dark)") || null;
     colorSchemeMql?.addEventListener?.("change", onColorSchemeChange);
   } catch {
     // ignore
@@ -313,6 +361,13 @@ export function createMarkdownEditor(
         payload: { value },
       });
     },
+    replaceRange: (from, to, insert) => {
+      sendOrQueue({
+        source: EDITOR_MESSAGE_SOURCE,
+        type: "replaceRange",
+        payload: { from, to, insert },
+      });
+    },
     focus: () => {
       try {
         iframe.focus();
@@ -322,6 +377,20 @@ export function createMarkdownEditor(
       sendOrQueue({ source: EDITOR_MESSAGE_SOURCE, type: "focus" });
     },
     getStats: () => lastStats,
+    command: (command) => {
+      sendOrQueue({
+        source: EDITOR_MESSAGE_SOURCE,
+        type: "command",
+        payload: { command },
+      });
+    },
+    insertText: (text, selectionFrom, selectionTo) => {
+      sendOrQueue({
+        source: EDITOR_MESSAGE_SOURCE,
+        type: "insertText",
+        payload: { text, selectionFrom, selectionTo },
+      });
+    },
     wrapSelection: (before: string, after: string = before) => {
       sendOrQueue({
         source: EDITOR_MESSAGE_SOURCE,
@@ -346,6 +415,13 @@ export function createMarkdownEditor(
         source: EDITOR_MESSAGE_SOURCE,
         type: "setMode",
         payload: { mode: currentMode },
+      });
+    },
+    setImageAssets: (assets: ImageAssetMap) => {
+      sendOrQueue({
+        source: EDITOR_MESSAGE_SOURCE,
+        type: "setImageAssets",
+        payload: { assets },
       });
     },
     destroy: () => {

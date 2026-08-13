@@ -26,7 +26,15 @@ export interface PrefixParse {
   markEnd: number;
 }
 
-export type InlineKind = "mark" | "strong" | "em" | "code" | "link";
+export interface ListPrefixParse extends PrefixParse {
+  /** Leading indentation that determines the list nesting level. */
+  indent: string;
+  /** Source marker, for example `-` or `10.`. */
+  marker: string;
+  ordered: boolean;
+}
+
+export type InlineKind = "mark" | "strong" | "em" | "strike" | "code" | "link";
 
 export interface InlineRange {
   from: number;

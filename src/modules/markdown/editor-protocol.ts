@@ -16,6 +16,12 @@ export interface EditorStats {
   words: number;
 }
 
+export type EditorCommand = "undo" | "redo" | "find";
+
+export interface ImageAssetMap {
+  [reference: string]: { dataUrl?: string; error?: string };
+}
+
 export interface EditorInitPayload {
   doc: string;
   readOnly: boolean;
@@ -25,30 +31,81 @@ export interface EditorInitPayload {
   mode?: EditorMode;
 }
 
+export type EditorProtocolMessage = {
+  source: typeof EDITOR_MESSAGE_SOURCE;
+  channel?: string;
+};
+
 /** Parent → iframe */
-export type ParentToEditorMessage =
-  | { source: typeof EDITOR_MESSAGE_SOURCE; type: "init"; payload: EditorInitPayload }
-  | { source: typeof EDITOR_MESSAGE_SOURCE; type: "setValue"; payload: { value: string } }
+export type ParentToEditorMessage = (
+  | {
+      source: typeof EDITOR_MESSAGE_SOURCE;
+      type: "init";
+      payload: EditorInitPayload;
+    }
+  | {
+      source: typeof EDITOR_MESSAGE_SOURCE;
+      type: "setValue";
+      payload: { value: string };
+    }
+  | {
+      source: typeof EDITOR_MESSAGE_SOURCE;
+      type: "replaceRange";
+      payload: { from: number; to: number; insert: string };
+    }
+  | {
+      source: typeof EDITOR_MESSAGE_SOURCE;
+      type: "insertText";
+      payload: { text: string; selectionFrom?: number; selectionTo?: number };
+    }
+  | {
+      source: typeof EDITOR_MESSAGE_SOURCE;
+      type: "command";
+      payload: { command: EditorCommand };
+    }
   | {
       source: typeof EDITOR_MESSAGE_SOURCE;
       type: "wrapSelection";
       payload: { before: string; after?: string };
     }
-  | { source: typeof EDITOR_MESSAGE_SOURCE; type: "prefixLine"; payload: { prefix: string } }
+  | {
+      source: typeof EDITOR_MESSAGE_SOURCE;
+      type: "prefixLine";
+      payload: { prefix: string };
+    }
   | { source: typeof EDITOR_MESSAGE_SOURCE; type: "focus" }
   | { source: typeof EDITOR_MESSAGE_SOURCE; type: "requestMeasure" }
-  | { source: typeof EDITOR_MESSAGE_SOURCE; type: "setTheme"; payload: { theme: EditorTheme } }
-  | { source: typeof EDITOR_MESSAGE_SOURCE; type: "setFontSize"; payload: { fontSize: number } }
-  | { source: typeof EDITOR_MESSAGE_SOURCE; type: "setReadOnly"; payload: { readOnly: boolean } }
+  | {
+      source: typeof EDITOR_MESSAGE_SOURCE;
+      type: "setTheme";
+      payload: { theme: EditorTheme };
+    }
+  | {
+      source: typeof EDITOR_MESSAGE_SOURCE;
+      type: "setFontSize";
+      payload: { fontSize: number };
+    }
+  | {
+      source: typeof EDITOR_MESSAGE_SOURCE;
+      type: "setReadOnly";
+      payload: { readOnly: boolean };
+    }
   | {
       source: typeof EDITOR_MESSAGE_SOURCE;
       type: "setMode";
       payload: { mode: EditorMode };
     }
-  | { source: typeof EDITOR_MESSAGE_SOURCE; type: "destroy" };
+  | {
+      source: typeof EDITOR_MESSAGE_SOURCE;
+      type: "setImageAssets";
+      payload: { assets: ImageAssetMap };
+    }
+  | { source: typeof EDITOR_MESSAGE_SOURCE; type: "destroy" }
+) &
+  EditorProtocolMessage;
 
 /** iframe → parent */
-export type EditorToParentMessage =
+export type EditorToParentMessage = (
   | { source: typeof EDITOR_MESSAGE_SOURCE; type: "ready" }
   | {
       source: typeof EDITOR_MESSAGE_SOURCE;
@@ -56,7 +113,33 @@ export type EditorToParentMessage =
       payload: { value: string; stats: EditorStats };
     }
   | { source: typeof EDITOR_MESSAGE_SOURCE; type: "save" }
-  | { source: typeof EDITOR_MESSAGE_SOURCE; type: "error"; payload: { message: string } };
+  | {
+      source: typeof EDITOR_MESSAGE_SOURCE;
+      type: "imageDebug";
+      payload: { event: string; details?: Record<string, unknown> };
+    }
+  | {
+      source: typeof EDITOR_MESSAGE_SOURCE;
+      type: "pasteImage";
+      payload: { bytes: ArrayBuffer; mimeType: string; name: string };
+    }
+  | {
+      source: typeof EDITOR_MESSAGE_SOURCE;
+      type: "error";
+      payload: { message: string };
+    }
+) &
+  EditorProtocolMessage;
+
+export function isEditorProtocolMessageForChannel(
+  data: unknown,
+  channel: string,
+): data is EditorToParentMessage {
+  return (
+    isEditorProtocolMessage(data) &&
+    (data as EditorProtocolMessage).channel === channel
+  );
+}
 
 export function isEditorProtocolMessage(
   data: unknown,

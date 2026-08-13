@@ -23,6 +23,8 @@ import {
   history,
   historyKeymap,
   indentWithTab,
+  redo,
+  undo,
 } from "@codemirror/commands";
 import { markdown } from "@codemirror/lang-markdown";
 import {
@@ -32,7 +34,11 @@ import {
   foldGutter,
   foldKeymap,
 } from "@codemirror/language";
-import { searchKeymap, highlightSelectionMatches } from "@codemirror/search";
+import {
+  searchKeymap,
+  highlightSelectionMatches,
+  openSearchPanel,
+} from "@codemirror/search";
 import {
   EDITOR_MESSAGE_SOURCE,
   computeStats,
@@ -43,7 +49,8 @@ import {
   type ParentToEditorMessage,
 } from "../modules/markdown/editor-protocol";
 import { editorThemeExtension } from "./theme";
-import { livePreviewWhen } from "./live-preview";
+import { imageDebug } from "./image-debug";
+import { livePreviewWhen, setLiveImageAssets } from "./live-preview";
 
 const themeCompartment = new Compartment();
 const readOnlyCompartment = new Compartment();
@@ -55,24 +62,97 @@ let view: EditorView | null = null;
 let currentTheme: EditorTheme = "light";
 let currentFontSize = 14;
 let currentMode: EditorMode = "live";
+let removeImageDoubleClickListener: (() => void) | null = null;
+const editorChannel =
+  new URL(window.location.href).searchParams.get("channel") || "";
+
+function bindImageDoubleClick(host: HTMLElement) {
+  removeImageDoubleClickListener?.();
+  imageDebug("listener-bound", { hostID: host.id });
+  let traceUntil = 0;
+  let lastImageFrom: string | undefined;
+  const onPointerEvent = (event: MouseEvent) => {
+    const target = event.target as Element | null;
+    const image = target?.closest?.(".zmd-lp-image") as HTMLElement | null;
+    if (image) {
+      traceUntil = Date.now() + 900;
+      lastImageFrom = image.dataset.zmdImageFrom;
+    } else if (Date.now() > traceUntil) {
+      return;
+    }
+    imageDebug(`dom-${event.type}`, {
+      detail: event.detail,
+      target: target?.tagName,
+      matchedImage: !!image,
+      sourceFrom: image?.dataset.zmdImageFrom || lastImageFrom,
+      className: image?.className,
+    });
+  };
+  const onDoubleClick = (event: MouseEvent) => {
+    const target = event.target as Element | null;
+    const image = target?.closest?.(".zmd-lp-image") as HTMLElement | null;
+    if (!image || !view) {
+      imageDebug("dblclick-not-handled", {
+        hasImage: !!image,
+        hasView: !!view,
+        target: target?.tagName,
+      });
+      return;
+    }
+    const pos = Number(image.dataset.zmdImageFrom);
+    if (!Number.isFinite(pos)) {
+      imageDebug("dblclick-invalid-position", {
+        sourceFrom: image.dataset.zmdImageFrom,
+      });
+      return;
+    }
+    const line = view.state.doc.lineAt(pos);
+    imageDebug("dblclick-dispatch", {
+      pos,
+      line: line.number,
+      beforeHead: view.state.selection.main.head,
+    });
+    view.dispatch({ selection: { anchor: line.from } });
+    view.focus();
+    imageDebug("dblclick-complete", {
+      afterHead: view.state.selection.main.head,
+      activeLine: view.state.doc.lineAt(view.state.selection.main.head).number,
+    });
+    event.preventDefault();
+    event.stopPropagation();
+  };
+  host.addEventListener("mousedown", onPointerEvent, true);
+  host.addEventListener("pointerdown", onPointerEvent, true);
+  host.addEventListener("click", onPointerEvent, true);
+  host.addEventListener("dblclick", onPointerEvent, true);
+  host.addEventListener("dblclick", onDoubleClick, true);
+  removeImageDoubleClickListener = () => {
+    host.removeEventListener("mousedown", onPointerEvent, true);
+    host.removeEventListener("pointerdown", onPointerEvent, true);
+    host.removeEventListener("click", onPointerEvent, true);
+    host.removeEventListener("dblclick", onPointerEvent, true);
+    host.removeEventListener("dblclick", onDoubleClick, true);
+    removeImageDoubleClickListener = null;
+  };
+}
 
 function postToParent(message: {
-  type: "ready" | "change" | "save" | "error";
+  type: "ready" | "change" | "save" | "error" | "pasteImage" | "imageDebug";
   payload?: unknown;
 }) {
   window.parent?.postMessage(
-    { source: EDITOR_MESSAGE_SOURCE, ...message },
+    {
+      source: EDITOR_MESSAGE_SOURCE,
+      channel: editorChannel,
+      ...message,
+    },
     "*",
   );
 }
 
 function guttersForMode(mode: EditorMode): Extension {
   if (mode === "source") {
-    return [
-      lineNumbers(),
-      highlightActiveLineGutter(),
-      foldGutter(),
-    ];
+    return [lineNumbers(), highlightActiveLineGutter(), foldGutter()];
   }
   return [];
 }
@@ -172,6 +252,72 @@ function buildExtensions(init: EditorInitPayload): Extension[] {
         payload: { value, stats: computeStats(value) },
       });
     }),
+    EditorView.domEventHandlers({
+      dblclick(event) {
+        const target = event.target as Element | null;
+        const image = target?.closest?.(".zmd-lp-image") as HTMLElement | null;
+        if (!image || !view) return false;
+        const raw = image.dataset.zmdImageFrom;
+        const pos = raw == null ? NaN : Number(raw);
+        if (!Number.isFinite(pos)) return false;
+        const line = view.state.doc.lineAt(pos);
+        view.dispatch({ selection: { anchor: line.from } });
+        view.focus();
+        event.preventDefault();
+        return true;
+      },
+      paste(event) {
+        const file = [...(event.clipboardData?.files || [])].find((candidate) =>
+          candidate.type.startsWith("image/"),
+        );
+        if (!file) return false;
+        event.preventDefault();
+        void file.arrayBuffer().then(
+          (bytes) => {
+            postToParent({
+              type: "pasteImage",
+              payload: {
+                bytes,
+                mimeType: file.type,
+                name: file.name || "image",
+              },
+            });
+          },
+          (error) => {
+            postToParent({
+              type: "error",
+              payload: { message: String(error) },
+            });
+          },
+        );
+        return true;
+      },
+      drop(event) {
+        const file = [...(event.dataTransfer?.files || [])].find((candidate) =>
+          candidate.type.startsWith("image/"),
+        );
+        if (!file) return false;
+        event.preventDefault();
+        void file.arrayBuffer().then(
+          (bytes) => {
+            postToParent({
+              type: "pasteImage",
+              payload: {
+                bytes,
+                mimeType: file.type,
+                name: file.name || "image",
+              },
+            });
+          },
+          (error) =>
+            postToParent({
+              type: "error",
+              payload: { message: String(error) },
+            }),
+        );
+        return true;
+      },
+    }),
   ];
 }
 
@@ -204,6 +350,23 @@ function wrapSelectionInView(v: EditorView, before: string, after: string) {
   v.focus();
 }
 
+function insertTextInView(
+  v: EditorView,
+  text: string,
+  selectionFrom = text.length,
+  selectionTo = selectionFrom,
+) {
+  const { from, to } = v.state.selection.main;
+  v.dispatch({
+    changes: { from, to, insert: text },
+    selection: {
+      anchor: from + selectionFrom,
+      head: from + selectionTo,
+    },
+  });
+  v.focus();
+}
+
 function prefixLineInView(v: EditorView, prefix: string) {
   const { from } = v.state.selection.main;
   const line = v.state.doc.lineAt(from);
@@ -227,6 +390,7 @@ function createOrResetEditor(init: EditorInitPayload) {
   }
 
   if (view) {
+    removeImageDoubleClickListener?.();
     view.destroy();
     view = null;
   }
@@ -240,6 +404,7 @@ function createOrResetEditor(init: EditorInitPayload) {
     state,
     parent: host,
   });
+  bindImageDoubleClick(host);
 }
 
 function handleParentMessage(data: ParentToEditorMessage) {
@@ -257,6 +422,27 @@ function handleParentMessage(data: ParentToEditorMessage) {
           insert: value,
         },
       });
+      break;
+    }
+    case "replaceRange": {
+      if (!view) return;
+      view.dispatch({ changes: data.payload });
+      break;
+    }
+    case "insertText": {
+      if (!view) return;
+      insertTextInView(
+        view,
+        data.payload.text,
+        data.payload.selectionFrom,
+        data.payload.selectionTo,
+      );
+      break;
+    }
+    case "command": {
+      if (!view) return;
+      if (data.payload.command === "find") openSearchPanel(view);
+      else (data.payload.command === "undo" ? undo : redo)(view);
       break;
     }
     case "wrapSelection": {
@@ -314,7 +500,13 @@ function handleParentMessage(data: ParentToEditorMessage) {
       applyMode(data.payload.mode === "source" ? "source" : "live");
       break;
     }
+    case "setImageAssets": {
+      if (!view) return;
+      view.dispatch({ effects: setLiveImageAssets.of(data.payload.assets) });
+      break;
+    }
     case "destroy": {
+      removeImageDoubleClickListener?.();
       view?.destroy();
       view = null;
       break;
@@ -327,6 +519,9 @@ function handleParentMessage(data: ParentToEditorMessage) {
 const PARENT_TO_EDITOR_TYPES = new Set([
   "init",
   "setValue",
+  "replaceRange",
+  "insertText",
+  "command",
   "wrapSelection",
   "prefixLine",
   "focus",
@@ -335,12 +530,14 @@ const PARENT_TO_EDITOR_TYPES = new Set([
   "setFontSize",
   "setReadOnly",
   "setMode",
+  "setImageAssets",
   "destroy",
 ]);
 
 function onWindowMessage(event: MessageEvent) {
   if (!isEditorProtocolMessage(event.data)) return;
   if (!PARENT_TO_EDITOR_TYPES.has(event.data.type)) return;
+  if (event.data.channel !== editorChannel) return;
   const data = event.data as ParentToEditorMessage;
   try {
     handleParentMessage(data);

@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   parseAtxHeading,
   parseBlockQuotePrefix,
+  fencedCodeLineKinds,
   parseListPrefix,
 } from "../src/editor/live-preview/structure.ts";
 import {
@@ -38,6 +39,23 @@ describe("parseListPrefix", () => {
     assert.ok(r);
     assert.equal(r!.markEnd, 3);
   });
+
+  it("preserves nested unordered-list indentation and marker", () => {
+    const r = parseListPrefix("    - nested item");
+    assert.ok(r);
+    assert.equal(r!.indent, "    ");
+    assert.equal(r!.marker, "-");
+    assert.equal(r!.ordered, false);
+    assert.equal(r!.markEnd, 6);
+  });
+
+  it("identifies ordered-list marker for its live label", () => {
+    const r = parseListPrefix("  10. item");
+    assert.ok(r);
+    assert.equal(r!.indent, "  ");
+    assert.equal(r!.marker, "10.");
+    assert.equal(r!.ordered, true);
+  });
 });
 
 describe("parseBlockQuotePrefix", () => {
@@ -67,5 +85,30 @@ describe("parseInlineL2", () => {
   it("finds links", () => {
     const r = parseInlineL2("see [text](https://ex.com) end");
     assert.ok(r.some((x) => x.kind === "link"));
+  });
+  it("finds strikethrough markers and content", () => {
+    const r = parseInlineL2("before ~~deleted~~ after");
+    assert.deepEqual(
+      r.filter((x) => x.kind === "strike"),
+      [{ from: 9, to: 16, kind: "strike" }],
+    );
+    assert.equal(r.filter((x) => x.kind === "mark").length, 2);
+  });
+});
+
+describe("fencedCodeLineKinds", () => {
+  it("marks paired fence and content lines", () => {
+    assert.deepEqual(
+      fencedCodeLineKinds("before\n```ts\nconst value = 1\n```\nafter"),
+      [null, "fence-open", "content", "fence-close", null],
+    );
+  });
+
+  it("does not treat an unclosed fence as a rendered block", () => {
+    assert.deepEqual(fencedCodeLineKinds("before\n```\ncode"), [
+      null,
+      null,
+      null,
+    ]);
   });
 });

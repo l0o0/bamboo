@@ -53,6 +53,58 @@ export function parseFrontmatter(source: string): {
   return { data: parseYamlSimple(frontmatter), body };
 }
 
+/** Return the first level-one Markdown heading outside frontmatter. */
+export function extractFirstHeadingTitle(source: string): string | null {
+  const { body } = stripFrontmatter(source);
+  for (const line of body.split(/\r?\n/)) {
+    const match = line.match(/^\s{0,3}#(?!#)\s+(.+?)\s*#*\s*$/);
+    if (match) {
+      const title = match[1].trim();
+      return title || null;
+    }
+  }
+  return null;
+}
+
+/** Update only frontmatter title while preserving the rest of the document. */
+export function syncFrontmatterTitle(source: string, title: string): string {
+  const normalized = title.trim();
+  if (!normalized) return source;
+  const match = source.match(FM_RE);
+  if (!match) return source;
+  const frontmatter = match[1];
+  const titleLine = `title: ${yamlScalar(normalized)}`;
+  const lines = frontmatter.split(/\r?\n/);
+  const index = lines.findIndex((line) => /^title:\s*/.test(line));
+  if (index >= 0) lines[index] = titleLine;
+  else lines.unshift(titleLine);
+  const newline = source.includes("\r\n") ? "\r\n" : "\n";
+  const start = match.index || 0;
+  const updatedBlock = match[0].replace(match[1], lines.join(newline));
+  return `${source.slice(0, start)}${updatedBlock}${source.slice(start + match[0].length)}`;
+}
+
+export function frontmatterTitleChange(
+  source: string,
+  title: string,
+): { from: number; to: number; insert: string } | null {
+  const next = syncFrontmatterTitle(source, title);
+  if (next === source) return null;
+  let from = 0;
+  while (from < source.length && source[from] === next[from]) from++;
+  let sourceEnd = source.length;
+  let nextEnd = next.length;
+  while (
+    sourceEnd > from &&
+    nextEnd > from &&
+    source[sourceEnd - 1] === next[nextEnd - 1]
+  ) {
+    sourceEnd--;
+    nextEnd--;
+  }
+  return { from, to: sourceEnd, insert: next.slice(from, nextEnd) };
+}
+
 /**
  * Build default note content with frontmatter from a Zotero parent item
  * (literature) or a standalone personal note.

@@ -20,6 +20,7 @@ declare const __env__: "production" | "development";
 /** Firefox / Zotero PathUtils (IOUtils companion). */
 declare namespace PathUtils {
   function join(...components: string[]): string;
+  function parent(path: string, depth?: number): string | null;
 }
 
 declare const PathUtils: typeof PathUtils;
@@ -27,6 +28,16 @@ declare const PathUtils: typeof PathUtils;
 declare namespace IOUtils {
   function exists(path: string): Promise<boolean>;
   function remove(path: string): Promise<void>;
+  function makeDirectory(
+    path: string,
+    options?: { ignoreExisting?: boolean; permissions?: number },
+  ): Promise<void>;
+  function read(path: string): Promise<Uint8Array>;
+  function write(path: string, data: Uint8Array): Promise<number>;
+  function getChildren(path: string): Promise<string[]>;
+  function stat(
+    path: string,
+  ): Promise<{ type?: "directory" | "other" | "regular" }>;
 }
 
 declare const IOUtils: typeof IOUtils;

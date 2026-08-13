@@ -5,23 +5,42 @@ import {
 } from "./editor";
 import {
   iconBold,
+  iconCode,
   iconH1,
   iconH2,
+  iconH3,
   iconItalic,
+  iconImage,
+  iconList,
   iconLink,
-  iconLive,
+  iconMoreHorizontal,
   iconOnlyButtonHtml,
-  iconPreview,
+  iconRedo,
   iconSave,
-  iconSource,
-  modeButtonHtml,
+  iconTable,
+  iconTask,
+  iconUndo,
 } from "./icons";
-import { mountPreviewHtml } from "./preview";
+import { tableInsertTemplate } from "./insert-template";
+import { MORE_MENU_SECTIONS, type MoreMenuAction } from "./more-menu";
+import { hydratePreviewImages, mountPreviewHtml } from "./preview";
+import {
+  extractFirstHeadingTitle,
+  frontmatterTitleChange,
+} from "./frontmatter";
+import {
+  cleanupUnusedImageAssets,
+  importExternalImages,
+  resolveImageAssets,
+  writeImageAsset,
+} from "./images/service";
+import { formatSavedStatus, formatStats } from "./status";
 import { MARKDOWN_TAB_TYPE, resolveMarkdownTabTitle } from "./tabHooks";
 import { ensureDOMGlobals, getDOMDocument } from "../../utils/dom";
 import type { EditorTheme } from "./editor-protocol";
 
 const AUTOSAVE_MS = 800;
+const TITLE_SYNC_MS = 1000;
 
 interface OpenSession {
   tabID: string;
@@ -30,13 +49,22 @@ interface OpenSession {
   editor?: MarkdownEditorHandle;
   dirty: boolean;
   saving: boolean;
+  saveFailed: boolean;
   mode: "live" | "source" | "preview";
   rootEl?: HTMLElement;
   statusEl?: HTMLElement;
   metaEl?: HTMLElement;
+  savedAt?: Date;
   previewEl?: HTMLElement;
   editorHost?: HTMLElement;
   autosaveTimer?: number;
+  imageRefreshTimer?: number;
+  pendingImageSave?: boolean;
+  titleSyncTimer?: number;
+  applyingTitleSync?: boolean;
+  pendingExplicitSave?: boolean;
+  pendingImageCleanup?: boolean;
+  closeMoreMenu?: () => void;
   storageLabel: string;
   win: _ZoteroTypes.MainWindow;
   /** Tear down live theme listeners when the tab closes */
@@ -137,6 +165,7 @@ export async function openMarkdownTab(
     path,
     dirty: false,
     saving: false,
+    saveFailed: false,
     mode: "live",
     storageLabel,
     win,
@@ -204,10 +233,7 @@ function applyShellTheme(root: HTMLElement | undefined, theme: EditorTheme) {
  * Keep shell + iframe CM in sync when Zotero/OS color scheme changes.
  * Mirrors Zotero's own Ace/Monaco tools (matchMedia change listener).
  */
-function bindSessionTheme(
-  win: _ZoteroTypes.MainWindow,
-  session: OpenSession,
-) {
+function bindSessionTheme(win: _ZoteroTypes.MainWindow, session: OpenSession) {
   session.unbindTheme?.();
 
   const sync = () => {
@@ -298,72 +324,48 @@ function mountEditorUI(
           {
             tag: "div",
             namespace: "html",
-            classList: ["zotero-markdown-toolbar-left"],
+            classList: ["zotero-markdown-toolbar-inner"],
             children: [
               {
-                tag: "div",
+                tag: "button",
                 namespace: "html",
-                classList: ["zotero-markdown-brand"],
-                children: [
-                  {
-                    tag: "span",
-                    namespace: "html",
-                    classList: ["zotero-markdown-brand-badge"],
-                    properties: { innerText: "MD" },
-                  },
-                  {
-                    tag: "span",
-                    namespace: "html",
-                    properties: { innerText: "Markdown" },
-                  },
+                classList: [
+                  "zotero-markdown-btn",
+                  "zotero-markdown-btn-primary",
+                  "zotero-markdown-btn-save",
                 ],
+                properties: {
+                  type: "button",
+                  innerHTML: iconOnlyButtonHtml(iconSave()),
+                },
+                attributes: {
+                  "data-action": "save",
+                  title: "Save (Ctrl/Cmd+S)",
+                  "aria-label": "Save",
+                },
               },
               {
                 tag: "div",
                 namespace: "html",
-                classList: ["zotero-markdown-seg"],
-                children: [
-                  {
-                    tag: "button",
-                    namespace: "html",
-                    classList: ["zotero-markdown-btn", "active"],
-                    properties: {
-                      type: "button",
-                      innerHTML: modeButtonHtml(iconLive(), "Live"),
-                    },
-                    attributes: {
-                      "data-action": "live",
-                      title: "Live preview (document view)",
-                    },
-                  },
-                  {
-                    tag: "button",
-                    namespace: "html",
-                    classList: ["zotero-markdown-btn"],
-                    properties: {
-                      type: "button",
-                      innerHTML: modeButtonHtml(iconSource(), "Source"),
-                    },
-                    attributes: {
-                      "data-action": "source",
-                      title: "Full Markdown source",
-                    },
-                  },
-                  {
-                    tag: "button",
-                    namespace: "html",
-                    classList: ["zotero-markdown-btn"],
-                    properties: {
-                      type: "button",
-                      innerHTML: modeButtonHtml(iconPreview(), "Preview"),
-                    },
-                    attributes: {
-                      "data-action": "preview",
-                      title: "Read-only rendered preview",
-                    },
-                  },
-                ],
+                classList: ["zotero-markdown-sep"],
               },
+              ...[
+                ["undo", iconUndo(), "Undo", "Undo (Ctrl/Cmd+Z)"],
+                ["redo", iconRedo(), "Redo", "Redo (Ctrl/Cmd+Shift+Z)"],
+              ].map(([action, icon, label, title]) => ({
+                tag: "button",
+                namespace: "html",
+                classList: ["zotero-markdown-btn", "zmd-toolbar-icon-btn"],
+                properties: {
+                  type: "button",
+                  innerHTML: iconOnlyButtonHtml(icon),
+                },
+                attributes: {
+                  "data-action": action,
+                  title,
+                  "aria-label": label,
+                },
+              })),
               {
                 tag: "div",
                 namespace: "html",
@@ -436,6 +438,34 @@ function mountEditorUI(
                     classList: ["zotero-markdown-btn"],
                     properties: {
                       type: "button",
+                      innerHTML: iconOnlyButtonHtml(iconH3()),
+                    },
+                    attributes: {
+                      "data-action": "h3",
+                      title: "Heading 3",
+                      "aria-label": "Heading 3",
+                    },
+                  },
+                  {
+                    tag: "button",
+                    namespace: "html",
+                    classList: ["zotero-markdown-btn"],
+                    properties: {
+                      type: "button",
+                      innerHTML: iconOnlyButtonHtml(iconList()),
+                    },
+                    attributes: {
+                      "data-action": "list",
+                      title: "Bullet list",
+                      "aria-label": "Bullet list",
+                    },
+                  },
+                  {
+                    tag: "button",
+                    namespace: "html",
+                    classList: ["zotero-markdown-btn"],
+                    properties: {
+                      type: "button",
                       innerHTML: iconOnlyButtonHtml(iconLink()),
                     },
                     attributes: {
@@ -444,37 +474,88 @@ function mountEditorUI(
                       "aria-label": "Link",
                     },
                   },
+                  {
+                    tag: "button",
+                    namespace: "html",
+                    classList: ["zotero-markdown-btn"],
+                    properties: {
+                      type: "button",
+                      innerHTML: iconOnlyButtonHtml(iconImage()),
+                    },
+                    attributes: {
+                      "data-action": "image",
+                      title: "Insert image",
+                      "aria-label": "Insert image",
+                    },
+                  },
+                  {
+                    tag: "button",
+                    namespace: "html",
+                    classList: ["zotero-markdown-btn"],
+                    properties: {
+                      type: "button",
+                      innerHTML: iconOnlyButtonHtml(iconTable()),
+                    },
+                    attributes: {
+                      "data-action": "table",
+                      title: "Insert table",
+                      "aria-label": "Insert table",
+                    },
+                  },
+                  {
+                    tag: "button",
+                    namespace: "html",
+                    classList: ["zotero-markdown-btn"],
+                    properties: {
+                      type: "button",
+                      innerHTML: iconOnlyButtonHtml(iconTask()),
+                    },
+                    attributes: {
+                      "data-action": "task",
+                      title: "Task list",
+                      "aria-label": "Task list",
+                    },
+                  },
+                  {
+                    tag: "button",
+                    namespace: "html",
+                    classList: ["zotero-markdown-btn"],
+                    properties: {
+                      type: "button",
+                      innerHTML: iconOnlyButtonHtml(iconCode()),
+                    },
+                    attributes: {
+                      "data-action": "code",
+                      title: "Inline code",
+                      "aria-label": "Inline code",
+                    },
+                  },
                 ],
               },
-            ],
-          },
-          {
-            tag: "div",
-            namespace: "html",
-            classList: ["zotero-markdown-toolbar-right"],
-            children: [
               {
                 tag: "span",
                 namespace: "html",
-                classList: ["zotero-markdown-status"],
-                properties: { innerText: "Ready" },
+                classList: ["zotero-markdown-toolbar-spacer"],
               },
               {
                 tag: "button",
                 namespace: "html",
-                classList: [
-                  "zotero-markdown-btn",
-                  "zotero-markdown-btn-primary",
-                  "zotero-markdown-btn-save",
-                ],
+                classList: ["zotero-markdown-btn", "zotero-markdown-more"],
                 properties: {
                   type: "button",
-                  innerHTML: modeButtonHtml(iconSave(), "Save"),
+                  innerHTML: iconOnlyButtonHtml(iconMoreHorizontal()),
                 },
                 attributes: {
-                  "data-action": "save",
-                  title: "Save (Ctrl/Cmd+S)",
+                  "data-action": "more",
+                  title: "More actions",
+                  "aria-label": "More actions",
                 },
+              },
+              {
+                tag: "div",
+                namespace: "html",
+                classList: ["zotero-markdown-more-menu"],
+                attributes: { hidden: "true" },
               },
             ],
           },
@@ -505,20 +586,13 @@ function mountEditorUI(
           {
             tag: "span",
             namespace: "html",
-            classList: [
-              "zotero-markdown-chip",
-              session.storageLabel === "stored"
-                ? "is-stored"
-                : session.storageLabel === "linked"
-                  ? "is-linked"
-                  : "",
-            ].filter(Boolean),
-            properties: { innerText: session.storageLabel },
+            classList: ["zotero-markdown-meta"],
+            properties: { innerText: "" },
           },
           {
             tag: "span",
             namespace: "html",
-            classList: ["zotero-markdown-meta"],
+            classList: ["zotero-markdown-save-status", "is-saved"],
             properties: { innerText: "" },
           },
         ],
@@ -536,15 +610,31 @@ function mountEditorUI(
     const btn = t?.closest?.("[data-action]") as HTMLElement | null;
     if (!btn || !root.contains(btn)) return;
     const action = btn.getAttribute("data-action");
-    if (action === "live") setMode(session, "live");
-    else if (action === "source") setMode(session, "source");
-    else if (action === "preview") setMode(session, "preview");
-    else if (action === "save") void saveSession(session, { explicit: true });
-    else if (action === "bold") session.editor?.wrapSelection("**");
+    if (action === "save")
+      void saveSession(session, { explicit: true, cleanupImages: true });
+    else if (action === "undo" || action === "redo") {
+      session.editor?.command(action);
+    } else if (action === "bold") session.editor?.wrapSelection("**");
     else if (action === "italic") session.editor?.wrapSelection("*");
     else if (action === "h1") session.editor?.prefixLine("# ");
     else if (action === "h2") session.editor?.prefixLine("## ");
+    else if (action === "h3") session.editor?.prefixLine("### ");
+    else if (action === "list") session.editor?.prefixLine("- ");
+    else if (action === "task") session.editor?.prefixLine("- [ ] ");
+    else if (action === "code") session.editor?.wrapSelection("`");
     else if (action === "link") session.editor?.wrapSelection("[", "](url)");
+    else if (action === "table") {
+      const template = tableInsertTemplate();
+      session.editor?.insertText(
+        template.text,
+        template.selectionFrom,
+        template.selectionTo,
+      );
+    } else if (action === "image") {
+      void chooseAndInsertImage(session);
+    } else if (action === "more") {
+      toggleMoreMenu(session);
+    }
   });
 
   const editorHost = root.querySelector(
@@ -555,24 +645,17 @@ function mountEditorUI(
   ) as HTMLElement;
   const statusEl = root.querySelector(".zotero-markdown-status") as HTMLElement;
   const metaEl = root.querySelector(".zotero-markdown-meta") as HTMLElement;
-  const btnLive = root.querySelector(
-    '[data-action="live"]',
-  ) as HTMLButtonElement;
-  const btnSource = root.querySelector(
-    '[data-action="source"]',
-  ) as HTMLButtonElement;
-  const btnPreview = root.querySelector(
-    '[data-action="preview"]',
-  ) as HTMLButtonElement;
+  const saveStatusEl = root.querySelector(
+    ".zotero-markdown-save-status",
+  ) as HTMLElement;
 
   session.rootEl = root;
   session.editorHost = editorHost;
   session.previewEl = previewEl;
   session.statusEl = statusEl;
   session.metaEl = metaEl;
-  (session as any)._btnLive = btnLive;
-  (session as any)._btnSource = btnSource;
-  (session as any)._btnPreview = btnPreview;
+  (session as any)._saveStatusEl = saveStatusEl;
+  mountMoreMenu(session);
 
   applyModeVisibility(session, "live");
 
@@ -581,21 +664,56 @@ function mountEditorUI(
     doc: content ?? "",
     readOnly,
     win,
-    onChange: () => {
+    channel: `${session.tabID}:${session.itemID}`,
+    onChange: (value) => {
+      const appliedTitleSync = !!session.applyingTitleSync;
+      session.applyingTitleSync = false;
       session.dirty = true;
+      session.saveFailed = false;
       setStatus(session, "Unsaved…");
       updateMeta(session);
-      scheduleAutosave(session);
+      updateSaveStatus(session);
+      scheduleImageAssetRefresh(session);
+      const headingTitle = extractFirstHeadingTitle(value);
+      const titleChange = headingTitle
+        ? frontmatterTitleChange(value, headingTitle)
+        : null;
+      if (titleChange && !appliedTitleSync) {
+        scheduleTitleSync(session);
+      } else if (appliedTitleSync) {
+        const explicit = !!session.pendingExplicitSave;
+        const cleanupImages = !!session.pendingImageCleanup;
+        session.pendingExplicitSave = false;
+        session.pendingImageCleanup = false;
+        void saveSession(session, { explicit, cleanupImages });
+      } else {
+        scheduleAutosave(session);
+      }
+      if (session.pendingImageSave) {
+        session.pendingImageSave = false;
+        void saveSession(session, { explicit: false });
+      }
     },
     onSave: () => {
-      void saveSession(session, { explicit: true });
+      if (session.titleSyncTimer) {
+        session.pendingExplicitSave = true;
+        session.pendingImageCleanup = true;
+        flushTitleSync(session);
+      } else {
+        void saveSession(session, { explicit: true, cleanupImages: true });
+      }
+    },
+    onPasteImage: ({ bytes, mimeType }) => {
+      void insertImageBytes(session, new Uint8Array(bytes), mimeType);
     },
   });
   // Default iframe mode is live (init.mode)
   session.editor.setMode("live");
+  void refreshImageAssets(session);
 
   bindSessionTheme(win, session);
   updateMeta(session);
+  updateSaveStatus(session);
 
   const measure = () => {
     session.editor?.view.requestMeasure();
@@ -632,18 +750,188 @@ function applyModeVisibility(
   }
 }
 
-function setMode(
-  session: OpenSession,
-  mode: "live" | "source" | "preview",
-) {
+function mountMoreMenu(session: OpenSession) {
+  const root = session.rootEl;
+  if (!root) return;
+  const menu = root.querySelector(".zotero-markdown-more-menu") as HTMLElement;
+  if (!menu) return;
+
+  menu.replaceChildren();
+  MORE_MENU_SECTIONS.forEach((section, index) => {
+    if (index > 0) {
+      const separator = menu.ownerDocument.createElement("div");
+      separator.className = "zotero-markdown-more-menu-separator";
+      menu.appendChild(separator);
+    }
+    for (const item of section) {
+      const button = menu.ownerDocument.createElement("button");
+      button.type = "button";
+      button.className = "zotero-markdown-more-menu-item";
+      button.dataset.menuAction = item.action;
+      button.append(item.label);
+      if (item.shortcut) {
+        const shortcut = menu.ownerDocument.createElement("span");
+        shortcut.className = "zotero-markdown-more-menu-shortcut";
+        shortcut.textContent = item.shortcut;
+        button.appendChild(shortcut);
+      }
+      if (item.submenu) {
+        const chevron = menu.ownerDocument.createElement("span");
+        chevron.className = "zotero-markdown-more-menu-chevron";
+        chevron.textContent = "›";
+        button.appendChild(chevron);
+      }
+      menu.appendChild(button);
+    }
+  });
+
+  const modeMenu = menu.ownerDocument.createElement("div");
+  modeMenu.className = "zotero-markdown-mode-menu";
+  modeMenu.hidden = true;
+  for (const mode of ["live", "source", "preview"] as const) {
+    const button = menu.ownerDocument.createElement("button");
+    button.type = "button";
+    button.className = "zotero-markdown-more-menu-item";
+    button.dataset.mode = mode;
+    button.textContent = mode[0].toUpperCase() + mode.slice(1);
+    modeMenu.appendChild(button);
+  }
+  menu.appendChild(modeMenu);
+
+  const close = () => {
+    menu.hidden = true;
+    modeMenu.hidden = true;
+  };
+  const onMenuClick = (event: MouseEvent) => {
+    const target = event.target as HTMLElement | null;
+    const mode = target?.closest?.("[data-mode]")?.getAttribute("data-mode");
+    if (mode === "live" || mode === "source" || mode === "preview") {
+      setMode(session, mode);
+      close();
+      return;
+    }
+
+    const action = target
+      ?.closest?.("[data-menu-action]")
+      ?.getAttribute("data-menu-action") as MoreMenuAction | null;
+    if (!action) return;
+    if (action === "mode") {
+      modeMenu.hidden = !modeMenu.hidden;
+      return;
+    }
+    if (action === "find") {
+      session.editor?.command("find");
+      close();
+      return;
+    }
+    if (action === "source") {
+      setMode(session, "source");
+      close();
+      return;
+    }
+    if (action === "import-external-images") {
+      void importExternalImagesInSession(session);
+      close();
+      return;
+    }
+    if (action === "cleanup-images") {
+      void cleanupImagesInSession(session);
+      close();
+      return;
+    }
+    showUnavailableAction(action);
+    close();
+  };
+  const onPointerDown = (event: PointerEvent) => {
+    if (!menu.hidden && !menu.contains(event.target as Node)) close();
+  };
+  const onKeyDown = (event: KeyboardEvent) => {
+    if (event.key === "Escape") close();
+  };
+  menu.addEventListener("click", onMenuClick);
+  root.ownerDocument.addEventListener("pointerdown", onPointerDown);
+  root.ownerDocument.addEventListener("keydown", onKeyDown);
+  session.closeMoreMenu = () => {
+    close();
+    menu.removeEventListener("click", onMenuClick);
+    root.ownerDocument.removeEventListener("pointerdown", onPointerDown);
+    root.ownerDocument.removeEventListener("keydown", onKeyDown);
+  };
+}
+
+function toggleMoreMenu(session: OpenSession) {
+  const menu = session.rootEl?.querySelector(".zotero-markdown-more-menu") as
+    HTMLElement | undefined;
+  if (!menu) return;
+  menu.hidden = !menu.hidden;
+}
+
+function showUnavailableAction(action: MoreMenuAction) {
+  const labels: Partial<Record<MoreMenuAction, string>> = {
+    "document-info": "文档信息",
+    rename: "重命名",
+    "show-in-folder": "在文件夹中显示",
+    "export-pdf": "导出为 PDF",
+    "export-html": "导出为 HTML",
+    shortcuts: "快捷键",
+    settings: "设置",
+  };
+  const label = labels[action] || "此功能";
+  new ztoolkit.ProgressWindow(addon.data.config.addonName)
+    .createLine({ text: `${label}功能规划中`, type: "default" })
+    .show();
+}
+
+async function importExternalImagesInSession(session: OpenSession) {
+  try {
+    const item = Zotero.Items.get(session.itemID);
+    const source = session.editor?.getValue() || "";
+    if (!item) throw new Error("Markdown 附件已不存在");
+    const result = await importExternalImages(item, source);
+    if (!result.imported) {
+      showImageError(new Error("没有可导入的外链图片，或下载失败"));
+      return;
+    }
+    session.editor?.setValue(result.markdown);
+    session.dirty = true;
+    session.pendingImageSave = false;
+    scheduleAutosave(session);
+    await saveSession(session, { explicit: false });
+    setStatus(session, `已导入 ${result.imported} 张外链图片`);
+  } catch (error) {
+    showImageError(error);
+  }
+}
+
+async function cleanupImagesInSession(session: OpenSession) {
+  try {
+    const item = Zotero.Items.get(session.itemID);
+    if (!item) throw new Error("Markdown 附件已不存在");
+    const removed = await cleanupUnusedImageAssets(
+      item,
+      session.editor?.getValue() || "",
+    );
+    if (removed) {
+      // Zotero detects stored text attachment changes from the main file.
+      // Re-save it so asset deletions are included in the next zip upload.
+      await saveSession(session, { explicit: true });
+    }
+    setStatus(
+      session,
+      removed ? `已清理 ${removed} 张未引用图片` : "没有未引用图片",
+    );
+  } catch (error) {
+    showImageError(error);
+  }
+}
+
+function setMode(session: OpenSession, mode: "live" | "source" | "preview") {
   session.mode = mode;
   const btnLive = (session as any)._btnLive as HTMLButtonElement | undefined;
   const btnSource = (session as any)._btnSource as
-    | HTMLButtonElement
-    | undefined;
+    HTMLButtonElement | undefined;
   const btnPreview = (session as any)._btnPreview as
-    | HTMLButtonElement
-    | undefined;
+    HTMLButtonElement | undefined;
 
   applyModeVisibility(session, mode);
 
@@ -653,6 +941,9 @@ function setMode(
 
   if (mode === "live" || mode === "source") {
     session.editor?.setMode(mode);
+    if (mode === "live") {
+      void refreshImageAssets(session);
+    }
     setStatus(session, session.dirty ? "Unsaved…" : "Ready");
     updateMeta(session);
     session.win.requestAnimationFrame(() => {
@@ -664,6 +955,7 @@ function setMode(
     if (session.previewEl) {
       try {
         mountPreviewHtml(session.previewEl, source);
+        void hydrateSessionPreviewImages(session, source);
         setStatus(session, "Preview");
       } catch (e) {
         ztoolkit.log("Preview render error", e);
@@ -675,18 +967,200 @@ function setMode(
   }
 }
 
+function showImageError(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error);
+  ztoolkit.log("Markdown image operation failed", error);
+  new ztoolkit.ProgressWindow(addon.data.config.addonName)
+    .createLine({ text: message, type: "fail" })
+    .show();
+}
+
+async function chooseAndInsertImage(session: OpenSession) {
+  const item = Zotero.Items.get(session.itemID);
+  if (!item || !item.isStoredFileAttachment?.()) {
+    showImageError(new Error("仅存储在 Zotero 中的 Markdown 附件支持插入图片"));
+    return;
+  }
+  const doc = session.rootEl?.ownerDocument;
+  if (!doc) return;
+  const input = doc.createElement("input");
+  input.type = "file";
+  input.accept = "image/png,image/jpeg,image/gif,image/webp";
+  input.hidden = true;
+  session.rootEl?.appendChild(input);
+  input.addEventListener(
+    "change",
+    () => {
+      const file = input.files?.[0];
+      if (file) {
+        void file
+          .arrayBuffer()
+          .then((bytes) =>
+            insertImageBytes(session, new Uint8Array(bytes), file.type),
+          )
+          .catch(showImageError);
+      }
+      input.remove();
+    },
+    { once: true },
+  );
+  input.click();
+}
+
+async function insertImageBytes(
+  session: OpenSession,
+  bytes: Uint8Array,
+  mimeType: string,
+) {
+  try {
+    const item = Zotero.Items.get(session.itemID);
+    if (!item) throw new Error("Markdown 附件已不存在");
+    const reference = await writeImageAsset(item, bytes, mimeType);
+    session.pendingImageSave = true;
+    session.editor?.insertText(`![](${reference})`, 2, 2);
+    void refreshImageAssets(session);
+  } catch (error) {
+    session.pendingImageSave = false;
+    showImageError(error);
+  }
+}
+
+function scheduleImageAssetRefresh(session: OpenSession) {
+  if (session.imageRefreshTimer)
+    session.win.clearTimeout(session.imageRefreshTimer);
+  session.imageRefreshTimer = session.win.setTimeout(() => {
+    void refreshImageAssets(session);
+  }, 250) as unknown as number;
+}
+
+async function refreshImageAssets(session: OpenSession) {
+  const item = Zotero.Items.get(session.itemID);
+  if (!item || !session.editor) {
+    Zotero.debug(
+      `[Zotero Markdown][ImageDebug] asset-refresh-skipped ${JSON.stringify({
+        hasItem: !!item,
+        hasEditor: !!session.editor,
+        mode: session.mode,
+      })}`,
+    );
+    return;
+  }
+  Zotero.debug(
+    `[Zotero Markdown][ImageDebug] asset-refresh-start ${JSON.stringify({
+      mode: session.mode,
+      itemID: session.itemID,
+    })}`,
+  );
+  try {
+    const assets = await resolveImageAssets(item, session.editor.getValue());
+    if (sessions.get(session.tabID) !== session) {
+      Zotero.debug("[Zotero Markdown][ImageDebug] asset-refresh-stale-session");
+      return;
+    }
+    const summary = Object.fromEntries(
+      Object.entries(assets).map(([reference, asset]) => [
+        reference,
+        asset.error ? `error: ${asset.error}` : "ready",
+      ]),
+    );
+    Zotero.debug(
+      `[Zotero Markdown][ImageDebug] asset-refresh-complete ${JSON.stringify({
+        mode: session.mode,
+        assets: summary,
+      })}`,
+    );
+    session.editor.setImageAssets(assets);
+    if (session.mode === "preview" && session.previewEl) {
+      hydratePreviewImages(session.previewEl, assets);
+    }
+  } catch (error) {
+    Zotero.debug(
+      `[Zotero Markdown][ImageDebug] asset-refresh-error ${String(error)}`,
+    );
+    throw error;
+  }
+}
+
+async function hydrateSessionPreviewImages(
+  session: OpenSession,
+  source: string,
+) {
+  const item = Zotero.Items.get(session.itemID);
+  if (!item || !session.previewEl) return;
+  const assets = await resolveImageAssets(item, source);
+  if (session.mode !== "preview" || !session.previewEl) return;
+  hydratePreviewImages(session.previewEl, assets);
+  session.editor?.setImageAssets(assets);
+}
+
 function scheduleAutosave(session: OpenSession) {
   if (session.autosaveTimer) {
     session.win.clearTimeout(session.autosaveTimer);
+  }
+  if (session.titleSyncTimer) {
+    session.win.clearTimeout(session.titleSyncTimer);
+    session.titleSyncTimer = undefined;
+    const value = session.editor?.getValue();
+    const headingTitle = value ? extractFirstHeadingTitle(value) : null;
+    const change =
+      value && headingTitle
+        ? frontmatterTitleChange(value, headingTitle)
+        : null;
+    if (value && change) {
+      session.editor?.setValue(
+        value.slice(0, change.from) + change.insert + value.slice(change.to),
+      );
+    }
   }
   session.autosaveTimer = session.win.setTimeout(() => {
     void saveSession(session, { explicit: false });
   }, AUTOSAVE_MS) as unknown as number;
 }
 
+function scheduleTitleSync(session: OpenSession) {
+  if (session.autosaveTimer) {
+    session.win.clearTimeout(session.autosaveTimer);
+    session.autosaveTimer = undefined;
+  }
+  if (session.titleSyncTimer) {
+    session.win.clearTimeout(session.titleSyncTimer);
+  }
+  session.titleSyncTimer = session.win.setTimeout(() => {
+    session.titleSyncTimer = undefined;
+    applyTitleSync(session);
+  }, TITLE_SYNC_MS) as unknown as number;
+}
+
+function flushTitleSync(session: OpenSession) {
+  if (session.titleSyncTimer) {
+    session.win.clearTimeout(session.titleSyncTimer);
+    session.titleSyncTimer = undefined;
+  }
+  applyTitleSync(session);
+}
+
+function applyTitleSync(session: OpenSession) {
+  const value = session.editor?.getValue();
+  if (value === undefined) return;
+  const headingTitle = extractFirstHeadingTitle(value);
+  const change = headingTitle
+    ? frontmatterTitleChange(value, headingTitle)
+    : null;
+  if (!change) {
+    const explicit = !!session.pendingExplicitSave;
+    const cleanupImages = !!session.pendingImageCleanup;
+    session.pendingExplicitSave = false;
+    session.pendingImageCleanup = false;
+    void saveSession(session, { explicit, cleanupImages });
+    return;
+  }
+  session.applyingTitleSync = true;
+  session.editor?.replaceRange(change.from, change.to, change.insert);
+}
+
 async function saveSession(
   session: OpenSession,
-  opts: { explicit?: boolean } = {},
+  opts: { explicit?: boolean; cleanupImages?: boolean } = {},
 ) {
   if (session.saving) return;
   if (!session.dirty && !opts.explicit) return;
@@ -695,20 +1169,40 @@ async function saveSession(
   if (value === undefined) return;
 
   session.saving = true;
+  session.saveFailed = false;
   setStatus(session, "Saving…");
+  updateSaveStatus(session);
   try {
     const item = Zotero.Items.get(session.itemID);
     if (!item) throw new Error("Item gone");
     const path = (await item.getFilePathAsync()) || session.path;
     session.path = path;
     await Zotero.File.putContentsAsync(path, value);
+    if (opts.cleanupImages) {
+      try {
+        await cleanupUnusedImageAssets(item, value);
+      } catch (error) {
+        ztoolkit.log("Failed to clean markdown image assets after save", error);
+      }
+    }
+    const headingTitle = extractFirstHeadingTitle(value);
+    if (headingTitle && item.getField("title") !== headingTitle) {
+      item.setField("title", headingTitle);
+      await item.saveTx({ skipSelect: true });
+      ensureTabTitle(session.win, session.tabID, session.itemID);
+    }
     session.dirty = false;
+    session.saveFailed = false;
+    session.savedAt = new Date();
     setStatus(session, opts.explicit ? "Saved" : "Auto-saved");
     updateMeta(session);
+    updateSaveStatus(session);
   } catch (e) {
     ztoolkit.log("Failed to save markdown", e);
+    session.saveFailed = true;
     setStatus(session, "Save failed");
     updateMeta(session);
+    updateSaveStatus(session);
     // Always surface save failures (including autosave)
     new ztoolkit.ProgressWindow(addon.data.config.addonName)
       .createLine({
@@ -718,6 +1212,7 @@ async function saveSession(
       .show();
   } finally {
     session.saving = false;
+    updateSaveStatus(session);
   }
 }
 
@@ -746,32 +1241,45 @@ function updateMeta(session: OpenSession) {
     lines: 0,
     words: 0,
   };
-  const shortPath = shortenPath(session.path, 52);
-  session.metaEl.textContent = [
-    `${stats.chars} chars`,
-    `${stats.words} words`,
-    `${stats.lines} lines`,
-    shortPath,
-  ].join("  ·  ");
-  session.metaEl.title = session.path;
+  session.metaEl.textContent = formatStats(stats);
 }
 
-function shortenPath(path: string, max: number): string {
-  if (!path) return "";
-  if (path.length <= max) return path;
-  return "…" + path.slice(-(max - 1));
+function updateSaveStatus(session: OpenSession) {
+  const statusEl = (session as any)._saveStatusEl as HTMLElement | undefined;
+  if (!statusEl) return;
+
+  statusEl.classList.remove("is-dirty", "is-saved", "is-error");
+  if (session.saving) {
+    statusEl.textContent = "正在保存…";
+    statusEl.classList.add("is-dirty");
+  } else if (session.saveFailed) {
+    statusEl.textContent = "保存失败";
+    statusEl.classList.add("is-error");
+  } else if (session.dirty) {
+    statusEl.textContent = "有未保存的更改";
+    statusEl.classList.add("is-dirty");
+  } else if (session.savedAt) {
+    statusEl.textContent = formatSavedStatus(session.savedAt);
+    statusEl.classList.add("is-saved");
+  } else {
+    statusEl.textContent = "自动保存已开启";
+    statusEl.classList.add("is-saved");
+  }
 }
 
 async function closeSession(tabID: string, opts: { flush?: boolean } = {}) {
   const session = sessions.get(tabID);
   if (!session) return;
 
+  session.closeMoreMenu?.();
   if (session.autosaveTimer) {
     session.win.clearTimeout(session.autosaveTimer);
   }
 
-  if (opts.flush && session.dirty) {
-    await saveSession(session, { explicit: true });
+  if (opts.flush) {
+    // Rewriting the main attachment lets Zotero include sidecar deletions in
+    // the next stored-file sync, even when autosave already cleared `dirty`.
+    await saveSession(session, { explicit: true, cleanupImages: true });
   }
 
   try {

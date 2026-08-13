@@ -26,7 +26,10 @@ export function registerMarkdownTabHooks(win: _ZoteroTypes.MainWindow) {
   };
 
   // Avoid focusing nowhere after select
-  tabs.tabHooks.refocus[MARKDOWN_TAB_TYPE] = async (tab: { id: string }) => {
+  tabs.tabHooks.refocus[MARKDOWN_TAB_TYPE] = async (tab: {
+    id: string;
+    data?: { itemID?: number };
+  }) => {
     const host = win.document
       .getElementById(tab.id)
       ?.querySelector(".zotero-markdown-editor-host") as HTMLElement | null;
@@ -38,7 +41,11 @@ export function registerMarkdownTabHooks(win: _ZoteroTypes.MainWindow) {
       try {
         iframe.focus();
         iframe.contentWindow?.postMessage(
-          { source: "zotero-markdown-editor", type: "focus" },
+          {
+            source: "zotero-markdown-editor",
+            channel: `${tab.id}:${tab.data?.itemID ?? ""}`,
+            type: "focus",
+          },
           "*",
         );
       } catch {
