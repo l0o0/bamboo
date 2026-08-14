@@ -7,7 +7,7 @@ export function livePreviewWhen(enabled: boolean): Extension {
 }
 
 export { livePreviewPlugin };
-export { setLiveImageAssets } from "./plugin";
+export { setLiveImageAssets, setLiveTableCellEdit } from "./plugin";
 export {
   activeLinesFromSelection,
   frontmatterLineNumbers,

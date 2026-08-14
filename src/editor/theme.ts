@@ -11,6 +11,13 @@ const FONT_MONO =
 const FONT_PROSE =
   'system-ui, -apple-system, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif';
 
+const LIVE_EDITOR_GEOMETRY = {
+  contentPadding: "20px 0 40px",
+  linePadding: "0 30px 0 34px",
+  tableMargin: "0 30px 0 34px",
+  tablePadding: "0",
+} as const;
+
 const livePreviewStyles = {
   // Visible MD markers on the active (source) line — muted, keep line metrics
   ".zmd-lp-syntax": {
@@ -77,11 +84,13 @@ const livePreviewStyles = {
     cursor: "pointer",
   },
   ".cm-line.zmd-lp-table-row": {
+    position: "relative",
     display: "grid",
     gridTemplateColumns:
       "repeat(var(--zmd-table-columns), minmax(4.5rem, 1fr))",
-    paddingLeft: "34px",
-    paddingRight: "30px",
+    margin: LIVE_EDITOR_GEOMETRY.tableMargin,
+    padding: LIVE_EDITOR_GEOMETRY.tablePadding,
+    boxSizing: "border-box",
     borderLeft: "1px solid var(--zmd-table-border)",
     borderRight: "1px solid var(--zmd-table-border)",
     backgroundColor: "var(--zmd-table-bg)",
@@ -100,17 +109,6 @@ const livePreviewStyles = {
     lineHeight: "0",
     overflow: "hidden",
   },
-  ".cm-line.zmd-lp-table-source": {
-    fontFamily: FONT_MONO,
-    fontSize: "0.92em",
-    backgroundColor: "var(--zmd-table-active-bg)",
-  },
-  ".cm-line.zmd-lp-table-delimiter-source": {
-    fontFamily: FONT_MONO,
-    fontSize: "0.92em",
-    color: "var(--zmd-table-delimiter-text)",
-    backgroundColor: "var(--zmd-table-active-bg)",
-  },
   ".zmd-lp-table-cell": {
     display: "block",
     minWidth: "0",
@@ -119,6 +117,24 @@ const livePreviewStyles = {
     textOverflow: "ellipsis",
     whiteSpace: "nowrap",
     borderRight: "1px solid var(--zmd-table-border)",
+  },
+  ".zmd-lp-table-cell-active": {
+    backgroundColor: "var(--zmd-table-active-bg)",
+  },
+  ".zmd-lp-table-cell-editing": {
+    minHeight: "1.35em",
+    whiteSpace: "pre-wrap",
+    overflowWrap: "anywhere",
+    textOverflow: "clip",
+    outline: "none",
+    caretColor: "currentColor",
+    cursor: "text",
+  },
+  ".cm-line.zmd-lp-table-row > .cm-widgetBuffer": {
+    display: "none",
+  },
+  '.cm-line.zmd-lp-table-row > span[contenteditable="false"]:empty': {
+    display: "none",
   },
   ".zmd-lp-table-cell:last-child": {
     borderRight: "none",
@@ -220,12 +236,7 @@ const tableContextMenuStyles = {
 };
 
 export function liveEditorGeometry() {
-  return {
-    contentPadding: "20px 0 40px",
-    // CodeMirror's default line inset is 6px left and 2px right. Moving the
-    // former 28px content inset here keeps text fixed and selection geometry aligned.
-    linePadding: "0 30px 0 34px",
-  } as const;
+  return LIVE_EDITOR_GEOMETRY;
 }
 
 export function editorThemeExtension(

@@ -5,7 +5,10 @@ import {
   tableInsertTemplate,
 } from "../src/modules/markdown/insert-template.ts";
 import { iconH3 } from "../src/modules/markdown/icons.ts";
-import { responsiveToolbarSizingCSS } from "../src/modules/markdown/styles.ts";
+import {
+  responsiveToolbarSizingCSS,
+  toolbarWidthAlignmentCSS,
+} from "../src/modules/markdown/styles.ts";
 
 describe("toolbar insert templates", () => {
   it("inserts a default 3 by 3 editable table template", () => {
@@ -63,5 +66,11 @@ describe("toolbar insert templates", () => {
     assert.match(css, /@container zmd-toolbar \(max-width: 760px\)/);
     assert.match(css, /--zmd-toolbar-icon-size: 16px/);
     assert.match(css, /--zmd-toolbar-control-size: 36px/);
+  });
+
+  it("aligns the toolbar with the Live text boundaries", () => {
+    const css = toolbarWidthAlignmentCSS();
+    assert.match(css, /padding: 4px 30px 4px 34px/);
+    assert.match(css, /max-width: 44rem/);
   });
 });

@@ -87,4 +87,22 @@ describe("GFM table editing", () => {
     assert.equal(body?.cells.length, 2);
     assert.equal(body?.cells[0].from, body?.cells[0].to);
   });
+
+  it("assigns stable row and column metadata to every visible cell", () => {
+    const state = stateAt("Name", 1);
+    const rows = liveTableRows(state);
+    assert.deepEqual(
+      rows.flatMap((row) =>
+        row.cells.map((cell) => [cell.rowIndex, cell.columnIndex]),
+      ),
+      [
+        [0, 0],
+        [0, 1],
+        [1, 0],
+        [1, 1],
+        [2, 0],
+        [2, 1],
+      ],
+    );
+  });
 });

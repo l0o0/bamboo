@@ -24,6 +24,17 @@ export function responsiveToolbarSizingCSS(): string {
 }`;
 }
 
+export function toolbarWidthAlignmentCSS(): string {
+  return `
+.zotero-markdown-toolbar {
+  padding: 4px 30px 4px 34px;
+}
+
+.zotero-markdown-toolbar-inner {
+  max-width: 44rem;
+}`;
+}
+
 export function injectMarkdownStyles(win: Window) {
   const doc = win.document;
   const id = `${addon.data.config.addonRef}-markdown-styles`;
@@ -108,7 +119,6 @@ ${responsiveToolbarSizingCSS()}
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 4px 28px;
   border-bottom: 1px solid var(--zmd-border);
   background: linear-gradient(180deg, var(--zmd-surface) 0%, var(--zmd-surface-2) 100%);
   flex: 0 0 auto;
@@ -123,8 +133,9 @@ ${responsiveToolbarSizingCSS()}
   gap: 2px;
   min-width: 0;
   width: 100%;
-  max-width: 64rem;
 }
+
+${toolbarWidthAlignmentCSS()}
 
 .zotero-markdown-fmt {
   display: inline-flex;

@@ -51,8 +51,24 @@ import {
 } from "../modules/markdown/editor-protocol";
 import { editorThemeExtension } from "./theme";
 import { imageDebug } from "./image-debug";
-import { livePreviewWhen, setLiveImageAssets } from "./live-preview";
+import {
+  livePreviewWhen,
+  setLiveImageAssets,
+  setLiveTableCellEdit,
+} from "./live-preview";
 import { tableKeymap } from "./table";
+import {
+  activateTableCell,
+  planCellInput,
+  planCellNavigation,
+  remapActiveCell,
+  TABLE_CELL_COMMIT_EVENT,
+  TABLE_CELL_INPUT_EVENT,
+  TABLE_CELL_NAVIGATE_EVENT,
+  type TableCellEditTarget,
+  type TableCellInputDetail,
+  type TableCellNavigateDetail,
+} from "./table-cell-edit";
 import {
   planTableOperation,
   tableTargetAt,
@@ -75,8 +91,10 @@ let currentTheme: EditorTheme = "light";
 let currentFontSize = 14;
 let currentMode: EditorMode = "live";
 let removeImageDoubleClickListener: (() => void) | null = null;
+let removeTableCellListeners: (() => void) | null = null;
 let tableContextMenu: TableContextMenu | null = null;
 let tableContextPosition: number | null = null;
+let activeTableCell: TableCellEditTarget | null = null;
 const editorChannel =
   new URL(window.location.href).searchParams.get("channel") || "";
 
@@ -147,6 +165,87 @@ function bindImageDoubleClick(host: HTMLElement) {
     host.removeEventListener("dblclick", onPointerEvent, true);
     host.removeEventListener("dblclick", onDoubleClick, true);
     removeImageDoubleClickListener = null;
+  };
+}
+
+function dispatchActiveTableCell(target: TableCellEditTarget | null) {
+  activeTableCell = target;
+  view?.dispatch({ effects: setLiveTableCellEdit.of(target) });
+}
+
+function caretOffsetFromPoint(
+  cell: HTMLElement,
+  x: number,
+  y: number,
+  sourceLength: number,
+) {
+  const caret = cell.ownerDocument.caretPositionFromPoint?.(x, y);
+  if (!caret?.offsetNode || !cell.contains(caret.offsetNode)) {
+    return sourceLength;
+  }
+  const range = cell.ownerDocument.createRange();
+  range.selectNodeContents(cell);
+  range.setEnd(caret.offsetNode, caret.offset);
+  const visibleLength = cell.textContent?.length || 0;
+  if (!visibleLength) return 0;
+  return Math.round((range.toString().length / visibleLength) * sourceLength);
+}
+
+function bindTableCellEditing(host: HTMLElement) {
+  removeTableCellListeners?.();
+  const onInput = (event: Event) => {
+    if (!view || !activeTableCell || view.state.readOnly) return;
+    const detail = (event as CustomEvent<TableCellInputDetail>).detail;
+    const plan = planCellInput(
+      view.state,
+      activeTableCell,
+      detail.value,
+      detail.caretOffset,
+    );
+    if (!plan) {
+      dispatchActiveTableCell(null);
+      return;
+    }
+    activeTableCell = plan.active;
+    view.dispatch({
+      changes: plan.changes,
+      effects: setLiveTableCellEdit.of(plan.active),
+    });
+  };
+  const onCommit = () => dispatchActiveTableCell(null);
+  const onNavigate = (event: Event) => {
+    if (!view || !activeTableCell) return;
+    const detail = (event as CustomEvent<TableCellNavigateDetail>).detail;
+    const plan = planCellNavigation(
+      view.state,
+      activeTableCell,
+      detail.backwards,
+    );
+    if (!plan) return;
+    activeTableCell = plan.active;
+    view.dispatch({
+      changes: plan.changes,
+      selection: { anchor: plan.active.from },
+      effects: setLiveTableCellEdit.of(plan.active),
+      scrollIntoView: true,
+    });
+  };
+  const onPointerDown = (event: PointerEvent) => {
+    if (!activeTableCell) return;
+    const target = event.target as Element | null;
+    if (target?.closest?.(".zmd-lp-table-cell")) return;
+    dispatchActiveTableCell(null);
+  };
+  host.addEventListener(TABLE_CELL_INPUT_EVENT, onInput);
+  host.addEventListener(TABLE_CELL_COMMIT_EVENT, onCommit);
+  host.addEventListener(TABLE_CELL_NAVIGATE_EVENT, onNavigate);
+  document.addEventListener("pointerdown", onPointerDown, true);
+  removeTableCellListeners = () => {
+    host.removeEventListener(TABLE_CELL_INPUT_EVENT, onInput);
+    host.removeEventListener(TABLE_CELL_COMMIT_EVENT, onCommit);
+    host.removeEventListener(TABLE_CELL_NAVIGATE_EVENT, onNavigate);
+    document.removeEventListener("pointerdown", onPointerDown, true);
+    removeTableCellListeners = null;
   };
 }
 
@@ -260,6 +359,18 @@ function buildExtensions(init: EditorInitPayload): Extension[] {
       EditorView.editable.of(!init.readOnly),
     ]),
     EditorView.updateListener.of((update) => {
+      if (update.docChanged && activeTableCell) {
+        const hasActiveEffect = update.transactions.some((transaction) =>
+          transaction.effects.some((effect) => effect.is(setLiveTableCellEdit)),
+        );
+        if (!hasActiveEffect) {
+          activeTableCell = remapActiveCell(
+            update.state,
+            activeTableCell,
+            update.changes.mapPos(activeTableCell.tableFrom, 1),
+          );
+        }
+      }
       if (!update.docChanged) return;
       tableContextMenu?.close();
       const value = update.state.doc.toString();
@@ -301,8 +412,14 @@ function buildExtensions(init: EditorInitPayload): Extension[] {
         const from = Number(cell.dataset.zmdTableCellFrom);
         const to = Number(cell.dataset.zmdTableCellTo);
         if (!Number.isFinite(from) || !Number.isFinite(to)) return false;
-        view.dispatch({ selection: { anchor: from, head: to } });
-        view.focus();
+        const valueLength = Math.max(0, to - from);
+        const editTarget = activateTableCell(
+          view.state,
+          from,
+          caretOffsetFromPoint(cell, event.clientX, event.clientY, valueLength),
+        );
+        if (!editTarget) return false;
+        dispatchActiveTableCell(editTarget);
         event.preventDefault();
         return true;
       },
@@ -444,6 +561,8 @@ function createOrResetEditor(init: EditorInitPayload) {
 
   if (view) {
     removeImageDoubleClickListener?.();
+    removeTableCellListeners?.();
+    activeTableCell = null;
     tableContextMenu?.destroy();
     tableContextMenu = null;
     tableContextPosition = null;
@@ -469,15 +588,22 @@ function createOrResetEditor(init: EditorInitPayload) {
       if (!target) return;
       const plan = planTableOperation(view.state, target, action);
       if (!plan) return;
+      const nextState = view.state.update({ changes: plan.changes }).state;
+      const nextActive = activeTableCell
+        ? remapActiveCell(nextState, plan.target)
+        : null;
+      activeTableCell = nextActive;
       view.dispatch({
         changes: plan.changes,
         selection: plan.selection,
+        effects: setLiveTableCellEdit.of(nextActive),
         scrollIntoView: true,
       });
       view.focus();
     },
   });
   bindImageDoubleClick(host);
+  bindTableCellEditing(host);
 }
 
 function handleParentMessage(data: ParentToEditorMessage) {
@@ -561,15 +687,20 @@ function handleParentMessage(data: ParentToEditorMessage) {
     case "setReadOnly": {
       if (!view) return;
       const readOnly = !!data.payload.readOnly;
+      if (readOnly) activeTableCell = null;
       view.dispatch({
-        effects: readOnlyCompartment.reconfigure([
-          EditorState.readOnly.of(readOnly),
-          EditorView.editable.of(!readOnly),
-        ]),
+        effects: [
+          readOnlyCompartment.reconfigure([
+            EditorState.readOnly.of(readOnly),
+            EditorView.editable.of(!readOnly),
+          ]),
+          setLiveTableCellEdit.of(activeTableCell),
+        ],
       });
       break;
     }
     case "setMode": {
+      dispatchActiveTableCell(null);
       applyMode(data.payload.mode === "source" ? "source" : "live");
       break;
     }
@@ -580,6 +711,8 @@ function handleParentMessage(data: ParentToEditorMessage) {
     }
     case "destroy": {
       removeImageDoubleClickListener?.();
+      removeTableCellListeners?.();
+      activeTableCell = null;
       tableContextMenu?.destroy();
       tableContextMenu = null;
       tableContextPosition = null;

@@ -35,7 +35,8 @@ rounded:
   sm: "6px"
   md: "8px"
 spacing:
-  toolbar-inline: "28px"
+  toolbar-inline-start: "34px"
+  toolbar-inline-end: "30px"
   content-inline: "28px"
   toolbar-block: "4px"
   control: "36px"
@@ -110,7 +111,7 @@ Depth is primarily structural: separated surfaces use a one-pixel border and ton
 
 ### Toolbar
 
-The toolbar is a single, centered icon toolbelt. Its inner track may expand to `64rem` so controls remain legible while the Live Preview text column stays at `48rem`. Use 28px inline and 4px block padding on the outer toolbar; keep functional groups separated by a one-pixel divider.
+The toolbar is a single, centered icon toolbelt. It follows the Live Preview text boundaries: a `44rem` usable track inside the centered `48rem` reading column, with `34px` left and `30px` right insets. Use 4px block padding on the outer toolbar and keep functional groups separated by a one-pixel divider.
 
 ### Toolbar Buttons
 
@@ -143,7 +144,7 @@ The toolbar is a single, centered icon toolbelt. Its inner track may expand to `
 
 ### Do:
 
-- **Do** align the toolbar, Live Preview document, and status bar to the 48rem/28px horizontal rhythm.
+- **Do** align the toolbar and rendered tables to the Live text boundaries inside the centered 48rem reading column.
 - **Do** use icon-first controls with 36px targets and visible tooltips.
 - **Do** keep interaction states restrained: a muted surface hover is enough for ordinary toolbar actions.
 - **Do** preserve a clear, semantic save state in the status bar.
@@ -161,7 +162,11 @@ The toolbar is a single, centered icon toolbelt. Its inner track may expand to `
 
 The toolbar table control opens an anchored `8 x 8` grid. Hovering previews a contiguous rectangle and reports `columns x rows`; clicking inserts a valid GFM table with the first header cell selected. Row count describes visible table rows and excludes the Markdown delimiter line.
 
-In Live mode, inactive GFM table rows use a restrained grid with shared column widths, a tinted header, one-pixel borders, and Markdown alignment markers respected. The active row remains editable Markdown so CodeMirror stays the only document authority. The delimiter line is visually collapsed only while inactive.
+In Live mode, GFM tables remain a restrained rendered grid with shared column widths, a tinted header, one-pixel borders, and Markdown alignment markers respected. Clicking a cell activates only that cell: it receives a subtle focus background and shows its local Markdown source in place, while the row and all other cells remain rendered. The delimiter line stays collapsed throughout Live mode. CodeMirror remains the only document authority; cell input replaces only the exact cell content range.
+
+Table borders use the same `34px` left and `30px` right insets as Live prose instead of extending to the outer reading-column edges.
+
+The active table cell uses single-click activation with no input border. `Enter`, `Escape`, or a click outside the table commits and exits cell editing. `Tab` and `Shift+Tab` commit and move between logical cells; Tab from the final cell appends a body row. Right-click keeps the structural table menu available, and Source mode continues to expose normal Markdown without Live cell widgets.
 
 - `Tab` moves to the next logical cell.
 - `Shift+Tab` moves to the previous logical cell.

@@ -29,8 +29,17 @@ import type { ImageAssetMap } from "../../modules/markdown/editor-protocol";
 import { planLiveImageDecorations } from "./images";
 import { imageDebug } from "../image-debug";
 import { liveTableRows, type TableAlignment } from "../table";
+import {
+  remapActiveCell,
+  TABLE_CELL_COMMIT_EVENT,
+  TABLE_CELL_INPUT_EVENT,
+  TABLE_CELL_NAVIGATE_EVENT,
+  type TableCellEditTarget,
+} from "../table-cell-edit";
 
 export const setLiveImageAssets = StateEffect.define<ImageAssetMap>();
+export const setLiveTableCellEdit =
+  StateEffect.define<TableCellEditTarget | null>();
 
 function asDocLines(state: EditorState): DocLines {
   return {
@@ -172,8 +181,13 @@ class TableCellWidget extends WidgetType {
     readonly value: string,
     readonly alignment: TableAlignment,
     readonly header: boolean,
+    readonly rowIndex: number,
+    readonly columnIndex: number,
     readonly from: number,
     readonly to: number,
+    readonly editing: boolean,
+    readonly caretOffset: number,
+    readonly readOnly: boolean,
   ) {
     super();
   }
@@ -183,8 +197,13 @@ class TableCellWidget extends WidgetType {
       this.value === other.value &&
       this.alignment === other.alignment &&
       this.header === other.header &&
+      this.rowIndex === other.rowIndex &&
+      this.columnIndex === other.columnIndex &&
       this.from === other.from &&
-      this.to === other.to
+      this.to === other.to &&
+      this.editing === other.editing &&
+      this.caretOffset === other.caretOffset &&
+      this.readOnly === other.readOnly
     );
   }
 
@@ -192,15 +211,152 @@ class TableCellWidget extends WidgetType {
     const cell = document.createElement("span");
     cell.className = `zmd-lp-table-cell zmd-lp-table-align-${this.alignment || "default"}`;
     if (this.header) cell.classList.add("zmd-lp-table-header-cell");
+    cell.style.gridColumn = String(this.columnIndex + 1);
     cell.dataset.zmdTableCellFrom = String(this.from);
     cell.dataset.zmdTableCellTo = String(this.to);
-    cell.textContent = this.value || " ";
+    cell.dataset.zmdTableCellRow = String(this.rowIndex);
+    cell.dataset.zmdTableCellColumn = String(this.columnIndex);
+    if (this.editing) cell.classList.add("zmd-lp-table-cell-active");
+    if (this.editing && !this.readOnly) {
+      cell.classList.add("zmd-lp-table-cell-editing");
+      cell.contentEditable = "true";
+      cell.setAttribute("role", "textbox");
+      cell.setAttribute("aria-multiline", "false");
+      cell.spellcheck = false;
+      cell.textContent = this.value;
+      let composing = false;
+      let compositionTimer: number | undefined;
+      let awaitingCompositionInput = false;
+      const caretOffset = () => {
+        const selection = cell.ownerDocument.getSelection();
+        if (!selection?.rangeCount || !cell.contains(selection.anchorNode)) {
+          return cell.textContent?.length || 0;
+        }
+        const range = cell.ownerDocument.createRange();
+        range.selectNodeContents(cell);
+        range.setEnd(selection.anchorNode!, selection.anchorOffset);
+        return range.toString().length;
+      };
+      const emitInput = () => {
+        const CustomEventConstructor =
+          cell.ownerDocument.defaultView?.CustomEvent || CustomEvent;
+        cell.dispatchEvent(
+          new CustomEventConstructor(TABLE_CELL_INPUT_EVENT, {
+            bubbles: true,
+            detail: {
+              value: cell.textContent || "",
+              caretOffset: caretOffset(),
+            },
+          }),
+        );
+      };
+      cell.addEventListener("beforeinput", (event) => {
+        const input = event as InputEvent;
+        if (
+          input.inputType === "insertParagraph" ||
+          input.inputType === "insertLineBreak"
+        ) {
+          event.preventDefault();
+          const CustomEventConstructor =
+            cell.ownerDocument.defaultView?.CustomEvent || CustomEvent;
+          cell.dispatchEvent(
+            new CustomEventConstructor(TABLE_CELL_COMMIT_EVENT, {
+              bubbles: true,
+            }),
+          );
+        }
+      });
+      cell.addEventListener("compositionstart", () => {
+        composing = true;
+      });
+      cell.addEventListener("compositionend", () => {
+        composing = false;
+        awaitingCompositionInput = true;
+        compositionTimer = cell.ownerDocument.defaultView?.setTimeout(() => {
+          awaitingCompositionInput = false;
+          if (cell.isConnected) emitInput();
+        }, 0);
+      });
+      cell.addEventListener("input", () => {
+        if (composing) return;
+        if (awaitingCompositionInput) {
+          awaitingCompositionInput = false;
+          if (compositionTimer !== undefined) {
+            cell.ownerDocument.defaultView?.clearTimeout(compositionTimer);
+          }
+          cell.ownerDocument.defaultView?.setTimeout(() => {
+            if (cell.isConnected) emitInput();
+          }, 0);
+          return;
+        }
+        emitInput();
+      });
+      cell.addEventListener("keydown", (event) => {
+        if (event.key === "Tab") {
+          event.preventDefault();
+          const CustomEventConstructor =
+            cell.ownerDocument.defaultView?.CustomEvent || CustomEvent;
+          cell.dispatchEvent(
+            new CustomEventConstructor(TABLE_CELL_NAVIGATE_EVENT, {
+              bubbles: true,
+              detail: { backwards: event.shiftKey },
+            }),
+          );
+        } else if (event.key === "Escape" || event.key === "Enter") {
+          event.preventDefault();
+          const CustomEventConstructor =
+            cell.ownerDocument.defaultView?.CustomEvent || CustomEvent;
+          cell.dispatchEvent(
+            new CustomEventConstructor(TABLE_CELL_COMMIT_EVENT, {
+              bubbles: true,
+            }),
+          );
+        }
+      });
+      const focus = () => {
+        cell.focus();
+        const selection = cell.ownerDocument.getSelection();
+        const range = cell.ownerDocument.createRange();
+        const node = cell.firstChild || cell;
+        const offset = Math.min(
+          this.caretOffset,
+          node.nodeType === 3 ? node.textContent?.length || 0 : 0,
+        );
+        range.setStart(node, offset);
+        range.collapse(true);
+        selection?.removeAllRanges();
+        selection?.addRange(range);
+      };
+      cell.ownerDocument.defaultView?.requestAnimationFrame(focus);
+    } else {
+      appendRenderedInline(cell, this.value);
+    }
     return cell;
   }
 
   ignoreEvent(event: Event) {
+    if (this.editing) return event.type !== "contextmenu";
     return event.type !== "click" && event.type !== "contextmenu";
   }
+}
+
+function appendRenderedInline(parent: HTMLElement, value: string) {
+  const ranges = parseInlineL2(value).sort((a, b) => a.from - b.from);
+  let cursor = 0;
+  for (const range of ranges) {
+    if (range.from > cursor) {
+      parent.append(value.slice(cursor, range.from));
+    }
+    if (range.kind !== "mark") {
+      const span = document.createElement("span");
+      span.className = `zmd-lp-${range.kind}`;
+      span.textContent = value.slice(range.from, range.to);
+      parent.appendChild(span);
+    }
+    cursor = Math.max(cursor, range.to);
+  }
+  if (cursor < value.length) parent.append(value.slice(cursor));
+  if (!parent.hasChildNodes()) parent.textContent = " ";
 }
 
 function intersects(
@@ -222,6 +378,7 @@ function buildDecorations(
   state: EditorState,
   composing: boolean,
   imageAssets: ImageAssetMap,
+  activeCell: TableCellEditTarget | null,
 ): DecorationSet {
   const ranges: ReturnType<Decoration["range"]>[] = [];
   const doc = asDocLines(state);
@@ -255,59 +412,54 @@ function buildDecorations(
 
     const tableRow = tableRows.get(n);
     if (tableRow) {
-      if (isActive) {
-        ranges.push(
-          Decoration.line({ class: "zmd-lp-table-source" }).range(base),
+      const rowClasses = ["zmd-lp-table-row", `zmd-lp-table-${tableRow.kind}`];
+      if (tableRow.isLast) rowClasses.push("zmd-lp-table-last-row");
+      ranges.push(
+        Decoration.line({
+          attributes: {
+            class: rowClasses.join(" "),
+            style: `--zmd-table-columns: ${tableRow.columnCount}`,
+          },
+        }).range(base),
+      );
+      let cursor = line.from;
+      tableRow.cells.forEach((cell, index) => {
+        if (cursor < cell.from) ranges.push(hideRange(cursor, cell.from));
+        const widget = new TableCellWidget(
+          state.doc.sliceString(cell.from, cell.to),
+          tableRow.alignments[index] || null,
+          tableRow.kind === "header",
+          cell.rowIndex || 0,
+          cell.columnIndex || 0,
+          cell.from,
+          cell.to,
+          !!activeCell &&
+            activeCell.tableFrom === tableRow.tableFrom &&
+            activeCell.rowIndex === (cell.rowIndex || 0) &&
+            activeCell.columnIndex === (cell.columnIndex || 0),
+          activeCell?.caretOffset || 0,
+          state.readOnly,
         );
-      } else {
-        const rowClasses = [
-          "zmd-lp-table-row",
-          `zmd-lp-table-${tableRow.kind}`,
-        ];
-        if (tableRow.isLast) rowClasses.push("zmd-lp-table-last-row");
-        ranges.push(
-          Decoration.line({
-            attributes: {
-              class: rowClasses.join(" "),
-              style: `--zmd-table-columns: ${tableRow.columnCount}`,
-            },
-          }).range(base),
-        );
-        let cursor = line.from;
-        tableRow.cells.forEach((cell, index) => {
-          if (cursor < cell.from) ranges.push(hideRange(cursor, cell.from));
-          const widget = new TableCellWidget(
-            state.doc.sliceString(cell.from, cell.to),
-            tableRow.alignments[index] || null,
-            tableRow.kind === "header",
-            cell.from,
-            cell.to,
+        if (cell.from === cell.to) {
+          ranges.push(
+            Decoration.widget({ widget, side: index }).range(cell.from),
           );
-          if (cell.from === cell.to) {
-            ranges.push(
-              Decoration.widget({ widget, side: index }).range(cell.from),
-            );
-          } else {
-            ranges.push(
-              Decoration.replace({ widget }).range(cell.from, cell.to),
-            );
-          }
-          cursor = cell.to;
-        });
-        if (cursor < line.to) ranges.push(hideRange(cursor, line.to));
-      }
+        } else {
+          ranges.push(Decoration.replace({ widget }).range(cell.from, cell.to));
+        }
+        cursor = cell.to;
+      });
+      if (cursor < line.to) ranges.push(hideRange(cursor, line.to));
       continue;
     }
 
     if (tableDelimiterLines.has(n)) {
       ranges.push(
         Decoration.line({
-          class: isActive
-            ? "zmd-lp-table-delimiter-source"
-            : "zmd-lp-table-delimiter",
+          class: "zmd-lp-table-delimiter",
         }).range(base),
       );
-      if (!isActive && text.length) ranges.push(hideRange(base, line.to));
+      if (text.length) ranges.push(hideRange(base, line.to));
       continue;
     }
 
@@ -423,27 +575,41 @@ class LivePreviewPlugin {
   decorations: DecorationSet;
   composing = false;
   imageAssets: ImageAssetMap = {};
+  activeCell: TableCellEditTarget | null = null;
 
   constructor(view: EditorView) {
     this.decorations = buildDecorations(
       view.state,
       this.composing,
       this.imageAssets,
+      this.activeCell,
     );
   }
 
   update(update: ViewUpdate) {
-    let imageAssetsChanged = false;
+    let effectChanged = false;
+    let activeEffectSet = false;
     for (const transaction of update.transactions) {
       for (const effect of transaction.effects) {
         if (effect.is(setLiveImageAssets)) {
           this.imageAssets = effect.value;
-          imageAssetsChanged = true;
+          effectChanged = true;
+        } else if (effect.is(setLiveTableCellEdit)) {
+          this.activeCell = effect.value;
+          effectChanged = true;
+          activeEffectSet = true;
         }
       }
     }
+    if (update.docChanged && this.activeCell && !activeEffectSet) {
+      this.activeCell = remapActiveCell(
+        update.state,
+        this.activeCell,
+        update.changes.mapPos(this.activeCell.tableFrom, 1),
+      );
+    }
     if (
-      imageAssetsChanged ||
+      effectChanged ||
       update.docChanged ||
       update.selectionSet ||
       update.viewportChanged ||
@@ -453,6 +619,7 @@ class LivePreviewPlugin {
         update.state,
         this.composing,
         this.imageAssets,
+        this.activeCell,
       );
     }
   }
@@ -464,6 +631,7 @@ class LivePreviewPlugin {
       view.state,
       this.composing,
       this.imageAssets,
+      this.activeCell,
     );
     view.dispatch({});
   }

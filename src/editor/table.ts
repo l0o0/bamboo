@@ -11,6 +11,8 @@ export interface TableCellRange {
   to: number;
   outerFrom: number;
   outerTo: number;
+  rowIndex?: number;
+  columnIndex?: number;
 }
 
 export interface TableRowLayout {
@@ -35,6 +37,7 @@ export interface TableTabPlan {
 }
 
 export interface LiveTableRow extends TableRowLayout {
+  tableFrom: number;
   line: number;
   columnCount: number;
   alignments: TableAlignment[];
@@ -175,6 +178,12 @@ export function liveTableRows(state: EditorState): LiveTableRow[] {
     const visibleRows = table.rows.filter((row) => row.kind !== "delimiter");
     return visibleRows.map((row, index) => ({
       ...row,
+      tableFrom: table.from,
+      cells: row.cells.map((cell, columnIndex) => ({
+        ...cell,
+        rowIndex: index,
+        columnIndex,
+      })),
       line: state.doc.lineAt(row.from).number,
       columnCount: table.columnCount,
       alignments: table.alignments,
