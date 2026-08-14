@@ -22,7 +22,7 @@ Provide Obsidian-style edge actions for quickly appending a column or row to a r
 - Extend the rendered table-cell widget with a right-edge action only for the final logical cell in each row.
 - Add one bottom-edge action to the final visible row.
 - Use real `<button type="button">` elements with `aria-label`, rather than pseudo-elements, so pointer and keyboard activation share one path.
-- Keep the controls inside the existing table row DOM and position them in the reserved right/bottom gutters. They must not become CSS Grid tracks or alter column widths.
+- Keep the controls inside the existing table row DOM. Position the column action in the reserved right gutter and measure the bottom action as final-row padding so it does not become a CSS Grid track, alter column widths, or introduce vertical line margins.
 - Button pointer and click events stop propagation so they never activate cell editing or move the CodeMirror selection first.
 
 ## Operations
@@ -34,7 +34,7 @@ Provide Obsidian-style edge actions for quickly appending a column or row to a r
 
 ## Layout and States
 
-- Reserve stable pointer gutters outside the rendered border without changing the visible table width.
+- Reserve stable pointer space without changing the visible table width or using vertical margins on CodeMirror lines.
 - Default state: transparent hit area and hidden plus glyph.
 - Hover/focus-visible state: muted surface, visible plus glyph, and existing tooltip treatment.
 - Dark and light themes use the current table border, muted surface, text, and focus tokens.

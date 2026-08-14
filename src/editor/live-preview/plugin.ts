@@ -36,6 +36,11 @@ import {
   TABLE_CELL_NAVIGATE_EVENT,
   type TableCellEditTarget,
 } from "../table-cell-edit";
+import {
+  TABLE_EDGE_ACTION_EVENT,
+  type TableEdgeAction,
+  type TableEdgeActionDetail,
+} from "../table-edge-actions";
 
 export const setLiveImageAssets = StateEffect.define<ImageAssetMap>();
 export const setLiveTableCellEdit =
@@ -340,6 +345,81 @@ class TableCellWidget extends WidgetType {
   }
 }
 
+class TableEdgeActionsWidget extends WidgetType {
+  constructor(
+    readonly columnPosition: number,
+    readonly rowPosition: number,
+    readonly finalRow: boolean,
+    readonly readOnly: boolean,
+  ) {
+    super();
+  }
+
+  eq(other: TableEdgeActionsWidget) {
+    return (
+      this.columnPosition === other.columnPosition &&
+      this.rowPosition === other.rowPosition &&
+      this.finalRow === other.finalRow &&
+      this.readOnly === other.readOnly
+    );
+  }
+
+  toDOM() {
+    const wrapper = document.createElement("span");
+    wrapper.className = "zmd-lp-table-edge-actions";
+    wrapper.contentEditable = "false";
+    if (this.readOnly) return wrapper;
+
+    const addButton = (
+      action: TableEdgeAction,
+      position: number,
+      className: string,
+      label: string,
+    ) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = `zmd-lp-table-edge-action ${className}`;
+      button.title = label;
+      button.setAttribute("aria-label", label);
+      button.textContent = "+";
+      const stop = (event: Event) => event.stopPropagation();
+      button.addEventListener("pointerdown", stop);
+      button.addEventListener("mousedown", stop);
+      button.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        const CustomEventConstructor =
+          wrapper.ownerDocument.defaultView?.CustomEvent || CustomEvent;
+        wrapper.dispatchEvent(
+          new CustomEventConstructor<TableEdgeActionDetail>(
+            TABLE_EDGE_ACTION_EVENT,
+            {
+              bubbles: true,
+              detail: { position, action },
+            },
+          ),
+        );
+      });
+      wrapper.appendChild(button);
+    };
+
+    addButton(
+      "append-column",
+      this.columnPosition,
+      "is-column",
+      "在右侧新增列",
+    );
+    if (this.finalRow) {
+      addButton("append-row", this.rowPosition, "is-row", "在下方新增行");
+    }
+    return wrapper;
+  }
+
+  ignoreEvent() {
+    return true;
+  }
+}
+
 function appendRenderedInline(parent: HTMLElement, value: string) {
   const ranges = parseInlineL2(value).sort((a, b) => a.from - b.from);
   let cursor = 0;
@@ -450,6 +530,17 @@ function buildDecorations(
         cursor = cell.to;
       });
       if (cursor < line.to) ranges.push(hideRange(cursor, line.to));
+      ranges.push(
+        Decoration.widget({
+          widget: new TableEdgeActionsWidget(
+            tableRow.cells.at(-1)?.from ?? line.from,
+            tableRow.cells[0]?.from ?? line.from,
+            tableRow.isLast,
+            state.readOnly,
+          ),
+          side: 1,
+        }).range(line.to),
+      );
       continue;
     }
 

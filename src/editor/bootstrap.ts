@@ -70,6 +70,11 @@ import {
   type TableCellNavigateDetail,
 } from "./table-cell-edit";
 import {
+  planTableEdgeAction,
+  TABLE_EDGE_ACTION_EVENT,
+  type TableEdgeActionDetail,
+} from "./table-edge-actions";
+import {
   planTableOperation,
   tableTargetAt,
   type TableAction,
@@ -230,20 +235,42 @@ function bindTableCellEditing(host: HTMLElement) {
       scrollIntoView: true,
     });
   };
+  const onEdgeAction = (event: Event) => {
+    if (!view || view.state.readOnly) return;
+    const detail = (event as CustomEvent<TableEdgeActionDetail>).detail;
+    const plan = planTableEdgeAction(
+      view.state,
+      detail.position,
+      detail.action,
+    );
+    if (!plan) return;
+    const nextState = view.state.update({ changes: plan.changes }).state;
+    const nextActive = remapActiveCell(nextState, plan.target);
+    activeTableCell = nextActive;
+    view.dispatch({
+      changes: plan.changes,
+      selection: plan.selection,
+      effects: setLiveTableCellEdit.of(nextActive),
+      scrollIntoView: true,
+    });
+  };
   const onPointerDown = (event: PointerEvent) => {
     if (!activeTableCell) return;
     const target = event.target as Element | null;
     if (target?.closest?.(".zmd-lp-table-cell")) return;
+    if (target?.closest?.(".zmd-lp-table-edge-action")) return;
     dispatchActiveTableCell(null);
   };
   host.addEventListener(TABLE_CELL_INPUT_EVENT, onInput);
   host.addEventListener(TABLE_CELL_COMMIT_EVENT, onCommit);
   host.addEventListener(TABLE_CELL_NAVIGATE_EVENT, onNavigate);
+  host.addEventListener(TABLE_EDGE_ACTION_EVENT, onEdgeAction);
   document.addEventListener("pointerdown", onPointerDown, true);
   removeTableCellListeners = () => {
     host.removeEventListener(TABLE_CELL_INPUT_EVENT, onInput);
     host.removeEventListener(TABLE_CELL_COMMIT_EVENT, onCommit);
     host.removeEventListener(TABLE_CELL_NAVIGATE_EVENT, onNavigate);
+    host.removeEventListener(TABLE_EDGE_ACTION_EVENT, onEdgeAction);
     document.removeEventListener("pointerdown", onPointerDown, true);
     removeTableCellListeners = null;
   };

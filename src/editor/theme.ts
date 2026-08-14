@@ -16,6 +16,7 @@ const LIVE_EDITOR_GEOMETRY = {
   linePadding: "0 30px 0 34px",
   tableMargin: "0 30px 0 34px",
   tablePadding: "0",
+  tableEdgeSize: "30px",
 } as const;
 
 const livePreviewStyles = {
@@ -102,6 +103,7 @@ const livePreviewStyles = {
   },
   ".cm-line.zmd-lp-table-last-row": {
     borderBottom: "1px solid var(--zmd-table-border)",
+    paddingBottom: LIVE_EDITOR_GEOMETRY.tableEdgeSize,
   },
   ".cm-line.zmd-lp-table-delimiter": {
     height: "0",
@@ -135,6 +137,52 @@ const livePreviewStyles = {
   },
   '.cm-line.zmd-lp-table-row > span[contenteditable="false"]:empty': {
     display: "none",
+  },
+  ".zmd-lp-table-edge-actions": {
+    position: "absolute",
+    inset: "0",
+    zIndex: "2",
+    pointerEvents: "none",
+  },
+  ".zmd-lp-table-edge-action": {
+    position: "absolute",
+    boxSizing: "border-box",
+    display: "grid",
+    placeItems: "center",
+    padding: "0",
+    border: "1px solid var(--zmd-table-border)",
+    backgroundColor: "var(--zmd-table-bg)",
+    color: "var(--zmd-table-delimiter-text)",
+    font: "inherit",
+    fontSize: "1.45em",
+    fontWeight: "400",
+    lineHeight: "1",
+    opacity: "0",
+    cursor: "pointer",
+    pointerEvents: "auto",
+    transition: "opacity 120ms ease-out, background-color 120ms ease-out",
+  },
+  ".zmd-lp-table-edge-action.is-column": {
+    top: "0",
+    left: "100%",
+    width: LIVE_EDITOR_GEOMETRY.tableEdgeSize,
+    height: "100%",
+    borderLeft: "0",
+  },
+  ".zmd-lp-table-edge-action.is-row": {
+    bottom: "0",
+    left: "0",
+    width: "100%",
+    height: LIVE_EDITOR_GEOMETRY.tableEdgeSize,
+    borderTop: "0",
+  },
+  ".cm-line.zmd-lp-table-last-row .zmd-lp-table-edge-action.is-column": {
+    height: `calc(100% - ${LIVE_EDITOR_GEOMETRY.tableEdgeSize})`,
+  },
+  ".zmd-lp-table-edge-action:hover, .zmd-lp-table-edge-action:focus-visible": {
+    opacity: "1",
+    backgroundColor: "var(--zmd-table-active-bg)",
+    outline: "none",
   },
   ".zmd-lp-table-cell:last-child": {
     borderRight: "none",

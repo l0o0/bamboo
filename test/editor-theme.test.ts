@@ -8,5 +8,6 @@ test("live editor puts horizontal spacing on lines for aligned selections", () =
     linePadding: "0 30px 0 34px",
     tableMargin: "0 30px 0 34px",
     tablePadding: "0",
+    tableEdgeSize: "30px",
   });
 });
