@@ -9,7 +9,7 @@ Provide Obsidian-style edge actions for quickly appending a column or row to a r
 
 ## Interaction
 
-- Moving the pointer into the right edge hit area of any rendered table row reveals a centered `+` button.
+- Moving the pointer into the right edge hit area of any rendered table row reveals one continuous table-height action rail, with a centered `+` at the pointer's row.
 - Activating the right button appends one column to the table's right edge.
 - Moving the pointer into the bottom edge hit area of the final rendered row reveals a horizontal `+` button.
 - Activating the bottom button appends one body row to the table's bottom edge.
@@ -35,7 +35,8 @@ Provide Obsidian-style edge actions for quickly appending a column or row to a r
 ## Layout and States
 
 - Reserve stable pointer space without changing the visible table width or using vertical margins on CodeMirror lines.
-- Default state: transparent hit area and hidden plus glyph.
+- Default state: transparent hit area and hidden plus glyph. The final-row padding that reserves the bottom hit area has no table background or border while idle.
+- Right-edge row segments synchronize their hover state so they read as one continuous column without requiring cross-line layout measurement.
 - Hover/focus-visible state: muted surface, visible plus glyph, and existing tooltip treatment.
 - Dark and light themes use the current table border, muted surface, text, and focus tokens.
 - Read-only mode renders no edge action buttons.

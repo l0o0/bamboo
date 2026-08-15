@@ -59,6 +59,7 @@ import {
 import { tableKeymap } from "./table";
 import {
   activateTableCell,
+  activateTableCellByIndex,
   planCellInput,
   planCellNavigation,
   remapActiveCell,
@@ -440,11 +441,28 @@ function buildExtensions(init: EditorInitPayload): Extension[] {
         const to = Number(cell.dataset.zmdTableCellTo);
         if (!Number.isFinite(from) || !Number.isFinite(to)) return false;
         const valueLength = Math.max(0, to - from);
-        const editTarget = activateTableCell(
-          view.state,
-          from,
-          caretOffsetFromPoint(cell, event.clientX, event.clientY, valueLength),
+        const caretOffset = caretOffsetFromPoint(
+          cell,
+          event.clientX,
+          event.clientY,
+          valueLength,
         );
+        const tableFrom = Number(cell.dataset.zmdTableFrom);
+        const rowIndex = Number(cell.dataset.zmdTableCellRow);
+        const columnIndex = Number(cell.dataset.zmdTableCellColumn);
+        const hasLogicalTarget =
+          Number.isFinite(tableFrom) &&
+          Number.isInteger(rowIndex) &&
+          Number.isInteger(columnIndex);
+        const editTarget = hasLogicalTarget
+          ? activateTableCellByIndex(
+              view.state,
+              tableFrom,
+              rowIndex,
+              columnIndex,
+              caretOffset,
+            )
+          : activateTableCell(view.state, from, caretOffset);
         if (!editTarget) return false;
         dispatchActiveTableCell(editTarget);
         event.preventDefault();

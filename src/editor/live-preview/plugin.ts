@@ -186,8 +186,10 @@ class TableCellWidget extends WidgetType {
     readonly value: string,
     readonly alignment: TableAlignment,
     readonly header: boolean,
+    readonly tableFrom: number,
     readonly rowIndex: number,
     readonly columnIndex: number,
+    readonly lastColumn: boolean,
     readonly from: number,
     readonly to: number,
     readonly editing: boolean,
@@ -202,8 +204,10 @@ class TableCellWidget extends WidgetType {
       this.value === other.value &&
       this.alignment === other.alignment &&
       this.header === other.header &&
+      this.tableFrom === other.tableFrom &&
       this.rowIndex === other.rowIndex &&
       this.columnIndex === other.columnIndex &&
+      this.lastColumn === other.lastColumn &&
       this.from === other.from &&
       this.to === other.to &&
       this.editing === other.editing &&
@@ -216,7 +220,9 @@ class TableCellWidget extends WidgetType {
     const cell = document.createElement("span");
     cell.className = `zmd-lp-table-cell zmd-lp-table-align-${this.alignment || "default"}`;
     if (this.header) cell.classList.add("zmd-lp-table-header-cell");
+    if (this.lastColumn) cell.classList.add("zmd-lp-table-last-cell");
     cell.style.gridColumn = String(this.columnIndex + 1);
+    cell.dataset.zmdTableFrom = String(this.tableFrom);
     cell.dataset.zmdTableCellFrom = String(this.from);
     cell.dataset.zmdTableCellTo = String(this.to);
     cell.dataset.zmdTableCellRow = String(this.rowIndex);
@@ -347,8 +353,10 @@ class TableCellWidget extends WidgetType {
 
 class TableEdgeActionsWidget extends WidgetType {
   constructor(
+    readonly tableFrom: number,
     readonly columnPosition: number,
     readonly rowPosition: number,
+    readonly firstRow: boolean,
     readonly finalRow: boolean,
     readonly readOnly: boolean,
   ) {
@@ -357,8 +365,10 @@ class TableEdgeActionsWidget extends WidgetType {
 
   eq(other: TableEdgeActionsWidget) {
     return (
+      this.tableFrom === other.tableFrom &&
       this.columnPosition === other.columnPosition &&
       this.rowPosition === other.rowPosition &&
+      this.firstRow === other.firstRow &&
       this.finalRow === other.finalRow &&
       this.readOnly === other.readOnly
     );
@@ -409,6 +419,42 @@ class TableEdgeActionsWidget extends WidgetType {
       "is-column",
       "在右侧新增列",
     );
+    const columnButton = wrapper.lastElementChild as HTMLButtonElement;
+    columnButton.dataset.zmdTableFrom = String(this.tableFrom);
+    if (this.firstRow) columnButton.classList.add("is-first-row");
+    const matchingColumnButtons = () =>
+      wrapper.ownerDocument.querySelectorAll<HTMLButtonElement>(
+        `.zmd-lp-table-edge-action.is-column[data-zmd-table-from="${this.tableFrom}"]`,
+      );
+    const setColumnHover = (hovered: boolean) => {
+      for (const candidate of matchingColumnButtons()) {
+        candidate.classList.toggle("is-table-hovered", hovered);
+      }
+    };
+    columnButton.addEventListener("pointerenter", () => setColumnHover(true));
+    columnButton.addEventListener("pointerleave", (event) => {
+      const related = event.relatedTarget as Element | null;
+      if (
+        related?.closest?.(
+          `.zmd-lp-table-edge-action.is-column[data-zmd-table-from="${this.tableFrom}"]`,
+        )
+      ) {
+        return;
+      }
+      setColumnHover(false);
+    });
+    columnButton.addEventListener("focus", () => setColumnHover(true));
+    columnButton.addEventListener("blur", (event) => {
+      const related = event.relatedTarget as Element | null;
+      if (
+        related?.closest?.(
+          `.zmd-lp-table-edge-action.is-column[data-zmd-table-from="${this.tableFrom}"]`,
+        )
+      ) {
+        return;
+      }
+      setColumnHover(false);
+    });
     if (this.finalRow) {
       addButton("append-row", this.rowPosition, "is-row", "在下方新增行");
     }
@@ -509,8 +555,10 @@ function buildDecorations(
           state.doc.sliceString(cell.from, cell.to),
           tableRow.alignments[index] || null,
           tableRow.kind === "header",
+          tableRow.tableFrom,
           cell.rowIndex || 0,
           cell.columnIndex || 0,
+          index === tableRow.cells.length - 1,
           cell.from,
           cell.to,
           !!activeCell &&
@@ -533,8 +581,10 @@ function buildDecorations(
       ranges.push(
         Decoration.widget({
           widget: new TableEdgeActionsWidget(
+            tableRow.tableFrom,
             tableRow.cells.at(-1)?.from ?? line.from,
             tableRow.cells[0]?.from ?? line.from,
+            (tableRow.cells[0]?.rowIndex ?? 0) === 0,
             tableRow.isLast,
             state.readOnly,
           ),

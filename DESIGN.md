@@ -168,7 +168,7 @@ Table borders use the same `34px` left and `30px` right insets as Live prose ins
 
 The active table cell uses single-click activation with no input border. `Enter`, `Escape`, or a click outside the table commits and exits cell editing. `Tab` and `Shift+Tab` commit and move between logical cells; Tab from the final cell appends a body row. Right-click keeps the structural table menu available, and Source mode continues to expose normal Markdown without Live cell widgets.
 
-Writable Live tables expose transient edge actions: hover the right gutter to append a final column, or the bottom gutter to append a final row. The controls are real focusable buttons, remain outside table Grid tracks, and never activate cell editing.
+Writable Live tables expose transient edge actions: hovering any right-gutter segment reveals one continuous table-height rail for appending a final column, while hovering the visually transparent bottom gutter reveals the action for appending a final row. The controls are real focusable buttons, remain outside table Grid tracks, and never activate cell editing. Rendered cells carry stable table, row, and column identity so newly appended empty cells receive input without falling back to an adjacent source position.
 
 - `Tab` moves to the next logical cell.
 - `Shift+Tab` moves to the previous logical cell.

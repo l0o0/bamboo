@@ -56,6 +56,29 @@ export function activateTableCell(
   };
 }
 
+export function activateTableCellByIndex(
+  state: EditorState,
+  tableFrom: number,
+  rowIndex: number,
+  columnIndex: number,
+  caretOffset = 0,
+): TableCellEditTarget | null {
+  const layout = tableLayoutAt(state, tableFrom + 1);
+  if (!layout || layout.from !== tableFrom) return null;
+  const target: TableTarget = {
+    tableFrom,
+    rowIndex,
+    columnIndex,
+    bodyRowCount: layout.rows.filter((row) => row.kind === "body").length,
+    columnCount: layout.columnCount,
+    alignment: layout.alignments[columnIndex] || null,
+  };
+  const active = activateTargetByIndex(state, target);
+  if (!active) return null;
+  active.caretOffset = Math.max(0, Math.min(active.value.length, caretOffset));
+  return active;
+}
+
 export function remapActiveCell(
   state: EditorState,
   active: TableTarget,

@@ -102,8 +102,24 @@ const livePreviewStyles = {
     backgroundColor: "var(--zmd-table-header-bg)",
   },
   ".cm-line.zmd-lp-table-last-row": {
-    borderBottom: "1px solid var(--zmd-table-border)",
+    borderLeftColor: "transparent",
+    borderRightColor: "transparent",
+    backgroundColor: "transparent",
     paddingBottom: LIVE_EDITOR_GEOMETRY.tableEdgeSize,
+  },
+  ".cm-line.zmd-lp-table-last-row > .zmd-lp-table-cell": {
+    borderBottom: "1px solid var(--zmd-table-border)",
+    backgroundColor: "var(--zmd-table-bg)",
+  },
+  '.cm-line.zmd-lp-table-last-row > .zmd-lp-table-cell[data-zmd-table-cell-column="0"]':
+    {
+      borderLeft: "1px solid var(--zmd-table-border)",
+    },
+  ".cm-line.zmd-lp-table-last-row > .zmd-lp-table-last-cell": {
+    borderRight: "1px solid var(--zmd-table-border)",
+  },
+  ".cm-line.zmd-lp-table-header.zmd-lp-table-last-row > .zmd-lp-table-cell": {
+    backgroundColor: "var(--zmd-table-header-bg)",
   },
   ".cm-line.zmd-lp-table-delimiter": {
     height: "0",
@@ -169,6 +185,9 @@ const livePreviewStyles = {
     height: "100%",
     borderLeft: "0",
   },
+  ".zmd-lp-table-edge-action.is-column:not(.is-first-row)": {
+    borderTop: "0",
+  },
   ".zmd-lp-table-edge-action.is-row": {
     bottom: "0",
     left: "0",
@@ -179,12 +198,18 @@ const livePreviewStyles = {
   ".cm-line.zmd-lp-table-last-row .zmd-lp-table-edge-action.is-column": {
     height: `calc(100% - ${LIVE_EDITOR_GEOMETRY.tableEdgeSize})`,
   },
+  ".zmd-lp-table-edge-action.is-column.is-table-hovered": {
+    opacity: "1",
+    color: "transparent",
+    backgroundColor: "var(--zmd-table-active-bg)",
+  },
   ".zmd-lp-table-edge-action:hover, .zmd-lp-table-edge-action:focus-visible": {
     opacity: "1",
+    color: "var(--zmd-table-delimiter-text)",
     backgroundColor: "var(--zmd-table-active-bg)",
     outline: "none",
   },
-  ".zmd-lp-table-cell:last-child": {
+  ".zmd-lp-table-last-cell": {
     borderRight: "none",
   },
   ".zmd-lp-table-header-cell": {

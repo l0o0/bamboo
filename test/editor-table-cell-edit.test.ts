@@ -5,6 +5,7 @@ import { markdown } from "@codemirror/lang-markdown";
 import { GFM } from "@lezer/markdown";
 import {
   activateTableCell,
+  activateTableCellByIndex,
   planCellInput,
   planCellNavigation,
   remapActiveCell,
@@ -39,6 +40,21 @@ describe("Live table cell editing", () => {
     assert.equal(cell.value, "");
     assert.equal(cell.from, cell.to);
     assert.equal(cell.columnIndex, 0);
+  });
+
+  it("activates and edits a newly appended empty cell by logical index", () => {
+    const appended =
+      "| Name | Value |  |\n" + "| --- | --- | --- |\n" + "| A | **1** |  |";
+    const editor = state(appended);
+    const cell = activateTableCellByIndex(editor, 0, 1, 2, 0);
+    assert.ok(cell);
+    assert.equal(cell.rowIndex, 1);
+    assert.equal(cell.columnIndex, 2);
+    assert.equal(cell.value, "");
+    const plan = planCellInput(editor, cell, "new value");
+    assert.ok(plan);
+    const next = editor.update({ changes: plan.changes }).state;
+    assert.match(next.doc.toString(), /\| A \| \*\*1\*\* \| {2}new value\|/);
   });
 
   it("replaces only cell content and preserves table structure", () => {
@@ -104,5 +120,13 @@ describe("Live table cell editing", () => {
     assert.match(next.doc.toString(), /\| {2}\| {2}\|\n$/);
     assert.equal(appended.active.rowIndex, 3);
     assert.equal(appended.active.columnIndex, 0);
+    const edited = planCellInput(next, appended.active, "new row");
+    assert.ok(edited);
+    const editedState = next.update({ changes: edited.changes }).state;
+    assert.equal(
+      activateTableCellByIndex(editedState, 0, 3, 0)?.value,
+      "new row",
+    );
+    assert.equal(activateTableCellByIndex(editedState, 0, 2, 0)?.value, "");
   });
 });
