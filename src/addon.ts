@@ -14,7 +14,11 @@ class Addon {
     };
   };
   public hooks: typeof hooks;
-  public api: object;
+  public api: {
+    version: number;
+    openMarkdown?: typeof import("./modules/markdown").openMarkdownAttachment;
+    createMarkdown?: typeof import("./modules/markdown").createMarkdownAttachment;
+  };
 
   constructor() {
     this.data = {
@@ -25,7 +29,7 @@ class Addon {
       ztoolkit: createZToolkit(),
     };
     this.hooks = hooks;
-    this.api = {};
+    this.api = { version: 1 };
   }
 }
 

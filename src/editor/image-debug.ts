@@ -4,11 +4,20 @@ import { EDITOR_MESSAGE_SOURCE } from "../modules/markdown/editor-protocol";
 
 const channel = new URL(window.location.href).searchParams.get("channel") || "";
 
-/** Forward iframe image diagnostics to both DevTools and Zotero Debug Output. */
+function imageDebugEnabled() {
+  try {
+    return new URL(window.location.href).searchParams.get("debug") === "1";
+  } catch {
+    return false;
+  }
+}
+
+/** Forward iframe image diagnostics when `?debug=1` is on the editor URL. */
 export function imageDebug(
   event: string,
   details: Record<string, unknown> = {},
 ) {
+  if (!imageDebugEnabled()) return;
   console.info("[Zotero Markdown][ImageDebug]", event, details);
   window.parent?.postMessage(
     {

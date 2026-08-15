@@ -68,9 +68,10 @@ describe("toolbar insert templates", () => {
     assert.match(css, /--zmd-toolbar-control-size: 36px/);
   });
 
-  it("aligns the toolbar with the Live text boundaries", () => {
+  it("keeps the toolbar at the configured 60rem width", () => {
     const css = toolbarWidthAlignmentCSS();
     assert.match(css, /padding: 4px 30px 4px 34px/);
-    assert.match(css, /max-width: 44rem/);
+    assert.match(css, /width: 100%/);
+    assert.match(css, /max-width: 60rem/);
   });
 });

@@ -42,6 +42,7 @@ export interface LiveTableRow extends TableRowLayout {
   columnCount: number;
   alignments: TableAlignment[];
   isLast: boolean;
+  visibleRowCount: number;
 }
 
 function ancestor(node: SyntaxNode | null, name: string) {
@@ -150,8 +151,12 @@ export function tableLayoutAt(
     }
   }
 
-  const columnCount =
-    rows.find((row) => row.kind === "header")?.cells.length || 0;
+  const columnCount = Math.max(
+    0,
+    ...rows
+      .filter((row) => row.kind !== "delimiter")
+      .map((row) => row.cells.length),
+  );
   while (alignments.length < columnCount) alignments.push(null);
   return {
     from: table.from,
@@ -160,6 +165,38 @@ export function tableLayoutAt(
     alignments: alignments.slice(0, columnCount),
     rows,
   };
+}
+
+export interface TableCellIdentity {
+  tableFrom: number;
+  rowIndex: number;
+  columnIndex: number;
+}
+
+/** Widgets must only reuse DOM when they represent the same logical cell. */
+export function sameTableCellIdentity(
+  a: TableCellIdentity,
+  b: TableCellIdentity,
+): boolean {
+  return (
+    a.tableFrom === b.tableFrom &&
+    a.rowIndex === b.rowIndex &&
+    a.columnIndex === b.columnIndex
+  );
+}
+
+/** Document range the Live cell widget should own, including padding. */
+export function cellWidgetRange(cell: TableCellRange): {
+  from: number;
+  to: number;
+  point: boolean;
+} {
+  if (cell.outerFrom < cell.outerTo) {
+    return { from: cell.outerFrom, to: cell.outerTo, point: false };
+  }
+  if (cell.from < cell.to)
+    return { from: cell.from, to: cell.to, point: false };
+  return { from: cell.from, to: cell.to, point: true };
 }
 
 export function liveTableRows(state: EditorState): LiveTableRow[] {
@@ -188,6 +225,7 @@ export function liveTableRows(state: EditorState): LiveTableRow[] {
       columnCount: table.columnCount,
       alignments: table.alignments,
       isLast: index === visibleRows.length - 1,
+      visibleRowCount: visibleRows.length,
     }));
   });
 }

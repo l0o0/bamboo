@@ -4,6 +4,7 @@
  */
 
 export const EDITOR_MESSAGE_SOURCE = "zotero-markdown-editor" as const;
+export const EDITOR_PROTOCOL_VERSION = 1;
 
 export type EditorTheme = "light" | "dark";
 
@@ -31,9 +32,16 @@ export interface EditorInitPayload {
   mode?: EditorMode;
 }
 
+export interface EditorDocChange {
+  from: number;
+  to: number;
+  insert: string;
+}
+
 export type EditorProtocolMessage = {
   source: typeof EDITOR_MESSAGE_SOURCE;
   channel?: string;
+  v?: typeof EDITOR_PROTOCOL_VERSION;
 };
 
 /** Parent → iframe */
@@ -100,6 +108,21 @@ export type ParentToEditorMessage = (
       type: "setImageAssets";
       payload: { assets: ImageAssetMap };
     }
+  | {
+      source: typeof EDITOR_MESSAGE_SOURCE;
+      type: "requestSnapshot";
+      payload: { requestId: number };
+    }
+  | {
+      source: typeof EDITOR_MESSAGE_SOURCE;
+      type: "assetResolved";
+      payload: {
+        requestId: number;
+        reference: string;
+        dataUrl?: string;
+        error?: string;
+      };
+    }
   | { source: typeof EDITOR_MESSAGE_SOURCE; type: "destroy" }
 ) &
   EditorProtocolMessage;
@@ -110,7 +133,22 @@ export type EditorToParentMessage = (
   | {
       source: typeof EDITOR_MESSAGE_SOURCE;
       type: "change";
-      payload: { value: string; stats: EditorStats };
+      payload: { rev: number; changes: EditorDocChange[] };
+    }
+  | {
+      source: typeof EDITOR_MESSAGE_SOURCE;
+      type: "snapshot";
+      payload: {
+        requestId: number;
+        rev: number;
+        value: string;
+        stats: EditorStats;
+      };
+    }
+  | {
+      source: typeof EDITOR_MESSAGE_SOURCE;
+      type: "resolveAsset";
+      payload: { requestId: number; reference: string };
     }
   | { source: typeof EDITOR_MESSAGE_SOURCE; type: "save" }
   | {
@@ -147,6 +185,19 @@ export function isEditorProtocolMessage(
   if (!data || typeof data !== "object") return false;
   const msg = data as { source?: string; type?: string };
   return msg.source === EDITOR_MESSAGE_SOURCE && typeof msg.type === "string";
+}
+
+/** Apply non-overlapping original-document changes from last to first. */
+export function applyDocChanges(
+  value: string,
+  changes: readonly EditorDocChange[],
+): string {
+  let next = value;
+  for (let index = changes.length - 1; index >= 0; index--) {
+    const change = changes[index];
+    next = next.slice(0, change.from) + change.insert + next.slice(change.to);
+  }
+  return next;
 }
 
 export function computeStats(text: string): EditorStats {

@@ -1,3 +1,6 @@
+import { previewDocumentCss } from "./preview";
+import { THEME_TOKENS, themeTokenCss } from "./theme-tokens";
+
 /**
  * Inject polished editor styles into a Zotero main window.
  */
@@ -31,7 +34,8 @@ export function toolbarWidthAlignmentCSS(): string {
 }
 
 .zotero-markdown-toolbar-inner {
-  max-width: 44rem;
+  width: 100%;
+  max-width: 60rem;
 }`;
 }
 
@@ -46,45 +50,9 @@ export function injectMarkdownStyles(win: Window) {
   style.id = id;
   style.textContent = `
 /* ========== tokens ========== */
-.zotero-markdown-root {
-  --zmd-bg: #fbfbfc;
-  --zmd-surface: #ffffff;
-  --zmd-surface-2: #f3f4f6;
-  --zmd-border: #e5e7eb;
-  --zmd-border-strong: #d1d5db;
-  --zmd-text: #111827;
-  --zmd-text-muted: #6b7280;
-  --zmd-text-faint: #9ca3af;
-  --zmd-accent: #2563eb;
-  --zmd-accent-soft: rgba(37, 99, 235, 0.12);
-  --zmd-accent-hover: #1d4ed8;
-  --zmd-success: #059669;
-  --zmd-success-soft: rgba(5, 150, 105, 0.12);
-  --zmd-warn: #d97706;
-  --zmd-danger: #dc2626;
-  --zmd-radius: 8px;
-  --zmd-radius-sm: 6px;
-  --zmd-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
-  --zmd-font-ui: system-ui, -apple-system, "Segoe UI", "PingFang SC",
-    "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
-}
+${themeTokenCss(".zotero-markdown-root", THEME_TOKENS.light)}
 
-.zotero-markdown-root.theme-dark {
-  --zmd-bg: #12141a;
-  --zmd-surface: #1a1d24;
-  --zmd-surface-2: #22262f;
-  --zmd-border: #2e3440;
-  --zmd-border-strong: #3d4452;
-  --zmd-text: #e8eaed;
-  --zmd-text-muted: #9aa3b2;
-  --zmd-text-faint: #6b7280;
-  --zmd-accent: #60a5fa;
-  --zmd-accent-soft: rgba(96, 165, 250, 0.16);
-  --zmd-accent-hover: #93c5fd;
-  --zmd-success: #34d399;
-  --zmd-success-soft: rgba(52, 211, 153, 0.14);
-  --zmd-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
-}
+${themeTokenCss(".zotero-markdown-root.theme-dark", THEME_TOKENS.dark)}
 
 /* XUL tab-content positioning */
 .zotero-markdown-tab-content,
@@ -137,19 +105,16 @@ ${responsiveToolbarSizingCSS()}
 
 ${toolbarWidthAlignmentCSS()}
 
-.zotero-markdown-fmt {
+.zotero-markdown-fmt,
+.zotero-markdown-table-control {
+  flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
   gap: 2px;
 }
 
-.zotero-markdown-fmt .zotero-markdown-btn {
-  width: var(--zmd-toolbar-control-size);
-}
-
 .zotero-markdown-table-control {
   position: relative;
-  display: inline-flex;
 }
 
 .zotero-markdown-table-picker {
@@ -207,10 +172,14 @@ ${toolbarWidthAlignmentCSS()}
 .zotero-markdown-more-menu {
   position: absolute;
   top: calc(100% + 8px);
-  left: calc(100% - var(--zmd-toolbar-control-size));
+  right: 0;
+  left: auto;
   z-index: 10;
-  width: 220px;
-  padding: 6px;
+  box-sizing: border-box;
+  width: max-content;
+  min-width: 12rem;
+  max-width: min(16rem, calc(100% - 8px));
+  padding: 4px;
   border: 1px solid var(--zmd-border);
   border-radius: 8px;
   background: var(--zmd-surface);
@@ -218,7 +187,7 @@ ${toolbarWidthAlignmentCSS()}
 }
 
 .zotero-markdown-more-menu[hidden],
-.zotero-markdown-mode-menu[hidden] {
+.zotero-markdown-mode-submenu[hidden] {
   display: none;
 }
 
@@ -226,9 +195,10 @@ ${toolbarWidthAlignmentCSS()}
   appearance: none;
   display: flex;
   align-items: center;
+  gap: 8px;
   width: 100%;
-  min-height: 32px;
-  padding: 0 9px;
+  min-height: 30px;
+  padding: 0 8px;
   border: none;
   border-radius: 5px;
   background: transparent;
@@ -246,8 +216,18 @@ ${toolbarWidthAlignmentCSS()}
 .zotero-markdown-more-menu-shortcut,
 .zotero-markdown-more-menu-chevron {
   margin-left: auto;
+  flex: 0 0 auto;
   color: var(--zmd-text-muted);
   font-size: 11px;
+}
+
+.zotero-markdown-more-menu-chevron {
+  display: inline-block;
+  transition: transform 0.12s ease;
+}
+
+.zotero-markdown-more-menu-item[aria-expanded="true"] .zotero-markdown-more-menu-chevron {
+  transform: rotate(90deg);
 }
 
 .zotero-markdown-more-menu-separator {
@@ -256,16 +236,31 @@ ${toolbarWidthAlignmentCSS()}
   background: var(--zmd-border);
 }
 
-.zotero-markdown-mode-menu {
+.zotero-markdown-mode-submenu {
+  display: flex;
+  flex-direction: column;
+  padding: 0 0 2px 8px;
+}
+
+.zotero-markdown-mode-submenu .zotero-markdown-more-menu-item {
+  position: relative;
+  min-height: 28px;
+  padding-left: 22px;
+}
+
+.zotero-markdown-mode-check {
   position: absolute;
-  top: 86px;
-  left: calc(100% - 4px);
-  width: 132px;
-  padding: 6px;
-  border: 1px solid var(--zmd-border);
-  border-radius: 8px;
-  background: var(--zmd-surface);
-  box-shadow: 0 8px 24px rgba(16, 24, 40, 0.14);
+  left: 8px;
+  width: 12px;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--zmd-accent);
+  text-align: center;
+}
+
+.zotero-markdown-mode-submenu .zotero-markdown-more-menu-item.is-checked .zotero-markdown-mode-check::before {
+  content: "✓";
 }
 
 /* Icon + label layout */
@@ -298,6 +293,7 @@ ${toolbarWidthAlignmentCSS()}
 
 .zotero-markdown-sep {
   width: 1px;
+  min-width: 1px;
   height: calc(var(--zmd-toolbar-control-size) * 0.55);
   background: var(--zmd-border);
   margin: 0 10px;
@@ -305,18 +301,27 @@ ${toolbarWidthAlignmentCSS()}
   align-self: center;
 }
 
-/* Generic buttons */
-.zotero-markdown-btn {
+/* Generic buttons — one treatment for save, history, and format icons */
+.zotero-markdown-btn,
+.zotero-markdown-btn-save,
+.zotero-markdown-more {
   appearance: none;
+  -moz-appearance: none;
+  box-sizing: border-box;
+  flex: 0 0 var(--zmd-toolbar-control-size);
   width: var(--zmd-toolbar-control-size);
+  min-width: var(--zmd-toolbar-control-size);
   height: var(--zmd-toolbar-control-size);
   border: none;
   background: transparent;
+  box-shadow: none;
+  filter: none;
   color: var(--zmd-text-muted);
   border-radius: 7px;
   padding: 0;
   font-size: 12px;
   font-family: inherit;
+  font-weight: 400;
   line-height: 1.2;
   cursor: pointer;
   transition: background 0.12s ease, color 0.12s ease;
@@ -325,82 +330,19 @@ ${toolbarWidthAlignmentCSS()}
   justify-content: center;
 }
 
-.zotero-markdown-btn-save,
-.zotero-markdown-more {
-  width: var(--zmd-toolbar-control-size);
-  height: var(--zmd-toolbar-control-size);
-}
-
-.zotero-markdown-btn:hover {
+.zotero-markdown-btn:hover,
+.zotero-markdown-btn-save:hover,
+.zotero-markdown-more:hover {
   background: var(--zmd-surface-2);
   color: var(--zmd-text);
+  box-shadow: none;
 }
 
-.zotero-markdown-btn:active {
+.zotero-markdown-btn:active,
+.zotero-markdown-btn-save:active,
+.zotero-markdown-more:active {
   transform: translateY(0.5px);
-}
-
-.zotero-markdown-btn-primary {
-  color: var(--zmd-text);
-}
-
-.zotero-markdown-btn-primary:hover {
-  background: var(--zmd-surface-2);
-  color: var(--zmd-text);
-}
-
-/* Status pill in toolbar */
-.zotero-markdown-status {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 11px;
-  font-weight: 500;
-  color: var(--zmd-text-muted);
-  padding: 4px 10px;
-  border-radius: 999px;
-  background: var(--zmd-surface-2);
-  border: 1px solid var(--zmd-border);
-  max-width: 12em;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.zotero-markdown-status::before {
-  content: "";
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--zmd-text-faint);
-  flex: 0 0 auto;
-}
-
-.zotero-markdown-status.is-dirty {
-  color: var(--zmd-warn);
-  background: rgba(217, 119, 6, 0.1);
-  border-color: rgba(217, 119, 6, 0.25);
-}
-.zotero-markdown-status.is-dirty::before {
-  background: var(--zmd-warn);
-}
-
-.zotero-markdown-status.is-saved {
-  color: var(--zmd-success);
-  background: var(--zmd-success-soft);
-  border-color: rgba(5, 150, 105, 0.25);
-}
-.zotero-markdown-status.is-saved::before {
-  background: var(--zmd-success);
-}
-
-.zotero-markdown-status.is-error {
-  color: var(--zmd-danger);
-  background: rgba(220, 38, 38, 0.1);
-  border-color: rgba(220, 38, 38, 0.25);
-}
-.zotero-markdown-status.is-error::before {
-  background: var(--zmd-danger);
+  box-shadow: none;
 }
 
 /* ========== body ========== */
@@ -497,143 +439,69 @@ ${toolbarWidthAlignmentCSS()}
   tab-size: 4;
 }
 
-/* ========== preview prose ========== */
+/* ========== preview (read-only export surface) ========== */
 .zotero-markdown-preview-host {
   display: none;
   overflow: auto;
-  padding: 28px 32px 40px;
+  padding: 0;
   box-sizing: border-box;
-  font-size: 15px;
-  line-height: 1.7;
-  background: var(--zmd-bg);
-  color: var(--zmd-text);
 }
 
-.zotero-markdown-preview-inner {
+.zotero-markdown-preview-page {
+  min-height: 100%;
+  padding: 16px 24px 40px;
+  box-sizing: border-box;
+}
+
+.zotero-markdown-preview-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
   max-width: 46em;
-  margin: 0 auto;
-  padding: 28px 32px;
-  background: var(--zmd-surface);
-  border: 1px solid var(--zmd-border);
-  border-radius: 12px;
-  box-shadow: var(--zmd-shadow);
+  margin: 0 auto 16px;
 }
 
-.zotero-markdown-preview-empty {
-  opacity: 0.55;
-  text-align: center;
-  padding: 3em 1em;
-}
-
-.zotero-markdown-preview-host h1,
-.zotero-markdown-preview-host h2,
-.zotero-markdown-preview-host h3,
-.zotero-markdown-preview-host h4 {
-  margin-top: 1.4em;
-  margin-bottom: 0.45em;
-  line-height: 1.3;
-  font-weight: 700;
-  letter-spacing: -0.01em;
-  color: var(--zmd-text);
-}
-
-.zotero-markdown-preview-host h1 {
-  font-size: 1.75em;
-  padding-bottom: 0.35em;
-  border-bottom: 1px solid var(--zmd-border);
-}
-.zotero-markdown-preview-host h2 {
-  font-size: 1.35em;
-  padding-bottom: 0.25em;
-  border-bottom: 1px solid var(--zmd-border);
-}
-.zotero-markdown-preview-host h3 {
-  font-size: 1.15em;
-}
-
-.zotero-markdown-preview-host p {
-  margin: 0.75em 0;
-}
-
-.zotero-markdown-preview-host a {
-  color: var(--zmd-accent);
-  text-decoration: none;
-}
-.zotero-markdown-preview-host a:hover {
-  text-decoration: underline;
-}
-
-.zotero-markdown-preview-host ul,
-.zotero-markdown-preview-host ol {
-  padding-left: 1.4em;
-  margin: 0.6em 0;
-}
-
-.zotero-markdown-preview-host li {
-  margin: 0.25em 0;
-}
-
-.zotero-markdown-preview-host pre {
-  background: var(--zmd-surface-2);
-  border: 1px solid var(--zmd-border);
-  padding: 12px 14px;
-  border-radius: 8px;
-  overflow: auto;
-  font-size: 0.9em;
-  line-height: 1.5;
-}
-
-.zotero-markdown-preview-host code {
-  font-family: ui-monospace, "Sarasa Mono SC", SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 0.9em;
-}
-
-.zotero-markdown-preview-host :not(pre) > code {
-  background: var(--zmd-accent-soft);
-  color: var(--zmd-accent-hover);
-  padding: 0.12em 0.4em;
-  border-radius: 4px;
-}
-
-.zotero-markdown-preview-host blockquote {
-  margin: 1em 0;
-  padding: 0.2em 0 0.2em 1em;
-  border-left: 3px solid var(--zmd-accent);
+.zotero-markdown-preview-bar-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
   color: var(--zmd-text-muted);
-  background: var(--zmd-accent-soft);
-  border-radius: 0 6px 6px 0;
+  font-size: 12px;
 }
 
-.zotero-markdown-preview-host hr {
-  border: none;
-  border-top: 1px solid var(--zmd-border);
-  margin: 1.6em 0;
+.zotero-markdown-preview-bar-copy strong {
+  color: var(--zmd-text);
+  font-size: 13px;
 }
 
-.zotero-markdown-preview-host table {
-  border-collapse: collapse;
-  margin: 1em 0;
-  width: 100%;
-  font-size: 0.95em;
-}
-
-.zotero-markdown-preview-host th,
-.zotero-markdown-preview-host td {
+.zotero-markdown-preview-back {
+  appearance: none;
   border: 1px solid var(--zmd-border);
-  padding: 8px 12px;
+  background: var(--zmd-surface);
+  color: var(--zmd-text);
+  border-radius: 7px;
+  min-height: 32px;
+  padding: 0 12px;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
 }
 
-.zotero-markdown-preview-host th {
+.zotero-markdown-preview-back:hover {
   background: var(--zmd-surface-2);
-  font-weight: 600;
 }
 
-.zotero-markdown-preview-host img {
-  max-width: 100%;
-  max-height: 70vh;
-  object-fit: contain;
-  border-radius: 8px;
+.zotero-markdown-root.mode-preview .zotero-markdown-fmt,
+.zotero-markdown-root.mode-preview [data-action="undo"],
+.zotero-markdown-root.mode-preview [data-action="redo"],
+.zotero-markdown-root.mode-preview [data-action="image"],
+.zotero-markdown-root.mode-preview [data-action="table"] {
+  opacity: 0.38;
+  pointer-events: none;
 }
+
+${previewDocumentCss()}
 
 .zotero-markdown-image-missing {
   display: block;

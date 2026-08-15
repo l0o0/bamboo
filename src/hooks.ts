@@ -1,6 +1,9 @@
 import {
+  createMarkdownAttachment,
   flushAllSessions,
+  flushSessionsForWindow,
   injectMarkdownStyles,
+  openMarkdownAttachment,
   registerFileOpenInterceptor,
   registerMarkdownTabHooks,
   registerMenus,
@@ -32,6 +35,11 @@ async function onStartup() {
     Zotero.getMainWindows().map((win) => onMainWindowLoad(win)),
   );
 
+  addon.api = {
+    version: 1,
+    openMarkdown: openMarkdownAttachment,
+    createMarkdown: createMarkdownAttachment,
+  };
   addon.data.initialized = true;
   ztoolkit.log(`${addon.data.config.addonName} initialized`);
 }
@@ -72,6 +80,7 @@ async function onMainWindowUnload(_win: Window): Promise<void> {
   // window's keydown listeners), breaking shortcuts in other windows.
   // Per-window cleanup is handled by the toolkit's own Services.wm
   // onCloseWindow callbacks (unInitKeyboardListener for the closing window).
+  await flushSessionsForWindow(_win);
   unregisterItemContextMenu(_win);
 }
 

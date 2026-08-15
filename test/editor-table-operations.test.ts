@@ -4,6 +4,8 @@ import { EditorState } from "@codemirror/state";
 import { markdown } from "@codemirror/lang-markdown";
 import { GFM } from "@lezer/markdown";
 import {
+  planTableMoveColumnTo,
+  planTableMoveRowTo,
   planTableOperation,
   tableTargetAt,
   type TableAction,
@@ -156,5 +158,40 @@ describe("table column and alignment operations", () => {
     assert.match(inserted.doc, /\[A\]\(https:\/\/example\.com\)/);
     assert.match(inserted.doc, /x \\\| y/);
     assert.match(inserted.doc, /\| Short \| {2}\| {2}\|/);
+  });
+});
+
+describe("table drag reordering", () => {
+  const doc =
+    "| A | B | C |\n" +
+    "| --- | --- | --- |\n" +
+    "| 1 | 2 | 3 |\n" +
+    "| 4 | 5 | 6 |";
+
+  it("moves a body row directly to another body index", () => {
+    const state = stateFor(doc);
+    const plan = planTableMoveRowTo(state, doc.indexOf("| A"), 1, 2);
+    assert.ok(plan);
+    const next = state.update({ changes: plan.changes }).state;
+    assert.match(next.doc.toString(), /\| 4 \| 5 \| 6 \|\n\| 1 \| 2 \| 3 \|/);
+  });
+
+  it("rejects header row drags and out-of-range row targets", () => {
+    const state = stateFor(doc);
+    assert.equal(planTableMoveRowTo(state, doc.indexOf("| A"), 0, 1), null);
+    assert.equal(planTableMoveRowTo(state, doc.indexOf("| A"), 1, 99), null);
+  });
+
+  it("moves a column and its alignment directly", () => {
+    const state = stateFor(doc);
+    const plan = planTableMoveColumnTo(state, doc.indexOf("| A"), 0, 2);
+    assert.ok(plan);
+    const next = state.update({ changes: plan.changes }).state;
+    assert.match(next.doc.toString(), /\| B \| C \| A \|/);
+  });
+
+  it("rejects out-of-range column targets", () => {
+    const state = stateFor(doc);
+    assert.equal(planTableMoveColumnTo(state, doc.indexOf("| A"), 0, 3), null);
   });
 });

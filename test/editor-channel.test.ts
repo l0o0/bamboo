@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   EDITOR_MESSAGE_SOURCE,
+  applyDocChanges,
   isEditorProtocolMessageForChannel,
 } from "../src/modules/markdown/editor-protocol.ts";
 
@@ -11,8 +12,8 @@ test("accepts editor messages only from the matching session channel", () => {
     channel: "tab-3:item-303",
     type: "change",
     payload: {
-      value: "third document",
-      stats: { chars: 14, lines: 1, words: 2 },
+      rev: 3,
+      changes: [{ from: 0, to: 0, insert: "third document" }],
     },
   };
 
@@ -33,5 +34,15 @@ test("rejects unscoped editor messages when a channel is required", () => {
       "tab-1:item-101",
     ),
     false,
+  );
+});
+
+test("applies original-document changes from last to first", () => {
+  assert.equal(
+    applyDocChanges("hello world", [
+      { from: 0, to: 5, insert: "hey" },
+      { from: 6, to: 11, insert: "there" },
+    ]),
+    "hey there",
   );
 });

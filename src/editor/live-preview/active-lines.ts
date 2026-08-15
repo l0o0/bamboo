@@ -23,8 +23,9 @@ export function activeLinesFromSelection(
  * 1-based line numbers of a leading YAML frontmatter block (`---` … `---`).
  * Returns empty set when the document does not start with a fence.
  */
-export function frontmatterLineNumbers(text: string): Set<number> {
-  const lines = text.split("\n");
+export function frontmatterLineNumbersFromLines(
+  lines: readonly string[],
+): Set<number> {
   const set = new Set<number>();
   if (lines.length === 0 || lines[0].trim() !== "---") return set;
   set.add(1);
@@ -33,6 +34,10 @@ export function frontmatterLineNumbers(text: string): Set<number> {
     if (lines[i].trim() === "---") break;
   }
   return set;
+}
+
+export function frontmatterLineNumbers(text: string): Set<number> {
+  return frontmatterLineNumbersFromLines(text.split("\n"));
 }
 
 export function shouldSkipLiveLine(

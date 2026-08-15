@@ -6,6 +6,8 @@ import { getPref } from "../../utils/prefs";
 import { ensureDOMGlobals } from "../../utils/dom";
 import {
   EDITOR_MESSAGE_SOURCE,
+  EDITOR_PROTOCOL_VERSION,
+  applyDocChanges,
   computeStats,
   type EditorMode,
   type ImageAssetMap,
@@ -27,6 +29,7 @@ export interface MarkdownEditorHandle {
     scrollDOM: HTMLElement;
   };
   getValue: () => string;
+  requestSnapshot: () => Promise<string>;
   setValue: (value: string) => void;
   replaceRange: (from: number, to: number, insert: string) => void;
   focus: () => void;
@@ -86,6 +89,8 @@ type PendingCommand = Extract<
       | "setReadOnly"
       | "setMode"
       | "setImageAssets"
+      | "requestSnapshot"
+      | "assetResolved"
       | "init";
   }
 >;
@@ -112,6 +117,9 @@ export function createMarkdownEditor(
       mimeType: string;
       name: string;
     }) => void;
+    onResolveAsset?: (
+      reference: string,
+    ) => Promise<{ dataUrl?: string; error?: string }>;
     win?: Window;
     channel?: string;
   } = {},
@@ -122,6 +130,7 @@ export function createMarkdownEditor(
     onChange,
     onSave,
     onPasteImage,
+    onResolveAsset,
   } = options;
 
   const ownerWin =
@@ -163,6 +172,11 @@ export function createMarkdownEditor(
   let iframeReady = false;
   let lastValue = doc;
   let lastStats: EditorStats = computeStats(doc);
+  let snapshotSeq = 0;
+  const pendingSnapshots = new Map<
+    number,
+    { resolve: (value: string) => void; timer: number }
+  >();
   const pending: PendingCommand[] = [];
 
   let resolveReady!: () => void;
@@ -173,7 +187,10 @@ export function createMarkdownEditor(
   const post = (message: ParentToEditorMessage) => {
     const target = iframe.contentWindow;
     if (!target) return false;
-    target.postMessage({ ...message, channel }, "*");
+    target.postMessage(
+      { ...message, channel, v: EDITOR_PROTOCOL_VERSION },
+      "*",
+    );
     return true;
   };
 
@@ -253,9 +270,33 @@ export function createMarkdownEditor(
         break;
       }
       case "change": {
+        lastValue = applyDocChanges(lastValue, data.payload.changes);
+        lastStats = computeStats(lastValue);
+        onChange?.(lastValue);
+        break;
+      }
+      case "snapshot": {
         lastValue = data.payload.value;
         lastStats = data.payload.stats;
-        onChange?.(lastValue);
+        const pendingSnapshot = pendingSnapshots.get(data.payload.requestId);
+        if (pendingSnapshot) {
+          pendingSnapshots.delete(data.payload.requestId);
+          ownerWin?.clearTimeout?.(pendingSnapshot.timer);
+          pendingSnapshot.resolve(data.payload.value);
+        }
+        break;
+      }
+      case "resolveAsset": {
+        if (!onResolveAsset) break;
+        const { requestId, reference } = data.payload;
+        void onResolveAsset(reference).then((asset) => {
+          if (destroyed) return;
+          sendOrQueue({
+            source: EDITOR_MESSAGE_SOURCE,
+            type: "assetResolved",
+            payload: { requestId, reference, ...asset },
+          });
+        });
         break;
       }
       case "save": {
@@ -352,6 +393,22 @@ export function createMarkdownEditor(
       scrollDOM: iframe,
     },
     getValue: () => lastValue,
+    requestSnapshot: () => {
+      if (destroyed) return Promise.resolve(lastValue);
+      const requestId = ++snapshotSeq;
+      return new Promise<string>((resolve) => {
+        const timer = ownerWin?.setTimeout?.(() => {
+          pendingSnapshots.delete(requestId);
+          resolve(lastValue);
+        }, 400) as unknown as number;
+        pendingSnapshots.set(requestId, { resolve, timer });
+        sendOrQueue({
+          source: EDITOR_MESSAGE_SOURCE,
+          type: "requestSnapshot",
+          payload: { requestId },
+        });
+      });
+    },
     setValue: (value: string) => {
       lastValue = value;
       lastStats = computeStats(value);
@@ -427,6 +484,11 @@ export function createMarkdownEditor(
     destroy: () => {
       if (destroyed) return;
       destroyed = true;
+      for (const [id, pendingSnapshot] of pendingSnapshots) {
+        ownerWin?.clearTimeout?.(pendingSnapshot.timer);
+        pendingSnapshot.resolve(lastValue);
+        pendingSnapshots.delete(id);
+      }
       try {
         colorSchemeMql?.removeEventListener?.("change", onColorSchemeChange);
       } catch {

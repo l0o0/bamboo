@@ -269,3 +269,88 @@ export function planTableOperation(
     },
   };
 }
+
+function layoutForTable(state: EditorState, tableFrom: number) {
+  const position = Math.max(0, Math.min(state.doc.length, tableFrom + 1));
+  const layout = tableLayoutAt(state, position);
+  return layout && layout.from === tableFrom ? layout : null;
+}
+
+/** Move a visible body row directly to another body row index in one edit. */
+export function planTableMoveRowTo(
+  state: EditorState,
+  tableFrom: number,
+  fromRowIndex: number,
+  toRowIndex: number,
+): TableOperationPlan | null {
+  const layout = layoutForTable(state, tableFrom);
+  if (!layout) return null;
+  const table = editableTable(state, layout);
+  if (
+    fromRowIndex < 1 ||
+    toRowIndex < 1 ||
+    fromRowIndex > table.body.length ||
+    toRowIndex > table.body.length ||
+    fromRowIndex === toRowIndex
+  ) {
+    return null;
+  }
+  const [moved] = table.body.splice(fromRowIndex - 1, 1);
+  table.body.splice(toRowIndex - 1, 0, moved);
+  const insert = serialize(table);
+  const selection = cellSelection(layout.from, table, toRowIndex, 0);
+  return {
+    changes: { from: layout.from, to: layout.to, insert },
+    selection,
+    target: {
+      tableFrom: layout.from,
+      rowIndex: toRowIndex,
+      columnIndex: 0,
+      bodyRowCount: table.body.length,
+      columnCount: table.header.length,
+      alignment: table.alignments[0] || null,
+    },
+  };
+}
+
+/** Move a column directly to another column index in one edit. */
+export function planTableMoveColumnTo(
+  state: EditorState,
+  tableFrom: number,
+  fromColumnIndex: number,
+  toColumnIndex: number,
+): TableOperationPlan | null {
+  const layout = layoutForTable(state, tableFrom);
+  if (!layout) return null;
+  const table = editableTable(state, layout);
+  const count = table.header.length;
+  if (
+    fromColumnIndex < 0 ||
+    toColumnIndex < 0 ||
+    fromColumnIndex >= count ||
+    toColumnIndex >= count ||
+    fromColumnIndex === toColumnIndex
+  ) {
+    return null;
+  }
+  for (const row of [table.header, ...table.body]) {
+    const [moved] = row.splice(fromColumnIndex, 1);
+    row.splice(toColumnIndex, 0, moved);
+  }
+  const [alignment] = table.alignments.splice(fromColumnIndex, 1);
+  table.alignments.splice(toColumnIndex, 0, alignment);
+  const insert = serialize(table);
+  const selection = cellSelection(layout.from, table, 0, toColumnIndex);
+  return {
+    changes: { from: layout.from, to: layout.to, insert },
+    selection,
+    target: {
+      tableFrom: layout.from,
+      rowIndex: 0,
+      columnIndex: toColumnIndex,
+      bodyRowCount: table.body.length,
+      columnCount: table.header.length,
+      alignment: table.alignments[toColumnIndex] || null,
+    },
+  };
+}

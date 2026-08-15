@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { liveEditorGeometry } from "../src/editor/theme.ts";
+import { THEME_TOKENS } from "../src/modules/markdown/theme-tokens.ts";
 
 test("live editor puts horizontal spacing on lines for aligned selections", () => {
   assert.deepEqual(liveEditorGeometry(), {
@@ -9,5 +10,13 @@ test("live editor puts horizontal spacing on lines for aligned selections", () =
     tableMargin: "0 30px 0 34px",
     tablePadding: "0",
     tableEdgeSize: "30px",
+    tableCellMinHeight: "1.7em",
   });
+});
+
+test("shell and iframe share the same theme tokens", () => {
+  assert.equal(THEME_TOKENS.light.text, "#111827");
+  assert.equal(THEME_TOKENS.dark.surface, "#1a1d24");
+  assert.equal(THEME_TOKENS.light.accent, "#2563eb");
+  assert.equal(THEME_TOKENS.dark.accent, "#60a5fa");
 });

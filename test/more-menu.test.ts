@@ -1,6 +1,9 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { MORE_MENU_SECTIONS } from "../src/modules/markdown/more-menu.ts";
+import {
+  EDITOR_MODE_OPTIONS,
+  MORE_MENU_SECTIONS,
+} from "../src/modules/markdown/more-menu.ts";
 
 describe("more menu", () => {
   it("keeps document, editor, export, and other actions separated", () => {
@@ -13,6 +16,13 @@ describe("more menu", () => {
         ["export-pdf", "export-html"],
         ["import-external-images", "cleanup-images", "shortcuts", "settings"],
       ],
+    );
+  });
+
+  it("lists the three editor modes for an inline fold", () => {
+    assert.deepEqual(
+      EDITOR_MODE_OPTIONS.map((option) => option.mode),
+      ["live", "source", "preview"],
     );
   });
 });

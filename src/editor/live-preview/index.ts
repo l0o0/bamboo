@@ -11,11 +11,13 @@ export { setLiveImageAssets, setLiveTableCellEdit } from "./plugin";
 export {
   activeLinesFromSelection,
   frontmatterLineNumbers,
+  frontmatterLineNumbersFromLines,
   shouldSkipLiveLine,
 } from "./active-lines";
 export {
   parseAtxHeading,
   parseListPrefix,
   parseBlockQuotePrefix,
+  fencedCodeLineKindsFromLines,
 } from "./structure";
 export { parseInlineL1, parseInlineL2 } from "./inline";

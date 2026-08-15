@@ -123,9 +123,9 @@ The toolbar is a single, centered icon toolbelt. It follows the Live Preview tex
 
 ### More Menu
 
-- **Surface:** 220px menu whose left edge aligns with the more button, with an 8px radius, one-pixel border, and restrained shadow.
+- **Surface:** a compact `max-content` menu (12–16rem) whose right edge aligns with the more button, with an 8px radius, one-pixel border, and restrained shadow.
 - **Grouping:** do not render category headings; separate document, editing, export, and other actions with one-pixel dividers.
-- **Submenus:** Mode opens a compact secondary menu to the right of the main menu with Live, Source, and Preview. Settings remains a reserved submenu entry.
+- **Submenus:** Mode expands an indented inline list with a check on the current mode. Settings remains a reserved submenu entry.
 - **Unavailable actions:** every planned-but-unimplemented action gives immediate lightweight feedback instead of silently doing nothing.
 
 ### Editor Column

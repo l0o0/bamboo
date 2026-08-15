@@ -119,6 +119,15 @@ export function externalImageReferences(
   );
 }
 
+export function replaceMarkdownRange(
+  source: string,
+  from: number,
+  to: number,
+  insert: string,
+) {
+  return source.slice(0, from) + insert + source.slice(to);
+}
+
 export function bytesToDataUrl(
   bytes: Uint8Array,
   mimeType: SupportedImageMime,

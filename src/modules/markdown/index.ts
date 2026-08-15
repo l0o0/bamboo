@@ -5,7 +5,11 @@ export {
   registerFileOpenInterceptor,
   unregisterFileOpenInterceptor,
 } from "./open";
-export { openMarkdownTab, flushAllSessions } from "./tab";
+export {
+  openMarkdownTab,
+  flushAllSessions,
+  flushSessionsForWindow,
+} from "./tab";
 export {
   registerMenus,
   registerItemContextMenu,

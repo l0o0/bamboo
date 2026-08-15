@@ -13,8 +13,9 @@ const FENCE_RE = /^\s*(`{3,}|~{3,})(?:\s*[^`]*)?$/;
 export type FencedCodeLineKind =
   "fence-open" | "content" | "fence-close" | null;
 
-export function fencedCodeLineKinds(source: string): FencedCodeLineKind[] {
-  const lines = source.split("\n");
+export function fencedCodeLineKindsFromLines(
+  lines: readonly string[],
+): FencedCodeLineKind[] {
   const kinds: FencedCodeLineKind[] = Array(lines.length).fill(null);
   let open: { index: number; marker: string } | null = null;
 
@@ -38,6 +39,10 @@ export function fencedCodeLineKinds(source: string): FencedCodeLineKind[] {
     }
   }
   return kinds;
+}
+
+export function fencedCodeLineKinds(source: string): FencedCodeLineKind[] {
+  return fencedCodeLineKindsFromLines(source.split("\n"));
 }
 
 export function parseAtxHeading(line: string): AtxHeadingParse | null {

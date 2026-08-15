@@ -19,6 +19,12 @@ export interface MoreMenuItem {
   submenu?: boolean;
 }
 
+export const EDITOR_MODE_OPTIONS = [
+  { mode: "live", label: "Live" },
+  { mode: "source", label: "源码" },
+  { mode: "preview", label: "只读预览" },
+] as const;
+
 export const MORE_MENU_SECTIONS: readonly (readonly MoreMenuItem[])[] = [
   [
     { action: "document-info", label: "文档信息" },

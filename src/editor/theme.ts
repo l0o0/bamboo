@@ -4,6 +4,7 @@ import type {
   EditorMode,
   EditorTheme,
 } from "../modules/markdown/editor-protocol";
+import { THEME_TOKENS } from "../modules/markdown/theme-tokens";
 
 const FONT_MONO =
   'ui-monospace, "Sarasa Mono SC", "Noto Sans Mono CJK SC", "JetBrains Mono", SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace';
@@ -17,6 +18,7 @@ const LIVE_EDITOR_GEOMETRY = {
   tableMargin: "0 30px 0 34px",
   tablePadding: "0",
   tableEdgeSize: "30px",
+  tableCellMinHeight: "1.7em",
 } as const;
 
 const livePreviewStyles = {
@@ -84,6 +86,9 @@ const livePreviewStyles = {
     textDecoration: "underline",
     cursor: "pointer",
   },
+  // Borders live on cells, not the CM line. Line borders sit outside the
+  // padding box that positions edge actions, so they drift by 1px from cell
+  // borders on the last row and split the add-column rail into blocks.
   ".cm-line.zmd-lp-table-row": {
     position: "relative",
     display: "grid",
@@ -92,52 +97,66 @@ const livePreviewStyles = {
     margin: LIVE_EDITOR_GEOMETRY.tableMargin,
     padding: LIVE_EDITOR_GEOMETRY.tablePadding,
     boxSizing: "border-box",
-    borderLeft: "1px solid var(--zmd-table-border)",
-    borderRight: "1px solid var(--zmd-table-border)",
-    backgroundColor: "var(--zmd-table-bg)",
+    overflow: "visible",
+    border: "none",
+    backgroundColor: "transparent",
   },
-  ".cm-line.zmd-lp-table-header": {
-    borderTop: "1px solid var(--zmd-table-border)",
-    borderBottom: "1px solid var(--zmd-table-border)",
-    backgroundColor: "var(--zmd-table-header-bg)",
+  ".cm-line.zmd-lp-table-row.cm-activeLine": {
+    backgroundColor: "transparent",
   },
   ".cm-line.zmd-lp-table-last-row": {
-    borderLeftColor: "transparent",
-    borderRightColor: "transparent",
-    backgroundColor: "transparent",
     paddingBottom: LIVE_EDITOR_GEOMETRY.tableEdgeSize,
-  },
-  ".cm-line.zmd-lp-table-last-row > .zmd-lp-table-cell": {
-    borderBottom: "1px solid var(--zmd-table-border)",
-    backgroundColor: "var(--zmd-table-bg)",
-  },
-  '.cm-line.zmd-lp-table-last-row > .zmd-lp-table-cell[data-zmd-table-cell-column="0"]':
-    {
-      borderLeft: "1px solid var(--zmd-table-border)",
-    },
-  ".cm-line.zmd-lp-table-last-row > .zmd-lp-table-last-cell": {
-    borderRight: "1px solid var(--zmd-table-border)",
-  },
-  ".cm-line.zmd-lp-table-header.zmd-lp-table-last-row > .zmd-lp-table-cell": {
-    backgroundColor: "var(--zmd-table-header-bg)",
   },
   ".cm-line.zmd-lp-table-delimiter": {
     height: "0",
     minHeight: "0",
+    maxHeight: "0",
+    padding: "0",
+    margin: "0",
+    border: "none",
     lineHeight: "0",
+    fontSize: "0",
     overflow: "hidden",
+  },
+  ".cm-line.zmd-lp-table-delimiter.cm-activeLine": {
+    backgroundColor: "transparent",
+  },
+  ".cm-line.zmd-lp-table-delimiter > *": {
+    display: "none",
   },
   ".zmd-lp-table-cell": {
     display: "block",
+    boxSizing: "border-box",
+    gridRow: "1",
     minWidth: "0",
+    minHeight: LIVE_EDITOR_GEOMETRY.tableCellMinHeight,
+    lineHeight: "1.7",
     padding: "0.28em 0.65em",
     overflow: "hidden",
     textOverflow: "ellipsis",
     whiteSpace: "nowrap",
+    backgroundColor: "var(--zmd-table-bg)",
+    borderBottom: "1px solid var(--zmd-table-border)",
     borderRight: "1px solid var(--zmd-table-border)",
+  },
+  '.zmd-lp-table-cell[data-zmd-table-cell-column="0"]': {
+    borderLeft: "1px solid var(--zmd-table-border)",
+  },
+  ".zmd-lp-table-header-cell": {
+    fontWeight: "650",
+    backgroundColor: "var(--zmd-table-header-bg)",
+    borderTop: "1px solid var(--zmd-table-border)",
   },
   ".zmd-lp-table-cell-active": {
     backgroundColor: "var(--zmd-table-active-bg)",
+  },
+  ".zmd-lp-table-cell.zmd-lp-table-drag-source": {
+    backgroundColor: "var(--zmd-drag-source-bg)",
+    boxShadow: "inset 0 0 0 1px var(--zmd-drag-source-line)",
+  },
+  ".zmd-lp-table-cell.zmd-lp-table-drop-target": {
+    backgroundColor: "var(--zmd-drag-target-bg)",
+    boxShadow: "inset 0 0 0 1px var(--zmd-drag-target-line)",
   },
   ".zmd-lp-table-cell-editing": {
     minHeight: "1.35em",
@@ -154,11 +173,88 @@ const livePreviewStyles = {
   '.cm-line.zmd-lp-table-row > span[contenteditable="false"]:empty': {
     display: "none",
   },
+  ".cm-line.zmd-lp-table-row > br": {
+    display: "none",
+  },
+  ".cm-line.zmd-lp-table-row > :not(.zmd-lp-table-cell):not(.zmd-lp-table-edge-actions)":
+    {
+      display: "none",
+    },
   ".zmd-lp-table-edge-actions": {
     position: "absolute",
     inset: "0",
+    display: "grid",
+    gridTemplateColumns:
+      "repeat(var(--zmd-table-columns), minmax(4.5rem, 1fr))",
+    gridTemplateRows: "1fr",
+    gridColumn: "1 / -1",
+    gridRow: "1",
     zIndex: "2",
     pointerEvents: "none",
+    "--zmd-table-edge-size": LIVE_EDITOR_GEOMETRY.tableEdgeSize,
+  },
+  ".zmd-lp-table-row-handle": {
+    position: "absolute",
+    top: "0",
+    bottom: "0",
+    left: "-20px",
+    width: "16px",
+    padding: "0",
+    border: "1px solid var(--zmd-table-border)",
+    borderRadius: "4px",
+    backgroundColor: "var(--zmd-table-header-bg)",
+    color: "var(--zmd-table-delimiter-text)",
+    display: "grid",
+    placeItems: "center",
+    opacity: "0",
+    cursor: "grab",
+    pointerEvents: "auto",
+    zIndex: "3",
+  },
+  ".zmd-lp-table-row-handle::before": {
+    content: '"⋮"',
+    fontSize: "13px",
+    lineHeight: "1",
+  },
+  ".cm-line.zmd-lp-table-last-row .zmd-lp-table-row-handle": {
+    bottom: "var(--zmd-table-edge-size)",
+  },
+  ".cm-line.zmd-lp-table-row:hover .zmd-lp-table-row-handle": {
+    opacity: "1",
+  },
+  ".zmd-lp-table-row-handle:active": {
+    cursor: "grabbing",
+  },
+  ".zmd-lp-table-column-handle": {
+    gridRow: "1",
+    alignSelf: "start",
+    justifySelf: "center",
+    width: "32px",
+    height: "16px",
+    marginTop: "-20px",
+    padding: "0",
+    border: "1px solid var(--zmd-table-border)",
+    borderRadius: "4px",
+    backgroundColor: "var(--zmd-table-header-bg)",
+    color: "var(--zmd-table-delimiter-text)",
+    display: "grid",
+    placeItems: "center",
+    opacity: "0",
+    cursor: "grab",
+    pointerEvents: "auto",
+    zIndex: "3",
+  },
+  ".zmd-lp-table-column-handle::before": {
+    content: '"⋯"',
+    fontSize: "13px",
+    lineHeight: "1",
+    letterSpacing: "1px",
+  },
+  ".zmd-lp-table-column-handle:hover": {
+    opacity: "1",
+  },
+  ".zmd-lp-table-column-handle:active": {
+    cursor: "grabbing",
   },
   ".zmd-lp-table-edge-action": {
     position: "absolute",
@@ -183,38 +279,49 @@ const livePreviewStyles = {
     left: "100%",
     width: LIVE_EDITOR_GEOMETRY.tableEdgeSize,
     height: "100%",
-    borderLeft: "0",
-  },
-  ".zmd-lp-table-edge-action.is-column:not(.is-first-row)": {
-    borderTop: "0",
+    overflow: "hidden",
+    border: "none",
+    borderTop: "1px solid var(--zmd-table-border)",
+    borderRight: "1px solid var(--zmd-table-border)",
+    borderBottom: "1px solid var(--zmd-table-border)",
+    backgroundColor: "var(--zmd-table-bg)",
+    color: "transparent",
   },
   ".zmd-lp-table-edge-action.is-row": {
+    top: "auto",
     bottom: "0",
     left: "0",
     width: "100%",
     height: LIVE_EDITOR_GEOMETRY.tableEdgeSize,
     borderTop: "0",
   },
-  ".cm-line.zmd-lp-table-last-row .zmd-lp-table-edge-action.is-column": {
-    height: `calc(100% - ${LIVE_EDITOR_GEOMETRY.tableEdgeSize})`,
+  ".zmd-lp-table-edge-action.is-column .zmd-lp-table-edge-glyph": {
+    position: "absolute",
+    left: "50%",
+    top: "50%",
+    transform: "translate(-50%, -50%)",
+    color: "var(--zmd-table-delimiter-text)",
+    pointerEvents: "none",
   },
   ".zmd-lp-table-edge-action.is-column.is-table-hovered": {
     opacity: "1",
     color: "transparent",
     backgroundColor: "var(--zmd-table-active-bg)",
   },
-  ".zmd-lp-table-edge-action:hover, .zmd-lp-table-edge-action:focus-visible": {
-    opacity: "1",
-    color: "var(--zmd-table-delimiter-text)",
-    backgroundColor: "var(--zmd-table-active-bg)",
-    outline: "none",
-  },
-  ".zmd-lp-table-last-cell": {
-    borderRight: "none",
-  },
-  ".zmd-lp-table-header-cell": {
-    fontWeight: "650",
-  },
+  ".zmd-lp-table-edge-action:not(.is-column):hover, .zmd-lp-table-edge-action:not(.is-column):focus-visible":
+    {
+      opacity: "1",
+      color: "var(--zmd-table-delimiter-text)",
+      backgroundColor: "var(--zmd-table-active-bg)",
+      outline: "none",
+    },
+  ".zmd-lp-table-edge-action.is-column:hover, .zmd-lp-table-edge-action.is-column:focus-visible":
+    {
+      opacity: "1",
+      color: "transparent",
+      backgroundColor: "var(--zmd-table-active-bg)",
+      outline: "none",
+    },
   ".zmd-lp-table-align-center": {
     textAlign: "center",
   },
@@ -325,27 +432,32 @@ export function editorThemeExtension(
   const contentPadding = isLive ? liveGeometry.contentPadding : "14px 8px";
 
   if (theme === "dark") {
+    const tokens = THEME_TOKENS.dark;
     return EditorView.theme(
       {
         "&": {
           height: "100%",
           fontSize: `${size}px`,
           fontFamily,
-          backgroundColor: "#1a1d24",
-          color: "#e8eaed",
-          "--zmd-code-block-bg": "rgba(255, 255, 255, 0.07)",
-          "--zmd-table-bg": "rgba(255, 255, 255, 0.025)",
-          "--zmd-table-header-bg": "rgba(255, 255, 255, 0.065)",
-          "--zmd-table-active-bg": "rgba(96, 165, 250, 0.08)",
-          "--zmd-table-border": "#3d4452",
-          "--zmd-table-delimiter-text": "#9aa3b2",
-          "--zmd-menu-bg": "#22262f",
-          "--zmd-menu-border": "#3d4452",
-          "--zmd-menu-text": "#e8eaed",
-          "--zmd-menu-disabled": "#6b7280",
+          backgroundColor: tokens.surface,
+          color: tokens.text,
+          "--zmd-code-block-bg": tokens.codeBlockBg,
+          "--zmd-table-bg": tokens.tableBg,
+          "--zmd-table-header-bg": tokens.tableHeaderBg,
+          "--zmd-table-active-bg": tokens.tableActiveBg,
+          "--zmd-table-border": tokens.borderStrong,
+          "--zmd-table-delimiter-text": tokens.textMuted,
+          "--zmd-drag-source-bg": tokens.accentSoft,
+          "--zmd-drag-source-line": tokens.accent,
+          "--zmd-drag-target-bg": tokens.successSoft,
+          "--zmd-drag-target-line": tokens.success,
+          "--zmd-menu-bg": tokens.surface2,
+          "--zmd-menu-border": tokens.borderStrong,
+          "--zmd-menu-text": tokens.text,
+          "--zmd-menu-disabled": tokens.textFaint,
           "--zmd-menu-hover": "rgba(255, 255, 255, 0.08)",
-          "--zmd-menu-check": "#60a5fa",
-          "--zmd-menu-shadow": "rgba(0, 0, 0, 0.4)",
+          "--zmd-menu-check": tokens.accent,
+          "--zmd-menu-shadow": tokens.menuShadow,
         },
         ".cm-scroller": {
           overflow: "auto",
@@ -353,7 +465,7 @@ export function editorThemeExtension(
           lineHeight,
         },
         ".cm-content": {
-          caretColor: "#60a5fa",
+          caretColor: tokens.accent,
           padding: contentPadding,
           maxWidth: isLive ? "48rem" : "none",
           margin: isLive ? "0 auto" : "0",
@@ -362,24 +474,24 @@ export function editorThemeExtension(
           padding: isLive ? liveGeometry.linePadding : "0 2px 0 6px",
         },
         ".cm-cursor, .cm-dropCursor": {
-          borderLeftColor: "#60a5fa",
+          borderLeftColor: tokens.accent,
         },
         "&.cm-focused .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection":
           {
-            backgroundColor: "rgba(96, 165, 250, 0.28)",
+            backgroundColor: tokens.selection,
           },
         ".cm-activeLine": {
-          backgroundColor: "rgba(255, 255, 255, 0.04)",
+          backgroundColor: tokens.activeLine,
         },
         ".cm-gutters": {
-          backgroundColor: "#22262f",
-          color: "#6b7280",
+          backgroundColor: tokens.surface2,
+          color: tokens.textFaint,
           border: "none",
-          borderRight: "1px solid #2e3440",
+          borderRight: `1px solid ${tokens.border}`,
         },
         ".cm-activeLineGutter": {
           backgroundColor: "rgba(255, 255, 255, 0.06)",
-          color: "#9aa3b2",
+          color: tokens.textMuted,
         },
         ".cm-lineNumbers .cm-gutterElement": {
           padding: "0 10px 0 8px",
@@ -388,7 +500,7 @@ export function editorThemeExtension(
         ...livePreviewStyles,
         ...tableContextMenuStyles,
         ".cm-line.zmd-lp-quote": {
-          borderLeftColor: "#3d4452",
+          borderLeftColor: tokens.borderStrong,
           color: "#c5cad3",
         },
         ".zmd-lp-list-marker": {
@@ -407,33 +519,38 @@ export function editorThemeExtension(
         },
         ".zmd-lp-link": {
           ...livePreviewStyles[".zmd-lp-link"],
-          color: "#60a5fa",
+          color: tokens.accent,
         },
       },
       { dark: true },
     );
   }
 
+  const tokens = THEME_TOKENS.light;
   return EditorView.theme({
     "&": {
       height: "100%",
       fontSize: `${size}px`,
       fontFamily,
-      backgroundColor: "#ffffff",
-      color: "#111827",
-      "--zmd-code-block-bg": "rgba(17, 24, 39, 0.055)",
-      "--zmd-table-bg": "#ffffff",
-      "--zmd-table-header-bg": "#f3f4f6",
-      "--zmd-table-active-bg": "rgba(37, 99, 235, 0.055)",
-      "--zmd-table-border": "#d1d5db",
-      "--zmd-table-delimiter-text": "#6b7280",
-      "--zmd-menu-bg": "#ffffff",
-      "--zmd-menu-border": "#d1d5db",
-      "--zmd-menu-text": "#111827",
-      "--zmd-menu-disabled": "#9ca3af",
-      "--zmd-menu-hover": "#f3f4f6",
-      "--zmd-menu-check": "#2563eb",
-      "--zmd-menu-shadow": "rgba(16, 24, 40, 0.16)",
+      backgroundColor: tokens.surface,
+      color: tokens.text,
+      "--zmd-code-block-bg": tokens.codeBlockBg,
+      "--zmd-table-bg": tokens.tableBg,
+      "--zmd-table-header-bg": tokens.tableHeaderBg,
+      "--zmd-table-active-bg": tokens.tableActiveBg,
+      "--zmd-table-border": tokens.borderStrong,
+      "--zmd-table-delimiter-text": tokens.textMuted,
+      "--zmd-drag-source-bg": tokens.accentSoft,
+      "--zmd-drag-source-line": tokens.accent,
+      "--zmd-drag-target-bg": tokens.successSoft,
+      "--zmd-drag-target-line": tokens.success,
+      "--zmd-menu-bg": tokens.surface,
+      "--zmd-menu-border": tokens.borderStrong,
+      "--zmd-menu-text": tokens.text,
+      "--zmd-menu-disabled": tokens.textFaint,
+      "--zmd-menu-hover": tokens.surface2,
+      "--zmd-menu-check": tokens.accent,
+      "--zmd-menu-shadow": tokens.menuShadow,
     },
     ".cm-scroller": {
       overflow: "auto",
@@ -441,7 +558,7 @@ export function editorThemeExtension(
       lineHeight,
     },
     ".cm-content": {
-      caretColor: "#2563eb",
+      caretColor: tokens.accent,
       padding: contentPadding,
       maxWidth: isLive ? "48rem" : "none",
       margin: isLive ? "0 auto" : "0",
@@ -450,24 +567,24 @@ export function editorThemeExtension(
       padding: isLive ? liveGeometry.linePadding : "0 2px 0 6px",
     },
     ".cm-cursor, .cm-dropCursor": {
-      borderLeftColor: "#2563eb",
+      borderLeftColor: tokens.accent,
     },
     "&.cm-focused .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection":
       {
-        backgroundColor: "rgba(37, 99, 235, 0.16)",
+        backgroundColor: tokens.selection,
       },
     ".cm-activeLine": {
-      backgroundColor: "rgba(37, 99, 235, 0.04)",
+      backgroundColor: tokens.activeLine,
     },
     ".cm-gutters": {
-      backgroundColor: "#f3f4f6",
-      color: "#9ca3af",
+      backgroundColor: tokens.surface2,
+      color: tokens.textFaint,
       border: "none",
-      borderRight: "1px solid #e5e7eb",
+      borderRight: `1px solid ${tokens.border}`,
     },
     ".cm-activeLineGutter": {
       backgroundColor: "rgba(37, 99, 235, 0.06)",
-      color: "#6b7280",
+      color: tokens.textMuted,
     },
     ".cm-lineNumbers .cm-gutterElement": {
       padding: "0 10px 0 8px",
@@ -476,7 +593,7 @@ export function editorThemeExtension(
     ...livePreviewStyles,
     ...tableContextMenuStyles,
     ".cm-line.zmd-lp-quote": {
-      borderLeftColor: "#d1d5db",
+      borderLeftColor: tokens.borderStrong,
       color: "#4b5563",
     },
     ".zmd-lp-code": {
@@ -485,7 +602,7 @@ export function editorThemeExtension(
     },
     ".zmd-lp-link": {
       ...livePreviewStyles[".zmd-lp-link"],
-      color: "#2563eb",
+      color: tokens.accent,
     },
   });
 }

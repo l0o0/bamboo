@@ -10,6 +10,7 @@ import {
   parseMarkdownImages,
   planUnusedImageCleanup,
   referencedAssets,
+  replaceMarkdownRange,
   validateImageInput,
 } from "../src/modules/markdown/images/model";
 
@@ -39,6 +40,15 @@ test("normalizes only local asset references", () => {
   assert.equal(normalizeAssetReference("/assets/a.png"), null);
   assert.equal(normalizeAssetReference("https://example.com/a.png"), null);
   assert.equal(mimeFromAssetPath("assets/a.JPEG"), "image/jpeg");
+});
+
+test("replaces a markdown range by offset instead of first-match", () => {
+  const source = "![a](https://x/a.png) ![a](https://x/a.png)";
+  const second = source.lastIndexOf("![a]");
+  assert.equal(
+    replaceMarkdownRange(source, second, source.length, "![a](assets/a.png)"),
+    "![a](https://x/a.png) ![a](assets/a.png)",
+  );
 });
 
 test("parses markdown images and deduplicates local assets", () => {

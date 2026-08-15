@@ -8,7 +8,13 @@
 /// <reference lib="dom" />
 /// <reference lib="dom.iterable" />
 
-import { EditorState, Compartment, type Extension } from "@codemirror/state";
+import {
+  Annotation,
+  EditorState,
+  Compartment,
+  Prec,
+  type Extension,
+} from "@codemirror/state";
 import {
   EditorView,
   keymap,
@@ -42,30 +48,38 @@ import {
 } from "@codemirror/search";
 import {
   EDITOR_MESSAGE_SOURCE,
+  EDITOR_PROTOCOL_VERSION,
   computeStats,
   isEditorProtocolMessage,
+  type EditorDocChange,
   type EditorInitPayload,
   type EditorMode,
+  type ImageAssetMap,
   type EditorTheme,
   type ParentToEditorMessage,
 } from "../modules/markdown/editor-protocol";
 import { editorThemeExtension } from "./theme";
 import { imageDebug } from "./image-debug";
+import { MAX_IMAGE_BYTES } from "../modules/markdown/images/model";
 import {
   livePreviewWhen,
   setLiveImageAssets,
   setLiveTableCellEdit,
 } from "./live-preview";
+import { rememberLiveAsset } from "./live-preview/assets";
 import { tableKeymap } from "./table";
 import {
-  activateTableCell,
   activateTableCellByIndex,
+  interpretCellKey,
+  isInsideSelector,
   planCellInput,
   planCellNavigation,
   remapActiveCell,
+  TABLE_CELL_ACTIVATE_EVENT,
   TABLE_CELL_COMMIT_EVENT,
   TABLE_CELL_INPUT_EVENT,
   TABLE_CELL_NAVIGATE_EVENT,
+  type TableCellActivateDetail,
   type TableCellEditTarget,
   type TableCellInputDetail,
   type TableCellNavigateDetail,
@@ -76,6 +90,8 @@ import {
   type TableEdgeActionDetail,
 } from "./table-edge-actions";
 import {
+  planTableMoveColumnTo,
+  planTableMoveRowTo,
   planTableOperation,
   tableTargetAt,
   type TableAction,
@@ -88,24 +104,70 @@ import {
 
 const themeCompartment = new Compartment();
 const readOnlyCompartment = new Compartment();
+const editorEditableCompartment = new Compartment();
 const liveCompartment = new Compartment();
 const guttersCompartment = new Compartment();
 const modeAttrCompartment = new Compartment();
 
-let view: EditorView | null = null;
-let currentTheme: EditorTheme = "light";
-let currentFontSize = 14;
-let currentMode: EditorMode = "live";
-let removeImageDoubleClickListener: (() => void) | null = null;
-let removeTableCellListeners: (() => void) | null = null;
-let tableContextMenu: TableContextMenu | null = null;
-let tableContextPosition: number | null = null;
-let activeTableCell: TableCellEditTarget | null = null;
+const fromParentAnnotation = Annotation.define<boolean>();
+
+type TableDragKind = "row" | "column";
+
+interface TableDragSession {
+  kind: TableDragKind;
+  tableFrom: number;
+  fromIndex: number;
+  targetIndex: number;
+  pointerId: number;
+  handle: HTMLElement;
+}
+
+interface EditorRuntime {
+  view: EditorView | null;
+  theme: EditorTheme;
+  fontSize: number;
+  mode: EditorMode;
+  docRev: number;
+  imageAssets: ImageAssetMap;
+  removeImageDoubleClickListener: (() => void) | null;
+  removeTableCellListeners: (() => void) | null;
+  tableContextMenu: TableContextMenu | null;
+  tableContextPosition: number | null;
+  activeTableCell: TableCellEditTarget | null;
+  tableDragSession: TableDragSession | null;
+}
+
+const runtime: EditorRuntime = {
+  view: null,
+  theme: "light",
+  fontSize: 14,
+  mode: "live",
+  docRev: 0,
+  imageAssets: {},
+  removeImageDoubleClickListener: null,
+  removeTableCellListeners: null,
+  tableContextMenu: null,
+  tableContextPosition: null,
+  activeTableCell: null,
+  tableDragSession: null,
+};
+
 const editorChannel =
   new URL(window.location.href).searchParams.get("channel") || "";
 
+function activateImageLine(image: HTMLElement) {
+  const editor = runtime.view;
+  if (!editor) return false;
+  const pos = Number(image.dataset.zmdImageFrom);
+  if (!Number.isFinite(pos)) return false;
+  const line = editor.state.doc.lineAt(pos);
+  editor.dispatch({ selection: { anchor: line.from } });
+  editor.focus();
+  return true;
+}
+
 function bindImageDoubleClick(host: HTMLElement) {
-  removeImageDoubleClickListener?.();
+  runtime.removeImageDoubleClickListener?.();
   imageDebug("listener-bound", { hostID: host.id });
   let traceUntil = 0;
   let lastImageFrom: string | undefined;
@@ -129,33 +191,14 @@ function bindImageDoubleClick(host: HTMLElement) {
   const onDoubleClick = (event: MouseEvent) => {
     const target = event.target as Element | null;
     const image = target?.closest?.(".zmd-lp-image") as HTMLElement | null;
-    if (!image || !view) {
+    if (!image || !activateImageLine(image)) {
       imageDebug("dblclick-not-handled", {
         hasImage: !!image,
-        hasView: !!view,
+        hasView: !!runtime.view,
         target: target?.tagName,
       });
       return;
     }
-    const pos = Number(image.dataset.zmdImageFrom);
-    if (!Number.isFinite(pos)) {
-      imageDebug("dblclick-invalid-position", {
-        sourceFrom: image.dataset.zmdImageFrom,
-      });
-      return;
-    }
-    const line = view.state.doc.lineAt(pos);
-    imageDebug("dblclick-dispatch", {
-      pos,
-      line: line.number,
-      beforeHead: view.state.selection.main.head,
-    });
-    view.dispatch({ selection: { anchor: line.from } });
-    view.focus();
-    imageDebug("dblclick-complete", {
-      afterHead: view.state.selection.main.head,
-      activeLine: view.state.doc.lineAt(view.state.selection.main.head).number,
-    });
     event.preventDefault();
     event.stopPropagation();
   };
@@ -164,47 +207,314 @@ function bindImageDoubleClick(host: HTMLElement) {
   host.addEventListener("click", onPointerEvent, true);
   host.addEventListener("dblclick", onPointerEvent, true);
   host.addEventListener("dblclick", onDoubleClick, true);
-  removeImageDoubleClickListener = () => {
+  runtime.removeImageDoubleClickListener = () => {
     host.removeEventListener("mousedown", onPointerEvent, true);
     host.removeEventListener("pointerdown", onPointerEvent, true);
     host.removeEventListener("click", onPointerEvent, true);
     host.removeEventListener("dblclick", onPointerEvent, true);
     host.removeEventListener("dblclick", onDoubleClick, true);
-    removeImageDoubleClickListener = null;
+    runtime.removeImageDoubleClickListener = null;
   };
 }
 
-function dispatchActiveTableCell(target: TableCellEditTarget | null) {
-  activeTableCell = target;
-  view?.dispatch({ effects: setLiveTableCellEdit.of(target) });
+function editorEditableEffect() {
+  const editable = !runtime.view?.state.readOnly && !runtime.activeTableCell;
+  return editorEditableCompartment.reconfigure(
+    EditorView.editable.of(editable),
+  );
 }
 
-function caretOffsetFromPoint(
-  cell: HTMLElement,
+function dispatchActiveTableCell(target: TableCellEditTarget | null) {
+  runtime.activeTableCell = target;
+  runtime.view?.dispatch({
+    effects: [setLiveTableCellEdit.of(target), editorEditableEffect()],
+  });
+}
+
+function syncEditingCellDom(value: string, caretOffset: number) {
+  const cell = runtime.view?.dom.querySelector(
+    ".zmd-lp-table-cell-editing",
+  ) as HTMLElement | null;
+  if (!cell) return;
+  if ((cell.textContent || "") !== value) cell.textContent = value;
+  const selection = cell.ownerDocument.getSelection();
+  const node = cell.firstChild || cell;
+  const offset = Math.min(
+    caretOffset,
+    node.nodeType === 3 ? node.textContent?.length || 0 : 0,
+  );
+  const range = cell.ownerDocument.createRange();
+  range.setStart(node, offset);
+  range.collapse(true);
+  selection?.removeAllRanges();
+  selection?.addRange(range);
+}
+
+function applyActiveCellKey(event: KeyboardEvent): boolean {
+  const view = runtime.view;
+  const active = runtime.activeTableCell;
+  if (!view || !active) return false;
+  const intent = interpretCellKey(active.value, active.caretOffset, event.key, {
+    shift: event.shiftKey,
+    ctrl: event.ctrlKey,
+    meta: event.metaKey,
+    alt: event.altKey,
+    composing: event.isComposing,
+  });
+  if (intent.kind === "pass") return false;
+  if (intent.kind === "commit") {
+    dispatchActiveTableCell(null);
+    return true;
+  }
+  if (intent.kind === "navigate") {
+    const plan = planCellNavigation(view.state, active, intent.backwards);
+    if (!plan) return true;
+    runtime.activeTableCell = plan.active;
+    view.dispatch({
+      changes: plan.changes,
+      selection: { anchor: plan.active.from },
+      effects: [setLiveTableCellEdit.of(plan.active), editorEditableEffect()],
+      scrollIntoView: true,
+    });
+    return true;
+  }
+  if (intent.kind === "caret") {
+    const next = { ...active, caretOffset: intent.caretOffset };
+    runtime.activeTableCell = next;
+    view.dispatch({ effects: setLiveTableCellEdit.of(next) });
+    syncEditingCellDom(next.value, next.caretOffset);
+    return true;
+  }
+  const plan = planCellInput(
+    view.state,
+    active,
+    intent.value,
+    intent.caretOffset,
+  );
+  if (!plan) {
+    dispatchActiveTableCell(null);
+    return true;
+  }
+  runtime.activeTableCell = plan.active;
+  view.dispatch({
+    changes: plan.changes,
+    effects: setLiveTableCellEdit.of(plan.active),
+  });
+  syncEditingCellDom(plan.active.value, plan.active.caretOffset);
+  return true;
+}
+
+function activateLiveTableCell(event: Event) {
+  if (!runtime.view || runtime.view.state.readOnly) return;
+  const detail = (event as CustomEvent<TableCellActivateDetail>).detail;
+  const editTarget = activateTableCellByIndex(
+    runtime.view.state,
+    detail.tableFrom,
+    detail.rowIndex,
+    detail.columnIndex,
+    detail.caretOffset,
+  );
+  if (!editTarget) return;
+  if (
+    runtime.activeTableCell &&
+    runtime.activeTableCell.tableFrom === editTarget.tableFrom &&
+    runtime.activeTableCell.rowIndex === editTarget.rowIndex &&
+    runtime.activeTableCell.columnIndex === editTarget.columnIndex
+  ) {
+    return;
+  }
+  dispatchActiveTableCell(editTarget);
+}
+
+function tableDragTargetAtPoint(
   x: number,
   y: number,
-  sourceLength: number,
-) {
-  const caret = cell.ownerDocument.caretPositionFromPoint?.(x, y);
-  if (!caret?.offsetNode || !cell.contains(caret.offsetNode)) {
-    return sourceLength;
+  session: TableDragSession,
+): number | null {
+  const target = document.elementFromPoint(x, y);
+  if (!target) return null;
+  const line = target.closest(
+    `.cm-line.zmd-lp-table-row[data-zmd-table-from="${session.tableFrom}"]`,
+  ) as HTMLElement | null;
+  if (!line) return null;
+  if (session.kind === "row") {
+    const rowIndex = Number(line.dataset.zmdTableRowIndex);
+    return Number.isInteger(rowIndex) && rowIndex >= 1 ? rowIndex : null;
   }
-  const range = cell.ownerDocument.createRange();
-  range.selectNodeContents(cell);
-  range.setEnd(caret.offsetNode, caret.offset);
-  const visibleLength = cell.textContent?.length || 0;
-  if (!visibleLength) return 0;
-  return Math.round((range.toString().length / visibleLength) * sourceLength);
+  const handle = target.closest(
+    `.zmd-lp-table-column-handle[data-zmd-table-from="${session.tableFrom}"]`,
+  ) as HTMLElement | null;
+  if (handle) {
+    const columnIndex = Number(handle.dataset.zmdTableColumn);
+    return Number.isInteger(columnIndex) ? columnIndex : null;
+  }
+  const cell = target.closest(".zmd-lp-table-cell") as HTMLElement | null;
+  if (!cell) return null;
+  const columnIndex = Number(cell.dataset.zmdTableCellColumn);
+  return Number.isInteger(columnIndex) ? columnIndex : null;
+}
+
+function clearTableDragHighlight() {
+  for (const element of document.querySelectorAll<HTMLElement>(
+    ".zmd-lp-table-drag-source, .zmd-lp-table-drop-target",
+  )) {
+    element.classList.remove(
+      "zmd-lp-table-drag-source",
+      "zmd-lp-table-drop-target",
+    );
+  }
+}
+
+function applyTableDragHighlight(session: TableDragSession) {
+  clearTableDragHighlight();
+  const lines = document.querySelectorAll<HTMLElement>(
+    `.cm-line.zmd-lp-table-row[data-zmd-table-from="${session.tableFrom}"]`,
+  );
+  for (const line of lines) {
+    const rowIndex = Number(line.dataset.zmdTableRowIndex);
+    const rowSource = session.kind === "row" && rowIndex === session.fromIndex;
+    const rowTarget =
+      session.kind === "row" &&
+      session.targetIndex !== session.fromIndex &&
+      rowIndex === session.targetIndex;
+    if (rowSource) line.classList.add("zmd-lp-table-drag-source");
+    if (rowTarget) line.classList.add("zmd-lp-table-drop-target");
+    for (const cell of line.querySelectorAll<HTMLElement>(
+      ".zmd-lp-table-cell",
+    )) {
+      const columnIndex = Number(cell.dataset.zmdTableCellColumn);
+      const columnSource =
+        session.kind === "column" && columnIndex === session.fromIndex;
+      const columnTarget =
+        session.kind === "column" &&
+        session.targetIndex !== session.fromIndex &&
+        columnIndex === session.targetIndex;
+      if (rowSource || columnSource) {
+        cell.classList.add("zmd-lp-table-drag-source");
+      } else if (rowTarget || columnTarget) {
+        cell.classList.add("zmd-lp-table-drop-target");
+      }
+    }
+  }
+}
+
+function onTableDragMove(event: PointerEvent) {
+  const session = runtime.tableDragSession;
+  if (!session || event.pointerId !== session.pointerId) return;
+  const targetIndex = tableDragTargetAtPoint(
+    event.clientX,
+    event.clientY,
+    session,
+  );
+  if (targetIndex == null || targetIndex === session.targetIndex) return;
+  session.targetIndex = targetIndex;
+  applyTableDragHighlight(session);
+}
+
+function onTableDragEnd(event: PointerEvent) {
+  const session = runtime.tableDragSession;
+  if (!session || event.pointerId !== session.pointerId) return;
+  document.removeEventListener("pointermove", onTableDragMove);
+  document.removeEventListener("pointerup", onTableDragEnd);
+  document.removeEventListener("pointercancel", onTableDragEnd);
+  try {
+    session.handle.releasePointerCapture?.(session.pointerId);
+  } catch {
+    // ignore
+  }
+  runtime.tableDragSession = null;
+  clearTableDragHighlight();
+
+  if (event.type === "pointercancel" || !runtime.view) return;
+  const targetIndex = tableDragTargetAtPoint(
+    event.clientX,
+    event.clientY,
+    session,
+  );
+  if (targetIndex == null || targetIndex === session.fromIndex) return;
+  const plan =
+    session.kind === "row"
+      ? planTableMoveRowTo(
+          runtime.view.state,
+          session.tableFrom,
+          session.fromIndex,
+          targetIndex,
+        )
+      : planTableMoveColumnTo(
+          runtime.view.state,
+          session.tableFrom,
+          session.fromIndex,
+          targetIndex,
+        );
+  if (!plan) return;
+  runtime.view.dispatch({
+    changes: plan.changes,
+    selection: plan.selection,
+    effects: setLiveTableCellEdit.of(null),
+    scrollIntoView: true,
+  });
+}
+
+function cancelTableDrag() {
+  if (!runtime.tableDragSession) return;
+  document.removeEventListener("pointermove", onTableDragMove);
+  document.removeEventListener("pointerup", onTableDragEnd);
+  document.removeEventListener("pointercancel", onTableDragEnd);
+  runtime.tableDragSession = null;
+  clearTableDragHighlight();
+}
+
+function startTableDrag(event: PointerEvent): boolean {
+  const target = event.target as Element | null;
+  const handle = target?.closest?.(
+    "[data-zmd-table-drag]",
+  ) as HTMLElement | null;
+  if (!handle || !runtime.view || runtime.view.state.readOnly) return false;
+  const kind = handle.dataset.zmdTableDrag as TableDragKind | undefined;
+  if (kind !== "row" && kind !== "column") return false;
+  const tableFrom = Number(handle.dataset.zmdTableFrom);
+  const fromIndex = Number(
+    kind === "row" ? handle.dataset.zmdTableRow : handle.dataset.zmdTableColumn,
+  );
+  if (!Number.isInteger(tableFrom) || !Number.isInteger(fromIndex))
+    return false;
+  if (kind === "row" && fromIndex < 1) return false;
+
+  const session: TableDragSession = {
+    kind,
+    tableFrom,
+    fromIndex,
+    targetIndex: fromIndex,
+    pointerId: event.pointerId,
+    handle,
+  };
+  runtime.tableDragSession = session;
+  try {
+    handle.setPointerCapture?.(event.pointerId);
+  } catch {
+    // ignore
+  }
+  document.addEventListener("pointermove", onTableDragMove);
+  document.addEventListener("pointerup", onTableDragEnd);
+  document.addEventListener("pointercancel", onTableDragEnd);
+  applyTableDragHighlight(session);
+  event.preventDefault();
+  return true;
 }
 
 function bindTableCellEditing(host: HTMLElement) {
-  removeTableCellListeners?.();
+  runtime.removeTableCellListeners?.();
   const onInput = (event: Event) => {
-    if (!view || !activeTableCell || view.state.readOnly) return;
+    if (
+      !runtime.view ||
+      !runtime.activeTableCell ||
+      runtime.view.state.readOnly
+    )
+      return;
     const detail = (event as CustomEvent<TableCellInputDetail>).detail;
     const plan = planCellInput(
-      view.state,
-      activeTableCell,
+      runtime.view.state,
+      runtime.activeTableCell,
       detail.value,
       detail.caretOffset,
     );
@@ -212,24 +522,24 @@ function bindTableCellEditing(host: HTMLElement) {
       dispatchActiveTableCell(null);
       return;
     }
-    activeTableCell = plan.active;
-    view.dispatch({
+    runtime.activeTableCell = plan.active;
+    runtime.view.dispatch({
       changes: plan.changes,
       effects: setLiveTableCellEdit.of(plan.active),
     });
   };
   const onCommit = () => dispatchActiveTableCell(null);
   const onNavigate = (event: Event) => {
-    if (!view || !activeTableCell) return;
+    if (!runtime.view || !runtime.activeTableCell) return;
     const detail = (event as CustomEvent<TableCellNavigateDetail>).detail;
     const plan = planCellNavigation(
-      view.state,
-      activeTableCell,
+      runtime.view.state,
+      runtime.activeTableCell,
       detail.backwards,
     );
     if (!plan) return;
-    activeTableCell = plan.active;
-    view.dispatch({
+    runtime.activeTableCell = plan.active;
+    runtime.view.dispatch({
       changes: plan.changes,
       selection: { anchor: plan.active.from },
       effects: setLiveTableCellEdit.of(plan.active),
@@ -237,18 +547,20 @@ function bindTableCellEditing(host: HTMLElement) {
     });
   };
   const onEdgeAction = (event: Event) => {
-    if (!view || view.state.readOnly) return;
+    if (!runtime.view || runtime.view.state.readOnly) return;
     const detail = (event as CustomEvent<TableEdgeActionDetail>).detail;
     const plan = planTableEdgeAction(
-      view.state,
+      runtime.view.state,
       detail.position,
       detail.action,
     );
     if (!plan) return;
-    const nextState = view.state.update({ changes: plan.changes }).state;
+    const nextState = runtime.view.state.update({
+      changes: plan.changes,
+    }).state;
     const nextActive = remapActiveCell(nextState, plan.target);
-    activeTableCell = nextActive;
-    view.dispatch({
+    runtime.activeTableCell = nextActive;
+    runtime.view.dispatch({
       changes: plan.changes,
       selection: plan.selection,
       effects: setLiveTableCellEdit.of(nextActive),
@@ -256,35 +568,82 @@ function bindTableCellEditing(host: HTMLElement) {
     });
   };
   const onPointerDown = (event: PointerEvent) => {
-    if (!activeTableCell) return;
-    const target = event.target as Element | null;
-    if (target?.closest?.(".zmd-lp-table-cell")) return;
-    if (target?.closest?.(".zmd-lp-table-edge-action")) return;
+    if (!runtime.activeTableCell) return;
+    if (isInsideSelector(event, ".zmd-lp-table-cell")) return;
+    if (isInsideSelector(event, ".zmd-lp-table-edge-action")) return;
     dispatchActiveTableCell(null);
   };
+  const onDragHandlePointerDown = (event: PointerEvent) => {
+    startTableDrag(event);
+  };
+  host.addEventListener(TABLE_CELL_ACTIVATE_EVENT, activateLiveTableCell);
   host.addEventListener(TABLE_CELL_INPUT_EVENT, onInput);
   host.addEventListener(TABLE_CELL_COMMIT_EVENT, onCommit);
   host.addEventListener(TABLE_CELL_NAVIGATE_EVENT, onNavigate);
   host.addEventListener(TABLE_EDGE_ACTION_EVENT, onEdgeAction);
+  host.addEventListener("pointerdown", onDragHandlePointerDown);
   document.addEventListener("pointerdown", onPointerDown, true);
-  removeTableCellListeners = () => {
+  runtime.removeTableCellListeners = () => {
+    host.removeEventListener(TABLE_CELL_ACTIVATE_EVENT, activateLiveTableCell);
     host.removeEventListener(TABLE_CELL_INPUT_EVENT, onInput);
     host.removeEventListener(TABLE_CELL_COMMIT_EVENT, onCommit);
     host.removeEventListener(TABLE_CELL_NAVIGATE_EVENT, onNavigate);
     host.removeEventListener(TABLE_EDGE_ACTION_EVENT, onEdgeAction);
+    host.removeEventListener("pointerdown", onDragHandlePointerDown);
     document.removeEventListener("pointerdown", onPointerDown, true);
-    removeTableCellListeners = null;
+    runtime.removeTableCellListeners = null;
   };
 }
 
+function forwardImageFile(files: File[], event: Event) {
+  const file = files.find((candidate) => candidate.type.startsWith("image/"));
+  if (!file) return false;
+  event.preventDefault();
+  if (file.size > MAX_IMAGE_BYTES) {
+    postToParent({
+      type: "error",
+      payload: { message: "图片不能超过 15 MB" },
+    });
+    return true;
+  }
+  void file.arrayBuffer().then(
+    (bytes) => {
+      postToParent({
+        type: "pasteImage",
+        payload: {
+          bytes,
+          mimeType: file.type,
+          name: file.name || "image",
+        },
+      });
+    },
+    (error) => {
+      postToParent({
+        type: "error",
+        payload: { message: String(error) },
+      });
+    },
+  );
+  return true;
+}
+
 function postToParent(message: {
-  type: "ready" | "change" | "save" | "error" | "pasteImage" | "imageDebug";
+  type:
+    | "ready"
+    | "change"
+    | "snapshot"
+    | "resolveAsset"
+    | "save"
+    | "error"
+    | "pasteImage"
+    | "imageDebug";
   payload?: unknown;
 }) {
   window.parent?.postMessage(
     {
       source: EDITOR_MESSAGE_SOURCE,
       channel: editorChannel,
+      v: EDITOR_PROTOCOL_VERSION,
       ...message,
     },
     "*",
@@ -305,12 +664,12 @@ function modeUiForMode(mode: EditorMode): Extension {
 }
 
 function buildExtensions(init: EditorInitPayload): Extension[] {
-  currentTheme = init.theme;
-  currentFontSize = init.fontSize;
-  currentMode = init.mode === "source" ? "source" : "live";
+  runtime.theme = init.theme;
+  runtime.fontSize = init.fontSize;
+  runtime.mode = init.mode === "source" ? "source" : "live";
 
   return [
-    guttersCompartment.of(guttersForMode(currentMode)),
+    guttersCompartment.of(guttersForMode(runtime.mode)),
     highlightActiveLine(),
     drawSelection(),
     dropCursor(),
@@ -320,6 +679,19 @@ function buildExtensions(init: EditorInitPayload): Extension[] {
     EditorView.lineWrapping,
     markdown({ extensions: GFM }),
     syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
+    Prec.highest(
+      keymap.of([
+        {
+          any(_view, event) {
+            if (!runtime.activeTableCell) return false;
+            if (isInsideSelector(event, ".zmd-lp-table-cell-editing")) {
+              return false;
+            }
+            return applyActiveCellKey(event);
+          },
+        },
+      ]),
+    ),
     keymap.of([
       ...tableKeymap,
       ...defaultKeymap,
@@ -378,33 +750,42 @@ function buildExtensions(init: EditorInitPayload): Extension[] {
       },
     ]),
     themeCompartment.of(
-      editorThemeExtension(init.theme, init.fontSize, currentMode),
+      editorThemeExtension(init.theme, init.fontSize, runtime.mode),
     ),
-    liveCompartment.of(livePreviewWhen(currentMode === "live")),
-    modeAttrCompartment.of(modeUiForMode(currentMode)),
-    readOnlyCompartment.of([
-      EditorState.readOnly.of(!!init.readOnly),
-      EditorView.editable.of(!init.readOnly),
-    ]),
+    liveCompartment.of(livePreviewWhen(runtime.mode === "live")),
+    modeAttrCompartment.of(modeUiForMode(runtime.mode)),
+    readOnlyCompartment.of(EditorState.readOnly.of(!!init.readOnly)),
+    editorEditableCompartment.of(EditorView.editable.of(!init.readOnly)),
     EditorView.updateListener.of((update) => {
-      if (update.docChanged && activeTableCell) {
+      if (update.docChanged && runtime.activeTableCell) {
         const hasActiveEffect = update.transactions.some((transaction) =>
           transaction.effects.some((effect) => effect.is(setLiveTableCellEdit)),
         );
         if (!hasActiveEffect) {
-          activeTableCell = remapActiveCell(
+          runtime.activeTableCell = remapActiveCell(
             update.state,
-            activeTableCell,
-            update.changes.mapPos(activeTableCell.tableFrom, 1),
+            runtime.activeTableCell,
+            update.changes.mapPos(runtime.activeTableCell.tableFrom, 1),
           );
         }
       }
       if (!update.docChanged) return;
-      tableContextMenu?.close();
-      const value = update.state.doc.toString();
+      if (
+        update.transactions.some((transaction) =>
+          transaction.annotation(fromParentAnnotation),
+        )
+      ) {
+        return;
+      }
+      runtime.tableContextMenu?.close();
+      runtime.docRev += 1;
+      const changes: EditorDocChange[] = [];
+      update.changes.iterChanges((fromA, toA, _fromB, _toB, inserted) => {
+        changes.push({ from: fromA, to: toA, insert: inserted.toString() });
+      });
       postToParent({
         type: "change",
-        payload: { value, stats: computeStats(value) },
+        payload: { rev: runtime.docRev, changes },
       });
     }),
     EditorView.domEventHandlers({
@@ -421,9 +802,9 @@ function buildExtensions(init: EditorInitPayload): Extension[] {
           : editorView.posAtCoords({ x: event.clientX, y: event.clientY });
         if (position == null) return false;
         const tableTarget = tableTargetAt(editorView.state, position);
-        if (!tableTarget || !tableContextMenu) return false;
-        tableContextPosition = position;
-        tableContextMenu.open(
+        if (!tableTarget || !runtime.tableContextMenu) return false;
+        runtime.tableContextPosition = position;
+        runtime.tableContextMenu.open(
           event.clientX,
           event.clientY,
           tableMenuItems(tableTarget, editorView.state.readOnly),
@@ -431,121 +812,33 @@ function buildExtensions(init: EditorInitPayload): Extension[] {
         event.preventDefault();
         return true;
       },
-      click(event) {
-        const target = event.target as Element | null;
-        const cell = target?.closest?.(
-          ".zmd-lp-table-cell",
-        ) as HTMLElement | null;
-        if (!cell || !view) return false;
-        const from = Number(cell.dataset.zmdTableCellFrom);
-        const to = Number(cell.dataset.zmdTableCellTo);
-        if (!Number.isFinite(from) || !Number.isFinite(to)) return false;
-        const valueLength = Math.max(0, to - from);
-        const caretOffset = caretOffsetFromPoint(
-          cell,
-          event.clientX,
-          event.clientY,
-          valueLength,
-        );
-        const tableFrom = Number(cell.dataset.zmdTableFrom);
-        const rowIndex = Number(cell.dataset.zmdTableCellRow);
-        const columnIndex = Number(cell.dataset.zmdTableCellColumn);
-        const hasLogicalTarget =
-          Number.isFinite(tableFrom) &&
-          Number.isInteger(rowIndex) &&
-          Number.isInteger(columnIndex);
-        const editTarget = hasLogicalTarget
-          ? activateTableCellByIndex(
-              view.state,
-              tableFrom,
-              rowIndex,
-              columnIndex,
-              caretOffset,
-            )
-          : activateTableCell(view.state, from, caretOffset);
-        if (!editTarget) return false;
-        dispatchActiveTableCell(editTarget);
-        event.preventDefault();
-        return true;
-      },
       dblclick(event) {
         const target = event.target as Element | null;
         const image = target?.closest?.(".zmd-lp-image") as HTMLElement | null;
-        if (!image || !view) return false;
-        const raw = image.dataset.zmdImageFrom;
-        const pos = raw == null ? NaN : Number(raw);
-        if (!Number.isFinite(pos)) return false;
-        const line = view.state.doc.lineAt(pos);
-        view.dispatch({ selection: { anchor: line.from } });
-        view.focus();
+        if (!image || !activateImageLine(image)) return false;
         event.preventDefault();
         return true;
       },
       paste(event) {
-        const file = [...(event.clipboardData?.files || [])].find((candidate) =>
-          candidate.type.startsWith("image/"),
-        );
-        if (!file) return false;
-        event.preventDefault();
-        void file.arrayBuffer().then(
-          (bytes) => {
-            postToParent({
-              type: "pasteImage",
-              payload: {
-                bytes,
-                mimeType: file.type,
-                name: file.name || "image",
-              },
-            });
-          },
-          (error) => {
-            postToParent({
-              type: "error",
-              payload: { message: String(error) },
-            });
-          },
-        );
-        return true;
+        return forwardImageFile([...(event.clipboardData?.files || [])], event);
       },
       drop(event) {
-        const file = [...(event.dataTransfer?.files || [])].find((candidate) =>
-          candidate.type.startsWith("image/"),
-        );
-        if (!file) return false;
-        event.preventDefault();
-        void file.arrayBuffer().then(
-          (bytes) => {
-            postToParent({
-              type: "pasteImage",
-              payload: {
-                bytes,
-                mimeType: file.type,
-                name: file.name || "image",
-              },
-            });
-          },
-          (error) =>
-            postToParent({
-              type: "error",
-              payload: { message: String(error) },
-            }),
-        );
-        return true;
+        return forwardImageFile([...(event.dataTransfer?.files || [])], event);
       },
     }),
   ];
 }
 
 function applyMode(mode: EditorMode) {
-  if (!view) return;
-  currentMode = mode === "source" ? "source" : "live";
-  view.dispatch({
+  if (!runtime.view) return;
+  runtime.mode = mode === "source" ? "source" : "live";
+  runtime.view.dispatch({
     effects: [
-      liveCompartment.reconfigure(livePreviewWhen(currentMode === "live")),
-      guttersCompartment.reconfigure(guttersForMode(currentMode)),
-      modeAttrCompartment.reconfigure(modeUiForMode(currentMode)),
+      liveCompartment.reconfigure(livePreviewWhen(runtime.mode === "live")),
+      guttersCompartment.reconfigure(guttersForMode(runtime.mode)),
+      modeAttrCompartment.reconfigure(modeUiForMode(runtime.mode)),
       themeCompartment.reconfigure(
-        editorThemeExtension(currentTheme, currentFontSize, currentMode),
+        editorThemeExtension(runtime.theme, runtime.fontSize, runtime.mode),
       ),
     ],
   });
@@ -604,47 +897,60 @@ function createOrResetEditor(init: EditorInitPayload) {
     return;
   }
 
-  if (view) {
-    removeImageDoubleClickListener?.();
-    removeTableCellListeners?.();
-    activeTableCell = null;
-    tableContextMenu?.destroy();
-    tableContextMenu = null;
-    tableContextPosition = null;
-    view.destroy();
-    view = null;
+  if (runtime.view) {
+    runtime.removeImageDoubleClickListener?.();
+    runtime.removeTableCellListeners?.();
+    cancelTableDrag();
+    runtime.activeTableCell = null;
+    runtime.tableContextMenu?.destroy();
+    runtime.tableContextMenu = null;
+    runtime.tableContextPosition = null;
+    runtime.view.destroy();
+    runtime.view = null;
   }
 
+  runtime.docRev = 0;
+  runtime.imageAssets = {};
   const state = EditorState.create({
     doc: init.doc ?? "",
     extensions: buildExtensions(init),
   });
 
-  view = new EditorView({
+  runtime.view = new EditorView({
     state,
     parent: host,
   });
-  tableContextMenu = createTableContextMenu({
+  runtime.tableContextMenu = createTableContextMenu({
     document,
-    parent: view.dom,
+    parent: runtime.view.dom,
     onAction: (action: TableAction) => {
-      if (!view || tableContextPosition == null || view.state.readOnly) return;
-      const target = tableTargetAt(view.state, tableContextPosition);
+      if (
+        !runtime.view ||
+        runtime.tableContextPosition == null ||
+        runtime.view.state.readOnly
+      )
+        return;
+      const target = tableTargetAt(
+        runtime.view.state,
+        runtime.tableContextPosition,
+      );
       if (!target) return;
-      const plan = planTableOperation(view.state, target, action);
+      const plan = planTableOperation(runtime.view.state, target, action);
       if (!plan) return;
-      const nextState = view.state.update({ changes: plan.changes }).state;
-      const nextActive = activeTableCell
+      const nextState = runtime.view.state.update({
+        changes: plan.changes,
+      }).state;
+      const nextActive = runtime.activeTableCell
         ? remapActiveCell(nextState, plan.target)
         : null;
-      activeTableCell = nextActive;
-      view.dispatch({
+      runtime.activeTableCell = nextActive;
+      runtime.view.dispatch({
         changes: plan.changes,
         selection: plan.selection,
         effects: setLiveTableCellEdit.of(nextActive),
         scrollIntoView: true,
       });
-      view.focus();
+      runtime.view.focus();
     },
   });
   bindImageDoubleClick(host);
@@ -657,26 +963,27 @@ function handleParentMessage(data: ParentToEditorMessage) {
       createOrResetEditor(data.payload);
       break;
     case "setValue": {
-      if (!view) return;
+      if (!runtime.view) return;
       const value = data.payload.value;
-      view.dispatch({
+      runtime.view.dispatch({
         changes: {
           from: 0,
-          to: view.state.doc.length,
+          to: runtime.view.state.doc.length,
           insert: value,
         },
+        annotations: fromParentAnnotation.of(true),
       });
       break;
     }
     case "replaceRange": {
-      if (!view) return;
-      view.dispatch({ changes: data.payload });
+      if (!runtime.view) return;
+      runtime.view.dispatch({ changes: data.payload });
       break;
     }
     case "insertText": {
-      if (!view) return;
+      if (!runtime.view) return;
       insertTextInView(
-        view,
+        runtime.view,
         data.payload.text,
         data.payload.selectionFrom,
         data.payload.selectionTo,
@@ -684,62 +991,76 @@ function handleParentMessage(data: ParentToEditorMessage) {
       break;
     }
     case "command": {
-      if (!view) return;
-      if (data.payload.command === "find") openSearchPanel(view);
-      else (data.payload.command === "undo" ? undo : redo)(view);
+      if (!runtime.view) return;
+      if (data.payload.command === "find") openSearchPanel(runtime.view);
+      else (data.payload.command === "undo" ? undo : redo)(runtime.view);
       break;
     }
     case "wrapSelection": {
-      if (!view) return;
+      if (!runtime.view) return;
       wrapSelectionInView(
-        view,
+        runtime.view,
         data.payload.before,
         data.payload.after ?? data.payload.before,
       );
       break;
     }
     case "prefixLine": {
-      if (!view) return;
-      prefixLineInView(view, data.payload.prefix);
+      if (!runtime.view) return;
+      prefixLineInView(runtime.view, data.payload.prefix);
+      break;
+    }
+    case "requestSnapshot": {
+      if (!runtime.view) return;
+      const value = runtime.view.state.doc.toString();
+      postToParent({
+        type: "snapshot",
+        payload: {
+          requestId: data.payload.requestId,
+          rev: runtime.docRev,
+          value,
+          stats: computeStats(value),
+        },
+      });
       break;
     }
     case "focus":
-      view?.focus();
+      runtime.view?.focus();
       break;
     case "requestMeasure":
-      view?.requestMeasure();
+      runtime.view?.requestMeasure();
       break;
     case "setTheme": {
-      if (!view) return;
-      currentTheme = data.payload.theme;
-      view.dispatch({
+      if (!runtime.view) return;
+      runtime.theme = data.payload.theme;
+      runtime.view.dispatch({
         effects: themeCompartment.reconfigure(
-          editorThemeExtension(currentTheme, currentFontSize, currentMode),
+          editorThemeExtension(runtime.theme, runtime.fontSize, runtime.mode),
         ),
       });
       break;
     }
     case "setFontSize": {
-      if (!view) return;
-      currentFontSize = data.payload.fontSize;
-      view.dispatch({
+      if (!runtime.view) return;
+      runtime.fontSize = data.payload.fontSize;
+      runtime.view.dispatch({
         effects: themeCompartment.reconfigure(
-          editorThemeExtension(currentTheme, currentFontSize, currentMode),
+          editorThemeExtension(runtime.theme, runtime.fontSize, runtime.mode),
         ),
       });
       break;
     }
     case "setReadOnly": {
-      if (!view) return;
+      if (!runtime.view) return;
       const readOnly = !!data.payload.readOnly;
-      if (readOnly) activeTableCell = null;
-      view.dispatch({
+      if (readOnly) runtime.activeTableCell = null;
+      runtime.view.dispatch({
         effects: [
-          readOnlyCompartment.reconfigure([
-            EditorState.readOnly.of(readOnly),
-            EditorView.editable.of(!readOnly),
-          ]),
-          setLiveTableCellEdit.of(activeTableCell),
+          readOnlyCompartment.reconfigure(EditorState.readOnly.of(readOnly)),
+          editorEditableCompartment.reconfigure(
+            EditorView.editable.of(!readOnly && !runtime.activeTableCell),
+          ),
+          setLiveTableCellEdit.of(runtime.activeTableCell),
         ],
       });
       break;
@@ -750,19 +1071,41 @@ function handleParentMessage(data: ParentToEditorMessage) {
       break;
     }
     case "setImageAssets": {
-      if (!view) return;
-      view.dispatch({ effects: setLiveImageAssets.of(data.payload.assets) });
+      if (!runtime.view) return;
+      runtime.imageAssets = { ...runtime.imageAssets, ...data.payload.assets };
+      for (const reference of Object.keys(data.payload.assets)) {
+        rememberLiveAsset(reference);
+      }
+      runtime.view.dispatch({
+        effects: setLiveImageAssets.of(runtime.imageAssets),
+      });
+      break;
+    }
+    case "assetResolved": {
+      if (!runtime.view) return;
+      rememberLiveAsset(data.payload.reference);
+      runtime.imageAssets = {
+        ...runtime.imageAssets,
+        [data.payload.reference]: {
+          dataUrl: data.payload.dataUrl,
+          error: data.payload.error,
+        },
+      };
+      runtime.view.dispatch({
+        effects: setLiveImageAssets.of(runtime.imageAssets),
+      });
       break;
     }
     case "destroy": {
-      removeImageDoubleClickListener?.();
-      removeTableCellListeners?.();
-      activeTableCell = null;
-      tableContextMenu?.destroy();
-      tableContextMenu = null;
-      tableContextPosition = null;
-      view?.destroy();
-      view = null;
+      runtime.removeImageDoubleClickListener?.();
+      runtime.removeTableCellListeners?.();
+      cancelTableDrag();
+      runtime.activeTableCell = null;
+      runtime.tableContextMenu?.destroy();
+      runtime.tableContextMenu = null;
+      runtime.tableContextPosition = null;
+      runtime.view?.destroy();
+      runtime.view = null;
       break;
     }
     default:
@@ -785,6 +1128,8 @@ const PARENT_TO_EDITOR_TYPES = new Set([
   "setReadOnly",
   "setMode",
   "setImageAssets",
+  "requestSnapshot",
+  "assetResolved",
   "destroy",
 ]);
 

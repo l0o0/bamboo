@@ -6,6 +6,7 @@ import {
   normalizeAssetReference,
   planUnusedImageCleanup,
   referencedAssets,
+  replaceMarkdownRange,
   validateImageInput,
 } from "./model";
 import type { ImageAssetMap } from "../editor-protocol";
@@ -46,6 +47,8 @@ export async function writeImageAsset(
   return relativePath;
 }
 
+const assetCache = new Map<string, { key: string; dataUrl: string }>();
+
 export async function resolveImageAsset(
   item: Zotero.Item,
   reference: string,
@@ -58,7 +61,24 @@ export async function resolveImageAsset(
   const filename = normalized.slice("assets/".length);
   const path = PathUtils.join(root, "assets", filename);
   if (!(await IOUtils.exists(path))) throw new Error("图片缺失或尚未同步");
-  return bytesToDataUrl(await IOUtils.read(path), mimeType);
+  const info = await IOUtils.stat(path);
+  const key = `${path}:${info.lastModified}:${info.size}`;
+  const cached = assetCache.get(normalized);
+  if (cached?.key === key) return cached.dataUrl;
+  const dataUrl = bytesToDataUrl(await IOUtils.read(path), mimeType);
+  assetCache.set(normalized, { key, dataUrl });
+  return dataUrl;
+}
+
+export async function resolveImageAssetEntry(
+  item: Zotero.Item,
+  reference: string,
+): Promise<{ dataUrl?: string; error?: string }> {
+  try {
+    return { dataUrl: await resolveImageAsset(item, reference) };
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : String(error) };
+  }
 }
 
 export async function resolveImageAssets(
@@ -130,8 +150,10 @@ export async function importExternalImages(
         .trim()
         .toLowerCase();
       const reference = await writeImageAsset(item, bytes, mimeType);
-      next = next.replace(
-        markdown.slice(image.from, image.to),
+      next = replaceMarkdownRange(
+        next,
+        image.from,
+        image.to,
         `![${image.alt}](${reference})`,
       );
       imported++;

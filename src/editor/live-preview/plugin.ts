@@ -11,29 +11,29 @@ import {
 } from "@codemirror/view";
 import {
   activeLinesFromSelection,
-  frontmatterLineNumbers,
+  frontmatterLineNumbersFromLines,
 } from "./active-lines";
+import { fencedCodeLineKindsFromLines, parseListPrefix } from "./structure";
 import { parseInlineL2 } from "./inline";
-import {
-  parseAtxHeading,
-  parseBlockQuotePrefix,
-  fencedCodeLineKinds,
-  parseListPrefix,
-} from "./structure";
+import { requestLiveAsset } from "./assets";
+import { cachedLineParse, lineImageRanges } from "./line-cache";
 import type { DocLines, LineInfo } from "./types";
-import {
-  normalizeAssetReference,
-  parseMarkdownImages,
-} from "../../modules/markdown/images/model";
+import { normalizeAssetReference } from "../../modules/markdown/images/model";
 import type { ImageAssetMap } from "../../modules/markdown/editor-protocol";
-import { planLiveImageDecorations } from "./images";
 import { imageDebug } from "../image-debug";
-import { liveTableRows, type TableAlignment } from "../table";
+import {
+  cellWidgetRange,
+  liveTableRows,
+  sameTableCellIdentity,
+  type TableAlignment,
+} from "../table";
 import {
   remapActiveCell,
+  TABLE_CELL_ACTIVATE_EVENT,
   TABLE_CELL_COMMIT_EVENT,
   TABLE_CELL_INPUT_EVENT,
   TABLE_CELL_NAVIGATE_EVENT,
+  type TableCellActivateDetail,
   type TableCellEditTarget,
 } from "../table-cell-edit";
 import {
@@ -137,6 +137,7 @@ class ImageWidget extends WidgetType {
     wrapper.dataset.zmdImageFrom = String(this.documentFrom);
     const displaySource =
       this.dataUrl || (/^https?:\/\//i.test(this.source) ? this.source : "");
+    if (!this.dataUrl && !this.error) requestLiveAsset(this.source);
     imageDebug("widget-render", {
       source: this.source,
       documentFrom: this.documentFrom,
@@ -199,6 +200,15 @@ class TableCellWidget extends WidgetType {
     super();
   }
 
+  /**
+   * CodeMirror consults this after `toDOM()`. It must be true for editing
+   * cells, otherwise `WidgetTile.of` resets `contenteditable` to "false"
+   * and the cell can neither be focused nor receive keyboard input.
+   */
+  get editable() {
+    return this.editing && !this.readOnly;
+  }
+
   eq(other: TableCellWidget) {
     return (
       this.value === other.value &&
@@ -216,8 +226,52 @@ class TableCellWidget extends WidgetType {
     );
   }
 
-  toDOM() {
-    const cell = document.createElement("span");
+  updateDOM(dom: HTMLElement, _view: EditorView, oldWidget: TableCellWidget) {
+    // The DOM carries listeners whose closures capture the original widget's
+    // cell identity. Reusing DOM across different logical cells would make
+    // clicks dispatch activation for the previous cell ("content lands in the
+    // wrong cell"), so only reuse DOM for the same logical cell.
+    if (!sameTableCellIdentity(this, oldWidget)) {
+      return false;
+    }
+    // Editing <-> rendered transitions must recreate the DOM so editing
+    // listeners (input/composition/keydown) are attached by toDOM().
+    if (this.editing !== oldWidget.editing) return false;
+    if (this.readOnly !== oldWidget.readOnly) return false;
+
+    this.applyDomIdentity(dom);
+    if (this.editing && !this.readOnly) {
+      dom.contentEditable = "true";
+      dom.setAttribute("role", "textbox");
+      dom.setAttribute("aria-multiline", "false");
+      dom.classList.add(
+        "zmd-lp-table-cell-active",
+        "zmd-lp-table-cell-editing",
+      );
+      // While the user is typing, the DOM already holds the new value and
+      // the selection must not be disturbed. External updates (undo, title
+      // sync, setValue) are synced when the cell is not focused.
+      const focused =
+        dom.ownerDocument.activeElement === dom ||
+        dom.contains(dom.ownerDocument.activeElement);
+      if (!focused && (dom.textContent || "") !== this.value) {
+        dom.textContent = this.value;
+      }
+    } else {
+      dom.contentEditable = "false";
+      dom.classList.remove(
+        "zmd-lp-table-cell-active",
+        "zmd-lp-table-cell-editing",
+      );
+      dom.removeAttribute("role");
+      dom.removeAttribute("aria-multiline");
+      dom.replaceChildren();
+      appendRenderedInline(dom, this.value);
+    }
+    return true;
+  }
+
+  applyDomIdentity(cell: HTMLElement) {
     cell.className = `zmd-lp-table-cell zmd-lp-table-align-${this.alignment || "default"}`;
     if (this.header) cell.classList.add("zmd-lp-table-header-cell");
     if (this.lastColumn) cell.classList.add("zmd-lp-table-last-cell");
@@ -227,7 +281,38 @@ class TableCellWidget extends WidgetType {
     cell.dataset.zmdTableCellTo = String(this.to);
     cell.dataset.zmdTableCellRow = String(this.rowIndex);
     cell.dataset.zmdTableCellColumn = String(this.columnIndex);
+  }
+
+  toDOM() {
+    const cell = document.createElement("span");
+    this.applyDomIdentity(cell);
     if (this.editing) cell.classList.add("zmd-lp-table-cell-active");
+    const emitActivate = (event: MouseEvent) => {
+      if (this.readOnly) return;
+      if (this.editing && event.type === "mousedown") {
+        event.stopPropagation();
+        return;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      const CustomEventConstructor =
+        cell.ownerDocument.defaultView?.CustomEvent || CustomEvent;
+      cell.dispatchEvent(
+        new CustomEventConstructor<TableCellActivateDetail>(
+          TABLE_CELL_ACTIVATE_EVENT,
+          {
+            bubbles: true,
+            detail: {
+              tableFrom: this.tableFrom,
+              rowIndex: this.rowIndex,
+              columnIndex: this.columnIndex,
+              caretOffset: this.value.length,
+            },
+          },
+        ),
+      );
+    };
+    cell.addEventListener("mousedown", emitActivate);
     if (this.editing && !this.readOnly) {
       cell.classList.add("zmd-lp-table-cell-editing");
       cell.contentEditable = "true";
@@ -261,6 +346,11 @@ class TableCellWidget extends WidgetType {
           }),
         );
       };
+      // `WidgetType.ignoreEvent` already returns true for every cell event
+      // except contextmenu, so CodeMirror ignores these natively. A capture
+      // listener that calls stopPropagation here would also stop the bubble
+      // listeners attached to this very cell (browser behavior), which kept
+      // input/IME events from ever reaching `emitInput`.
       cell.addEventListener("beforeinput", (event) => {
         const input = event as InputEvent;
         if (
@@ -346,16 +436,20 @@ class TableCellWidget extends WidgetType {
   }
 
   ignoreEvent(event: Event) {
-    if (this.editing) return event.type !== "contextmenu";
-    return event.type !== "click" && event.type !== "contextmenu";
+    return event.type !== "contextmenu";
   }
 }
 
 class TableEdgeActionsWidget extends WidgetType {
+  private railResizeObserver: ResizeObserver | null = null;
+
   constructor(
     readonly tableFrom: number,
     readonly columnPosition: number,
     readonly rowPosition: number,
+    readonly visibleRowCount: number,
+    readonly rowIndex: number,
+    readonly columnCount: number,
     readonly firstRow: boolean,
     readonly finalRow: boolean,
     readonly readOnly: boolean,
@@ -368,10 +462,18 @@ class TableEdgeActionsWidget extends WidgetType {
       this.tableFrom === other.tableFrom &&
       this.columnPosition === other.columnPosition &&
       this.rowPosition === other.rowPosition &&
+      this.visibleRowCount === other.visibleRowCount &&
+      this.rowIndex === other.rowIndex &&
+      this.columnCount === other.columnCount &&
       this.firstRow === other.firstRow &&
       this.finalRow === other.finalRow &&
       this.readOnly === other.readOnly
     );
+  }
+
+  destroy(_dom: HTMLElement) {
+    this.railResizeObserver?.disconnect();
+    this.railResizeObserver = null;
   }
 
   toDOM() {
@@ -391,7 +493,15 @@ class TableEdgeActionsWidget extends WidgetType {
       button.className = `zmd-lp-table-edge-action ${className}`;
       button.title = label;
       button.setAttribute("aria-label", label);
-      button.textContent = "+";
+      if (className.includes("is-column")) {
+        const glyph = document.createElement("span");
+        glyph.className = "zmd-lp-table-edge-glyph";
+        glyph.textContent = "+";
+        glyph.setAttribute("aria-hidden", "true");
+        button.appendChild(glyph);
+      } else {
+        button.textContent = "+";
+      }
       const stop = (event: Event) => event.stopPropagation();
       button.addEventListener("pointerdown", stop);
       button.addEventListener("mousedown", stop);
@@ -411,50 +521,88 @@ class TableEdgeActionsWidget extends WidgetType {
         );
       });
       wrapper.appendChild(button);
+      return button;
     };
 
-    addButton(
-      "append-column",
-      this.columnPosition,
-      "is-column",
-      "在右侧新增列",
-    );
-    const columnButton = wrapper.lastElementChild as HTMLButtonElement;
-    columnButton.dataset.zmdTableFrom = String(this.tableFrom);
-    if (this.firstRow) columnButton.classList.add("is-first-row");
-    const matchingColumnButtons = () =>
-      wrapper.ownerDocument.querySelectorAll<HTMLButtonElement>(
-        `.zmd-lp-table-edge-action.is-column[data-zmd-table-from="${this.tableFrom}"]`,
-      );
-    const setColumnHover = (hovered: boolean) => {
-      for (const candidate of matchingColumnButtons()) {
-        candidate.classList.toggle("is-table-hovered", hovered);
+    const addDragHandle = (
+      kind: "row" | "column",
+      label: string,
+      columnIndex?: number,
+    ) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = `zmd-lp-table-${kind}-handle`;
+      button.dataset.zmdTableDrag = kind;
+      button.dataset.zmdTableFrom = String(this.tableFrom);
+      if (kind === "row") {
+        button.dataset.zmdTableRow = String(this.rowIndex);
+      } else {
+        button.dataset.zmdTableColumn = String(columnIndex ?? 0);
+        button.style.gridColumn = String((columnIndex ?? 0) + 1);
       }
+      button.title = label;
+      button.setAttribute("aria-label", label);
+      button.addEventListener("pointerdown", (event) => {
+        event.preventDefault();
+      });
+      wrapper.appendChild(button);
+      return button;
     };
-    columnButton.addEventListener("pointerenter", () => setColumnHover(true));
-    columnButton.addEventListener("pointerleave", (event) => {
-      const related = event.relatedTarget as Element | null;
-      if (
-        related?.closest?.(
-          `.zmd-lp-table-edge-action.is-column[data-zmd-table-from="${this.tableFrom}"]`,
-        )
-      ) {
-        return;
+
+    // Row reorder handle on body rows only; the header stays fixed.
+    if (this.rowIndex > 0) {
+      addDragHandle("row", "拖动调整行顺序");
+    }
+    if (this.firstRow) {
+      for (let columnIndex = 0; columnIndex < this.columnCount; columnIndex++) {
+        addDragHandle("column", "拖动调整列顺序", columnIndex);
       }
-      setColumnHover(false);
-    });
-    columnButton.addEventListener("focus", () => setColumnHover(true));
-    columnButton.addEventListener("blur", (event) => {
-      const related = event.relatedTarget as Element | null;
-      if (
-        related?.closest?.(
-          `.zmd-lp-table-edge-action.is-column[data-zmd-table-from="${this.tableFrom}"]`,
-        )
-      ) {
-        return;
+    }
+
+    // One continuous rail for the whole table, rendered only on the first
+    // row. Its pixel height is measured from the real row boxes (sum of row
+    // heights minus the bottom gutter reserved for the append-row button),
+    // so it never extends past the table even when rows have different
+    // heights.
+    if (this.firstRow) {
+      const columnButton = addButton(
+        "append-column",
+        this.columnPosition,
+        "is-column is-first-row",
+        "在右侧新增列",
+      );
+      const syncRailHeight = () => {
+        const rows = Array.from(
+          wrapper.ownerDocument.querySelectorAll<HTMLElement>(
+            `.cm-line.zmd-lp-table-row[data-zmd-table-from="${this.tableFrom}"]`,
+          ),
+        );
+        let contentHeight = 0;
+        for (const row of rows) {
+          contentHeight += row.getBoundingClientRect().height;
+        }
+        const gutterRaw = getComputedStyle(wrapper).getPropertyValue(
+          "--zmd-table-edge-size",
+        );
+        const gutter = parseFloat(gutterRaw || "30");
+        columnButton.style.height = `${Math.max(
+          0,
+          contentHeight - (Number.isFinite(gutter) ? gutter : 30),
+        )}px`;
+      };
+      wrapper.ownerDocument.defaultView?.requestAnimationFrame(() =>
+        syncRailHeight(),
+      );
+      const content = wrapper.ownerDocument.querySelector(".cm-content");
+      const ResizeObserverCtor =
+        wrapper.ownerDocument.defaultView?.ResizeObserver;
+      if (content && ResizeObserverCtor) {
+        this.railResizeObserver = new ResizeObserverCtor(() =>
+          syncRailHeight(),
+        );
+        this.railResizeObserver.observe(content);
       }
-      setColumnHover(false);
-    });
+    }
     if (this.finalRow) {
       addButton("append-row", this.rowPosition, "is-row", "在下方新增行");
     }
@@ -482,7 +630,7 @@ function appendRenderedInline(parent: HTMLElement, value: string) {
     cursor = Math.max(cursor, range.to);
   }
   if (cursor < value.length) parent.append(value.slice(cursor));
-  if (!parent.hasChildNodes()) parent.textContent = " ";
+  if (!parent.hasChildNodes()) parent.textContent = "\u00a0";
 }
 
 function intersects(
@@ -513,8 +661,12 @@ function buildDecorations(
   if (composing) {
     active.add(doc.lineAt(sel.head).number);
   }
-  const fm = frontmatterLineNumbers(state.doc.toString());
-  const fencedCode = fencedCodeLineKinds(state.doc.toString());
+  const lineTexts: string[] = [];
+  for (let n = 1; n <= state.doc.lines; n++) {
+    lineTexts.push(state.doc.line(n).text);
+  }
+  const fm = frontmatterLineNumbersFromLines(lineTexts);
+  const fencedCode = fencedCodeLineKindsFromLines(lineTexts);
   const tableRows = new Map(
     liveTableRows(state).map((row) => [row.line, row] as const),
   );
@@ -532,8 +684,9 @@ function buildDecorations(
     const base = line.from;
     const isActive = active.has(n);
     const hideMarks = !isActive;
-    const images = parseMarkdownImages(text);
-    const imagePlans = planLiveImageDecorations(text, isActive);
+    const parsed = cachedLineParse(text, isActive);
+    const images = lineImageRanges(text);
+    const imagePlans = parsed.imagePlans;
     const codeLineKind = fencedCode[n - 1];
 
     const tableRow = tableRows.get(n);
@@ -544,38 +697,50 @@ function buildDecorations(
         Decoration.line({
           attributes: {
             class: rowClasses.join(" "),
-            style: `--zmd-table-columns: ${tableRow.columnCount}`,
+            style: `--zmd-table-columns: ${tableRow.columnCount}; --zmd-table-visible-rows: ${tableRow.visibleRowCount}; --zmd-table-row-index: ${tableRow.cells[0]?.rowIndex ?? 0}`,
+            "data-zmd-table-from": String(tableRow.tableFrom),
+            "data-zmd-table-row-index": String(
+              tableRow.cells[0]?.rowIndex ?? 0,
+            ),
           },
         }).range(base),
       );
       let cursor = line.from;
       tableRow.cells.forEach((cell, index) => {
-        if (cursor < cell.from) ranges.push(hideRange(cursor, cell.from));
         const widget = new TableCellWidget(
           state.doc.sliceString(cell.from, cell.to),
           tableRow.alignments[index] || null,
           tableRow.kind === "header",
           tableRow.tableFrom,
-          cell.rowIndex || 0,
-          cell.columnIndex || 0,
+          cell.rowIndex ?? 0,
+          cell.columnIndex ?? 0,
           index === tableRow.cells.length - 1,
           cell.from,
           cell.to,
           !!activeCell &&
             activeCell.tableFrom === tableRow.tableFrom &&
-            activeCell.rowIndex === (cell.rowIndex || 0) &&
-            activeCell.columnIndex === (cell.columnIndex || 0),
+            activeCell.rowIndex === (cell.rowIndex ?? 0) &&
+            activeCell.columnIndex === (cell.columnIndex ?? 0),
           activeCell?.caretOffset || 0,
           state.readOnly,
         );
-        if (cell.from === cell.to) {
+        const widgetRange = cellWidgetRange(cell);
+        if (cursor < widgetRange.from) {
+          ranges.push(hideRange(cursor, widgetRange.from));
+        }
+        if (widgetRange.point) {
           ranges.push(
-            Decoration.widget({ widget, side: index }).range(cell.from),
+            Decoration.widget({ widget, side: -1 }).range(widgetRange.from),
           );
         } else {
-          ranges.push(Decoration.replace({ widget }).range(cell.from, cell.to));
+          ranges.push(
+            Decoration.replace({ widget }).range(
+              widgetRange.from,
+              widgetRange.to,
+            ),
+          );
         }
-        cursor = cell.to;
+        cursor = widgetRange.to;
       });
       if (cursor < line.to) ranges.push(hideRange(cursor, line.to));
       ranges.push(
@@ -584,6 +749,9 @@ function buildDecorations(
             tableRow.tableFrom,
             tableRow.cells.at(-1)?.from ?? line.from,
             tableRow.cells[0]?.from ?? line.from,
+            tableRow.visibleRowCount,
+            tableRow.cells[0]?.rowIndex ?? 0,
+            tableRow.columnCount,
             (tableRow.cells[0]?.rowIndex ?? 0) === 0,
             tableRow.isLast,
             state.readOnly,
@@ -649,7 +817,7 @@ function buildDecorations(
       }
     }
 
-    const heading = parseAtxHeading(text);
+    const heading = parsed.heading;
     if (heading) {
       if (heading.markEnd > 0) {
         ranges.push(
@@ -662,7 +830,7 @@ function buildDecorations(
         Decoration.line({ class: `zmd-lp-h${heading.level}` }).range(base),
       );
     } else {
-      const list = parseListPrefix(text);
+      const list = parsed.list;
       if (list) {
         ranges.push(
           hideMarks
@@ -671,7 +839,7 @@ function buildDecorations(
         );
         ranges.push(Decoration.line({ class: "zmd-lp-list" }).range(base));
       } else {
-        const quote = parseBlockQuotePrefix(text);
+        const quote = parsed.quote;
         if (quote) {
           ranges.push(
             hideMarks
@@ -683,7 +851,7 @@ function buildDecorations(
       }
     }
 
-    const inlines = parseInlineL2(text);
+    const inlines = parsed.inlines;
     for (const r of inlines) {
       if (r.from >= r.to) continue;
       if (hideMarks && intersects(r.from, r.to, images)) continue;
