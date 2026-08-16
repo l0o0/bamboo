@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { resolveCodeMirrorLanguage } from "../src/editor/code-languages.ts";
 import {
   fenceLanguageToken,
   normalizeFenceLanguage,
@@ -22,4 +23,20 @@ test("uses only the first fence info token", () => {
 test("returns null for empty and unsupported languages", () => {
   assert.equal(normalizeFenceLanguage(""), null);
   assert.equal(normalizeFenceLanguage("brainfuck"), null);
+});
+
+test("resolves CodeMirror descriptions from aliases", () => {
+  assert.match(resolveCodeMirrorLanguage("js")?.name || "", /javascript/i);
+  assert.match(resolveCodeMirrorLanguage("py")?.name || "", /python/i);
+  assert.equal(resolveCodeMirrorLanguage("brainfuck"), null);
+});
+
+test("loads a parser for a supported fenced language", async () => {
+  const language = resolveCodeMirrorLanguage("js");
+  assert.ok(language);
+  const support = await language.load();
+  const tree = support.language.parser.parse("const answer = 42;");
+
+  assert.match(tree.toString(), /Variable(Definition|Name)/);
+  assert.match(tree.toString(), /Number/);
 });

@@ -59,6 +59,7 @@ import {
   type ParentToEditorMessage,
 } from "../modules/markdown/editor-protocol";
 import { editorThemeExtension } from "./theme";
+import { resolveCodeMirrorLanguage } from "./code-languages";
 import { imageDebug } from "./image-debug";
 import { MAX_IMAGE_BYTES } from "../modules/markdown/images/model";
 import {
@@ -677,7 +678,10 @@ function buildExtensions(init: EditorInitPayload): Extension[] {
     bracketMatching(),
     highlightSelectionMatches(),
     EditorView.lineWrapping,
-    markdown({ extensions: GFM }),
+    markdown({
+      extensions: GFM,
+      codeLanguages: resolveCodeMirrorLanguage,
+    }),
     syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
     Prec.highest(
       keymap.of([
