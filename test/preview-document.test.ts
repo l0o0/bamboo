@@ -59,9 +59,7 @@ test("falls back to escaped code for unknown languages", () => {
 });
 
 test("accepts aliases and ignores fence metadata", () => {
-  const html = renderMarkdown(
-    '```TS title="demo"\nconst n: number = 1;\n```',
-  );
+  const html = renderMarkdown('```TS title="demo"\nconst n: number = 1;\n```');
   assert.match(html, /hljs-keyword/);
   assert.doesNotMatch(html, /title=&quot;demo&quot;/);
 });
