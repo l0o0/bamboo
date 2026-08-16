@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { resolveCodeMirrorLanguage } from "../src/editor/code-languages.ts";
+import {
+  CODEMIRROR_CODE_LANGUAGES,
+  resolveCodeMirrorLanguage,
+} from "../src/editor/code-languages.ts";
 import {
   fenceLanguageToken,
   normalizeFenceLanguage,
@@ -29,6 +32,31 @@ test("resolves CodeMirror descriptions from aliases", () => {
   assert.match(resolveCodeMirrorLanguage("js")?.name || "", /javascript/i);
   assert.match(resolveCodeMirrorLanguage("py")?.name || "", /python/i);
   assert.equal(resolveCodeMirrorLanguage("brainfuck"), null);
+});
+
+test("registers only the supported CodeMirror language descriptions", () => {
+  assert.deepEqual(
+    CODEMIRROR_CODE_LANGUAGES.map((language) => language.name),
+    [
+      "JavaScript",
+      "JSX",
+      "TypeScript",
+      "TSX",
+      "JSON",
+      "HTML",
+      "CSS",
+      "YAML",
+      "Markdown",
+      "Shell",
+      "SQL",
+      "Python",
+      "Java",
+      "C",
+      "C++",
+      "Go",
+      "Rust",
+    ],
+  );
 });
 
 test("loads a parser for a supported fenced language", async () => {
