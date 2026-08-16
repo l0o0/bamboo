@@ -1,5 +1,7 @@
 import { EditorView } from "@codemirror/view";
+import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
 import { Extension } from "@codemirror/state";
+import { tags } from "@lezer/highlight";
 import type {
   EditorMode,
   EditorTheme,
@@ -417,6 +419,49 @@ const tableContextMenuStyles = {
 
 export function liveEditorGeometry() {
   return LIVE_EDITOR_GEOMETRY;
+}
+
+export function codeSyntaxHighlighting(theme: EditorTheme): Extension {
+  const tokens = THEME_TOKENS[theme];
+  return syntaxHighlighting(
+    HighlightStyle.define([
+      {
+        tag: [tags.comment, tags.lineComment, tags.blockComment],
+        color: tokens.codeComment,
+      },
+      {
+        tag: [tags.keyword, tags.operatorKeyword, tags.operator],
+        color: tokens.codeKeyword,
+      },
+      {
+        tag: [tags.string, tags.special(tags.string)],
+        color: tokens.codeString,
+      },
+      {
+        tag: [tags.number, tags.bool, tags.null],
+        color: tokens.codeNumber,
+      },
+      {
+        tag: [tags.function(tags.variableName), tags.className],
+        color: tokens.codeFunction,
+      },
+      {
+        tag: [tags.variableName, tags.propertyName, tags.attributeName],
+        color: tokens.codeVariable,
+      },
+      { tag: tags.tagName, color: tokens.codeTag },
+      {
+        tag: [tags.punctuation, tags.bracket],
+        color: tokens.codePunctuation,
+      },
+      {
+        tag: tags.invalid,
+        color: tokens.codeInvalid,
+        textDecoration: "underline",
+      },
+    ]),
+    { fallback: true },
+  );
 }
 
 export function editorThemeExtension(

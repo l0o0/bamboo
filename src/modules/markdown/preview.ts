@@ -148,6 +148,43 @@ export function previewDocumentCss(): string {
   padding: 0.12em 0.4em;
   border-radius: 4px;
 }
+.zotero-markdown-preview-inner .hljs-comment,
+.zotero-markdown-preview-inner .hljs-quote {
+  color: var(--zmd-code-comment);
+}
+.zotero-markdown-preview-inner .hljs-keyword,
+.zotero-markdown-preview-inner .hljs-selector-tag,
+.zotero-markdown-preview-inner .hljs-operator {
+  color: var(--zmd-code-keyword);
+}
+.zotero-markdown-preview-inner .hljs-string,
+.zotero-markdown-preview-inner .hljs-regexp,
+.zotero-markdown-preview-inner .hljs-addition {
+  color: var(--zmd-code-string);
+}
+.zotero-markdown-preview-inner .hljs-number,
+.zotero-markdown-preview-inner .hljs-literal {
+  color: var(--zmd-code-number);
+}
+.zotero-markdown-preview-inner .hljs-title,
+.zotero-markdown-preview-inner .hljs-section {
+  color: var(--zmd-code-function);
+}
+.zotero-markdown-preview-inner .hljs-variable,
+.zotero-markdown-preview-inner .hljs-property,
+.zotero-markdown-preview-inner .hljs-attr {
+  color: var(--zmd-code-variable);
+}
+.zotero-markdown-preview-inner .hljs-name,
+.zotero-markdown-preview-inner .hljs-tag {
+  color: var(--zmd-code-tag);
+}
+.zotero-markdown-preview-inner .hljs-punctuation {
+  color: var(--zmd-code-punctuation);
+}
+.zotero-markdown-preview-inner .hljs-deletion {
+  color: var(--zmd-code-invalid);
+}
 .zotero-markdown-preview-inner blockquote {
   margin: 1em 0;
   padding: 0.2em 0 0.2em 1em;

@@ -34,13 +34,7 @@ import {
 } from "@codemirror/commands";
 import { markdown } from "@codemirror/lang-markdown";
 import { GFM } from "@lezer/markdown";
-import {
-  syntaxHighlighting,
-  defaultHighlightStyle,
-  bracketMatching,
-  foldGutter,
-  foldKeymap,
-} from "@codemirror/language";
+import { bracketMatching, foldGutter, foldKeymap } from "@codemirror/language";
 import {
   searchKeymap,
   highlightSelectionMatches,
@@ -58,7 +52,7 @@ import {
   type EditorTheme,
   type ParentToEditorMessage,
 } from "../modules/markdown/editor-protocol";
-import { editorThemeExtension } from "./theme";
+import { codeSyntaxHighlighting, editorThemeExtension } from "./theme";
 import { resolveCodeMirrorLanguage } from "./code-languages";
 import { imageDebug } from "./image-debug";
 import { MAX_IMAGE_BYTES } from "../modules/markdown/images/model";
@@ -682,7 +676,6 @@ function buildExtensions(init: EditorInitPayload): Extension[] {
       extensions: GFM,
       codeLanguages: resolveCodeMirrorLanguage,
     }),
-    syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
     Prec.highest(
       keymap.of([
         {
@@ -753,9 +746,10 @@ function buildExtensions(init: EditorInitPayload): Extension[] {
         },
       },
     ]),
-    themeCompartment.of(
+    themeCompartment.of([
       editorThemeExtension(init.theme, init.fontSize, runtime.mode),
-    ),
+      codeSyntaxHighlighting(init.theme),
+    ]),
     liveCompartment.of(livePreviewWhen(runtime.mode === "live")),
     modeAttrCompartment.of(modeUiForMode(runtime.mode)),
     readOnlyCompartment.of(EditorState.readOnly.of(!!init.readOnly)),
@@ -841,9 +835,10 @@ function applyMode(mode: EditorMode) {
       liveCompartment.reconfigure(livePreviewWhen(runtime.mode === "live")),
       guttersCompartment.reconfigure(guttersForMode(runtime.mode)),
       modeAttrCompartment.reconfigure(modeUiForMode(runtime.mode)),
-      themeCompartment.reconfigure(
+      themeCompartment.reconfigure([
         editorThemeExtension(runtime.theme, runtime.fontSize, runtime.mode),
-      ),
+        codeSyntaxHighlighting(runtime.theme),
+      ]),
     ],
   });
 }
@@ -1038,9 +1033,10 @@ function handleParentMessage(data: ParentToEditorMessage) {
       if (!runtime.view) return;
       runtime.theme = data.payload.theme;
       runtime.view.dispatch({
-        effects: themeCompartment.reconfigure(
+        effects: themeCompartment.reconfigure([
           editorThemeExtension(runtime.theme, runtime.fontSize, runtime.mode),
-        ),
+          codeSyntaxHighlighting(runtime.theme),
+        ]),
       });
       break;
     }
@@ -1048,9 +1044,10 @@ function handleParentMessage(data: ParentToEditorMessage) {
       if (!runtime.view) return;
       runtime.fontSize = data.payload.fontSize;
       runtime.view.dispatch({
-        effects: themeCompartment.reconfigure(
+        effects: themeCompartment.reconfigure([
           editorThemeExtension(runtime.theme, runtime.fontSize, runtime.mode),
-        ),
+          codeSyntaxHighlighting(runtime.theme),
+        ]),
       });
       break;
     }

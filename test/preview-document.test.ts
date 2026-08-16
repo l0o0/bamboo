@@ -65,3 +65,13 @@ test("accepts aliases and ignores fence metadata", () => {
   assert.match(html, /hljs-keyword/);
   assert.doesNotMatch(html, /title=&quot;demo&quot;/);
 });
+
+test("exports semantic Highlight.js styles", () => {
+  const doc = buildStandaloneDocument({
+    source: "```js\nconst value = 'text';\n```",
+    theme: "dark",
+  });
+  assert.match(doc.standaloneHtml, /--zmd-code-keyword: #c084fc/);
+  assert.match(doc.standaloneHtml, /\.hljs-keyword/);
+  assert.match(doc.standaloneHtml, /var\(--zmd-code-keyword\)/);
+});

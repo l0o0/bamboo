@@ -20,3 +20,12 @@ test("shell and iframe share the same theme tokens", () => {
   assert.equal(THEME_TOKENS.light.accent, "#2563eb");
   assert.equal(THEME_TOKENS.dark.accent, "#60a5fa");
 });
+
+test("themes define distinct syntax tokens", () => {
+  assert.equal(THEME_TOKENS.light.codeKeyword, "#7c3aed");
+  assert.equal(THEME_TOKENS.dark.codeKeyword, "#c084fc");
+  assert.equal(THEME_TOKENS.light.codeString, "#047857");
+  assert.equal(THEME_TOKENS.dark.codeString, "#86efac");
+  assert.notEqual(THEME_TOKENS.light.codeComment, THEME_TOKENS.light.text);
+  assert.notEqual(THEME_TOKENS.dark.codeComment, THEME_TOKENS.dark.text);
+});

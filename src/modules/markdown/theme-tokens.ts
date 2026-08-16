@@ -22,6 +22,15 @@ export const THEME_TOKENS = {
     tableHeaderBg: "#f3f4f6",
     tableActiveBg: "rgba(37, 99, 235, 0.055)",
     codeBlockBg: "rgba(17, 24, 39, 0.055)",
+    codeComment: "#6b7280",
+    codeKeyword: "#7c3aed",
+    codeString: "#047857",
+    codeNumber: "#b45309",
+    codeFunction: "#1d4ed8",
+    codeVariable: "#0f766e",
+    codeTag: "#b91c1c",
+    codePunctuation: "#4b5563",
+    codeInvalid: "#dc2626",
     menuShadow: "rgba(16, 24, 40, 0.16)",
   },
   dark: {
@@ -47,6 +56,15 @@ export const THEME_TOKENS = {
     tableHeaderBg: "rgba(255, 255, 255, 0.065)",
     tableActiveBg: "rgba(96, 165, 250, 0.08)",
     codeBlockBg: "rgba(255, 255, 255, 0.07)",
+    codeComment: "#8b949e",
+    codeKeyword: "#c084fc",
+    codeString: "#86efac",
+    codeNumber: "#fbbf24",
+    codeFunction: "#93c5fd",
+    codeVariable: "#67e8f9",
+    codeTag: "#fca5a5",
+    codePunctuation: "#cbd5e1",
+    codeInvalid: "#f87171",
     menuShadow: "rgba(0, 0, 0, 0.4)",
   },
 } as const;
@@ -71,6 +89,15 @@ export function themeTokenCss(selector: string, tokens: ThemeTokenSet): string {
   --zmd-warn: ${tokens.warn};
   --zmd-danger: ${tokens.danger};
   --zmd-shadow: ${tokens.shadow};
+  --zmd-code-comment: ${tokens.codeComment};
+  --zmd-code-keyword: ${tokens.codeKeyword};
+  --zmd-code-string: ${tokens.codeString};
+  --zmd-code-number: ${tokens.codeNumber};
+  --zmd-code-function: ${tokens.codeFunction};
+  --zmd-code-variable: ${tokens.codeVariable};
+  --zmd-code-tag: ${tokens.codeTag};
+  --zmd-code-punctuation: ${tokens.codePunctuation};
+  --zmd-code-invalid: ${tokens.codeInvalid};
   --zmd-radius: 8px;
   --zmd-radius-sm: 6px;
   --zmd-font-ui: system-ui, -apple-system, "Segoe UI", "PingFang SC",
