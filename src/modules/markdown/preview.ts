@@ -7,6 +7,7 @@ import {
 import { normalizeAssetReference } from "./images/model";
 import type { ImageAssetMap } from "./editor-protocol";
 import { THEME_TOKENS, themeTokenCss } from "./theme-tokens";
+import { highlightFencedCode } from "./code-highlight";
 
 // esbuild / CJS interop: some builds expose the ctor on .default
 const MarkdownItCtor: typeof MarkdownIt =
@@ -19,6 +20,9 @@ const md = new MarkdownItCtor({
   linkify: true,
   typographer: true,
   breaks: true,
+  highlight(source, info) {
+    return highlightFencedCode(source, info) || "";
+  },
 });
 
 export interface ReadOnlyDocument {

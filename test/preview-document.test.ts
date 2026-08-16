@@ -42,3 +42,26 @@ test("rewrites local image sources to cached data URLs", () => {
   });
   assert.match(html, /src="data:image\/png;base64,abc"/);
 });
+
+test("highlights supported fenced code in preview and export", () => {
+  const source = "```js\nconst answer = 42;\n```";
+  const html = renderMarkdown(source);
+  assert.match(html, /class="language-js"/);
+  assert.match(html, /hljs-keyword/);
+  assert.match(html, /hljs-number/);
+  assert.match(buildStandaloneDocument({ source }).bodyHtml, /hljs-keyword/);
+});
+
+test("falls back to escaped code for unknown languages", () => {
+  const html = renderMarkdown("```brainfuck\n<x>& y\n```");
+  assert.match(html, /&lt;x&gt;&amp; y/);
+  assert.doesNotMatch(html, /hljs-/);
+});
+
+test("accepts aliases and ignores fence metadata", () => {
+  const html = renderMarkdown(
+    '```TS title="demo"\nconst n: number = 1;\n```',
+  );
+  assert.match(html, /hljs-keyword/);
+  assert.doesNotMatch(html, /title=&quot;demo&quot;/);
+});
