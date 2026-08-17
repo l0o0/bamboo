@@ -31,7 +31,7 @@
     "lint:fix": "prettier --write . && eslint . --fix",
     "release": "zotero-plugin release",
     "test": "zotero-plugin test",
-    "test:unit": "tsx --test test/editor-channel.test.ts test/editor-table.test.ts test/editor-table-cell-edit.test.ts test/editor-table-edge-actions.test.ts test/editor-table-operations.test.ts test/editor-table-menu.test.ts test/editor-theme.test.ts test/live-preview-*.test.ts test/markdown-filename.test.ts test/markdown-images.test.ts test/markdown-status.test.ts test/markdown-toolbar.test.ts test/more-menu.test.ts test/frontmatter-title-sync.test.ts test/save-coordinator.test.ts test/session-registry.test.ts test/preview-document.test.ts",
+    "test:unit": "tsx --test test/editor-channel.test.ts test/editor-table.test.ts test/editor-table-cell-edit.test.ts test/editor-table-edge-actions.test.ts test/editor-table-operations.test.ts test/editor-table-menu.test.ts test/editor-theme.test.ts test/live-preview-*.test.ts test/markdown-filename.test.ts test/markdown-images.test.ts test/markdown-status.test.ts test/markdown-toolbar.test.ts test/more-menu.test.ts test/frontmatter-title-sync.test.ts test/save-coordinator.test.ts test/session-registry.test.ts test/preview-document.test.ts test/zotero-pane-compat.test.ts",
     "update-deps": "pnpm update --save"
   },
   "dependencies": {
