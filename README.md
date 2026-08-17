@@ -1,7 +1,7 @@
 # Zotero Markdown
 
 [![Zotero compatibility](https://img.shields.io/badge/Zotero-9%2F10-green?style=flat-square&logo=zotero&logoColor=CC2936)](https://www.zotero.org)
-[![version](https://img.shields.io/badge/version-0.1.2-blue?style=flat-square)](https://github.com/l0o0/zotero-markdown/releases)
+[![version](https://img.shields.io/badge/version-0.1.3-blue?style=flat-square)](https://github.com/l0o0/zotero-markdown/releases)
 [![license](https://img.shields.io/badge/license-AGPL--3.0-orange?style=flat-square)](./LICENSE)
 
 **Native Markdown for Zotero.** Treat `.md` files as first-class attachments — open, edit, preview, and create them inside Zotero.
