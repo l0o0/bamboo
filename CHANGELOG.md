@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.1.3 - 2026-08-17
+
+### Features
+
+- Add a Zotero-native Markdown sidebar editor with compact formatting controls and tab handoff
+- Add a collapsible document outline for Markdown tabs
+- Add editable live-preview tables with row and column edge actions
+- Add fenced-code syntax highlighting across editor and preview modes
+- Add local image attachment handling, asset cleanup, and live-preview image editing
+- Add a public Markdown API and Zotero 9/10 pane compatibility layer
+
+### Fixes
+
+- Isolate editor sessions so multiple Markdown tabs no longer share titles or content
+- Improve live-preview rendering for lists, tables, images, code blocks, and strikethrough
+- Repair sidebar lifecycle, focus, sizing, and switching behavior
+- Ensure release version bumps include `package.json`
+
+### Documentation
+
+- Update English and Chinese usage documentation and add implementation plans for the editor, sidebar, images, tables, and compatibility layer
+
 ## 0.1.0 - 2026-08-11
 
 ### Features

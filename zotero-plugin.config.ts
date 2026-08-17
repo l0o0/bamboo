@@ -6,7 +6,7 @@ import pkg from "./package.json";
 // `pnpm release` keeps them in sync automatically.
 const releaseBumpp = {
   release: "prompt",
-  files: ["README.md", "doc/README-zhCN.md"],
+  files: ["package.json", "README.md", "doc/README-zhCN.md"],
 };
 
 export default defineConfig({
