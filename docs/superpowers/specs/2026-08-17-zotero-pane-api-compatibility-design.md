@@ -38,7 +38,7 @@ Create `src/compat/zotero-pane.ts`. It exposes these stable functions:
 - `getSelectedLibraryIDs(pane)`
 - `getCollectionTreeRows(pane)`
 - `getSelectedSavedSearches(pane, asID)`
-- `getSelectedGroups(pane, asID)`
+- `getSelectedGroupRows(pane)`
 
 The module uses a small structural pane type rather than augmenting Zotero's
 global declarations. This isolates the old and new method signatures from the
@@ -60,9 +60,11 @@ differences. It must not catch and suppress unrelated exceptions from Zotero.
 In particular, it must never call a removed singular method when the plural
 replacement exists.
 
-`getSelectedGroups()` is derived from collection-tree rows on Zotero 10 by
-filtering rows whose `isGroup()` method returns true. On Zotero 9 it falls back
-to `getSelectedGroup()`.
+`getSelectedGroupRows()` is derived from collection-tree rows on both versions
+by filtering rows whose `isGroup()` method returns true. It does not wrap the
+old `getSelectedGroup()` result because that method returns a group object,
+while Zotero 10's replacement is a collection-tree row; mixing those values
+would violate the stable return contract.
 
 ## Consumer Migration
 
