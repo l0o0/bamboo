@@ -1,5 +1,3 @@
-type PaneGetter = (asID?: boolean) => unknown;
-
 type PaneGetterName =
   | "getSelectedCollections"
   | "getSelectedCollection"
@@ -12,14 +10,14 @@ type PaneGetterName =
 
 export interface ZoteroPaneSelectionLike {
   [key: string]: unknown;
-  getSelectedCollections?: PaneGetter;
-  getSelectedCollection?: PaneGetter;
-  getSelectedLibraryIDs?: PaneGetter;
-  getSelectedLibraryID?: PaneGetter;
-  getCollectionTreeRows?: PaneGetter;
-  getCollectionTreeRow?: PaneGetter;
-  getSelectedSavedSearches?: PaneGetter;
-  getSelectedSavedSearch?: PaneGetter;
+  getSelectedCollections?: unknown;
+  getSelectedCollection?: unknown;
+  getSelectedLibraryIDs?: unknown;
+  getSelectedLibraryID?: unknown;
+  getCollectionTreeRows?: unknown;
+  getCollectionTreeRow?: unknown;
+  getSelectedSavedSearches?: unknown;
+  getSelectedSavedSearch?: unknown;
 }
 
 function normalizeArray<T>(value: unknown): T[] {

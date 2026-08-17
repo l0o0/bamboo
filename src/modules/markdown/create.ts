@@ -1,4 +1,5 @@
 import { getPref } from "../../utils/prefs";
+import { resolveMarkdownCollectionID } from "./create-target";
 import { defaultMarkdownFilename } from "./detect";
 import { buildNoteWithFrontmatter } from "./frontmatter";
 import { openMarkdownAttachment } from "./open";
@@ -55,17 +56,10 @@ export async function createMarkdownAttachment(
     // parentItemID and collections — Zotero throws).
     const libraryID = parent?.libraryID ?? Zotero.Libraries.userLibraryID;
 
-    const selectedIDs = !parent
-      ? pane?.getSelectedCollections?.(true)
+    const collection = !parent
+      ? resolveMarkdownCollectionID(pane)
       : undefined;
-    const collection =
-      Array.isArray(selectedIDs) && typeof selectedIDs[0] === "number"
-        ? selectedIDs[0]
-        : undefined;
-    const collections =
-      typeof collection === "number" && collection > 0
-        ? [collection]
-        : undefined;
+    const collections = collection == null ? undefined : [collection];
 
     ztoolkit.log("createMarkdownAttachment import", {
       tmpPath,
