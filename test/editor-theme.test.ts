@@ -1,16 +1,36 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { liveEditorGeometry } from "../src/editor/theme.ts";
+import {
+  liveEditorGeometry,
+  livePreviewGeometryStyles,
+} from "../src/editor/theme.ts";
 import { THEME_TOKENS } from "../src/modules/markdown/theme-tokens.ts";
 
 test("live editor puts horizontal spacing on lines for aligned selections", () => {
   assert.deepEqual(liveEditorGeometry(), {
-    contentPadding: "20px 0 40px",
+    contentPadding: "4px 0 8px",
     linePadding: "0 30px 0 34px",
     tableMargin: "0 30px 0 34px",
     tablePadding: "0",
     tableEdgeSize: "30px",
     tableCellMinHeight: "1.7em",
+  });
+});
+
+test("sidebar live editor uses a narrower safe left inset", () => {
+  assert.deepEqual(liveEditorGeometry("sidebar"), {
+    contentPadding: "4px 0 8px",
+    linePadding: "0 30px 0 20px",
+    tableMargin: "0 30px 0 20px",
+    tablePadding: "0",
+    tableEdgeSize: "30px",
+    tableCellMinHeight: "1.7em",
+  });
+  assert.deepEqual(livePreviewGeometryStyles("sidebar"), {
+    tableMargin: "0 30px 0 20px",
+    tablePadding: "0",
+    tableEdgeSize: "30px",
+    codeBlockBackgroundClip: "content-box",
   });
 });
 

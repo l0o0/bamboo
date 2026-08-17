@@ -7,6 +7,7 @@ export const EDITOR_MESSAGE_SOURCE = "zotero-markdown-editor" as const;
 export const EDITOR_PROTOCOL_VERSION = 1;
 
 export type EditorTheme = "light" | "dark";
+export type EditorSurface = "default" | "sidebar";
 
 /** Live Preview (document-like) vs full raw source. */
 export type EditorMode = "live" | "source";
@@ -39,6 +40,8 @@ export interface EditorInitPayload {
   theme: EditorTheme;
   /** Default interpreted as `"live"` by the iframe bootstrap. */
   mode?: EditorMode;
+  /** Layout density for the editor host. */
+  surface?: EditorSurface;
 }
 
 export interface EditorDocChange {

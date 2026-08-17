@@ -49,6 +49,7 @@ import {
   type EditorInitPayload,
   type EditorMode,
   type EditorOutlineItem,
+  type EditorSurface,
   type ImageAssetMap,
   type EditorTheme,
   type ParentToEditorMessage,
@@ -128,6 +129,7 @@ interface EditorRuntime {
   theme: EditorTheme;
   fontSize: number;
   mode: EditorMode;
+  surface: EditorSurface;
   docRev: number;
   imageAssets: ImageAssetMap;
   removeImageDoubleClickListener: (() => void) | null;
@@ -146,6 +148,7 @@ const runtime: EditorRuntime = {
   theme: "light",
   fontSize: 14,
   mode: "live",
+  surface: "default",
   docRev: 0,
   imageAssets: {},
   removeImageDoubleClickListener: null,
@@ -706,6 +709,7 @@ function buildExtensions(init: EditorInitPayload): Extension[] {
   runtime.theme = init.theme;
   runtime.fontSize = init.fontSize;
   runtime.mode = init.mode === "source" ? "source" : "live";
+  runtime.surface = init.surface === "sidebar" ? "sidebar" : "default";
 
   return [
     guttersCompartment.of(guttersForMode(runtime.mode)),
@@ -791,7 +795,12 @@ function buildExtensions(init: EditorInitPayload): Extension[] {
       },
     ]),
     themeCompartment.of([
-      editorThemeExtension(init.theme, init.fontSize, runtime.mode),
+      editorThemeExtension(
+        init.theme,
+        init.fontSize,
+        runtime.mode,
+        runtime.surface,
+      ),
       codeSyntaxHighlighting(init.theme),
     ]),
     liveCompartment.of(livePreviewWhen(runtime.mode === "live")),
@@ -882,7 +891,12 @@ function applyMode(mode: EditorMode) {
       guttersCompartment.reconfigure(guttersForMode(runtime.mode)),
       modeAttrCompartment.reconfigure(modeUiForMode(runtime.mode)),
       themeCompartment.reconfigure([
-        editorThemeExtension(runtime.theme, runtime.fontSize, runtime.mode),
+        editorThemeExtension(
+          runtime.theme,
+          runtime.fontSize,
+          runtime.mode,
+          runtime.surface,
+        ),
         codeSyntaxHighlighting(runtime.theme),
       ]),
     ],
@@ -1102,7 +1116,12 @@ function handleParentMessage(data: ParentToEditorMessage) {
       runtime.theme = data.payload.theme;
       runtime.view.dispatch({
         effects: themeCompartment.reconfigure([
-          editorThemeExtension(runtime.theme, runtime.fontSize, runtime.mode),
+          editorThemeExtension(
+            runtime.theme,
+            runtime.fontSize,
+            runtime.mode,
+            runtime.surface,
+          ),
           codeSyntaxHighlighting(runtime.theme),
         ]),
       });
@@ -1113,7 +1132,12 @@ function handleParentMessage(data: ParentToEditorMessage) {
       runtime.fontSize = data.payload.fontSize;
       runtime.view.dispatch({
         effects: themeCompartment.reconfigure([
-          editorThemeExtension(runtime.theme, runtime.fontSize, runtime.mode),
+          editorThemeExtension(
+            runtime.theme,
+            runtime.fontSize,
+            runtime.mode,
+            runtime.surface,
+          ),
           codeSyntaxHighlighting(runtime.theme),
         ]),
       });

@@ -1,7 +1,7 @@
 # Zotero Markdown
 
-[![zotero target version](https://img.shields.io/badge/Zotero-7%2F8-green?style=flat-square&logo=zotero&logoColor=CC2936)](https://www.zotero.org)
-[![version](https://img.shields.io/badge/version-0.0.1-blue?style=flat-square)](https://github.com/l0o0/zotero-markdown)
+[![Zotero compatibility](https://img.shields.io/badge/Zotero-9%2F10-green?style=flat-square&logo=zotero&logoColor=CC2936)](https://www.zotero.org)
+[![version](https://img.shields.io/badge/version-0.1.2-blue?style=flat-square)](https://github.com/l0o0/zotero-markdown/releases)
 [![license](https://img.shields.io/badge/license-AGPL--3.0-orange?style=flat-square)](../LICENSE)
 
 **让 Zotero 原生支持 Markdown。** 把 `.md` 文件当作一等公民附件——在 Zotero 内打开、编辑、预览、创建。
@@ -14,22 +14,11 @@
 
 Zotero 擅长文献收集与组织。在 AI 时代，**纯 Markdown 文件**才是知识工具之间的通用货币（Obsidian、大模型、静态站点、Git）。
 
-[Better Notes](https://github.com/windingwind/zotero-better-notes) 大幅增强了 Zotero 自带的 **Note**，但那仍然是 Zotero 笔记，不是磁盘上的原生 `.md` 文件。
-
-**Zotero Markdown** 补上这块短板：
-
-|               | Better Notes              | **Zotero Markdown**       |
-| ------------- | ------------------------- | ------------------------- |
-| 主战场        | Zotero Note（富文本笔记） | 真正的 **`.md` 附件文件** |
-| 磁盘文件      | 可选同步 / 导出           | 文件本身就是笔记          |
-| Obsidian / AI | 桥接 / 导出               | 直接可用的纯文本          |
-| 关系          | —                         | **互补**——我们不碰 Note   |
-
-> Make Zotero Great Again — 让知识管理在 Zotero 里重新长出 Markdown 这一支。
+[Better Notes](https://github.com/windingwind/zotero-better-notes) 大幅增强了 Zotero 自带的 **Note**，但那仍然是 Zotero 笔记，不是磁盘上的原生 `.md` 文件。**Zotero Markdown** 补上这块短板：与 Better Notes **互补**、不触碰 Note，让 Markdown 文件成为 Obsidian 与 AI 工作流里直接可用的纯文本。
 
 ---
 
-## 功能（v0.1）
+## 功能
 
 - **打开** `.md` / `.markdown` 附件：在主窗口 **Tab** 中打开（不再调系统默认应用）
 - **编辑**：内置轻量编辑器——行号、Tab 缩进、字数/字符统计，以及常用 Markdown 语法工具栏快捷按钮（粗体、斜体、标题、链接）
@@ -39,7 +28,7 @@ Zotero 擅长文献收集与组织。在 AI 时代，**纯 Markdown 文件**才�
 - 同时支持 **Stored** 与 **Linked** 附件
 - 偏好设置中可关闭打开拦截
 
-### 规划中（不在 v0.1）
+### 规划中
 
 - Wiki 链接 `[[...]]` 与库内跳转
 - YAML frontmatter ↔ Zotero 字段
@@ -51,11 +40,7 @@ Zotero 擅长文献收集与组织。在 AI 时代，**纯 Markdown 文件**才�
 
 ## 安装
 
-### 使用 XPI（发布版）
-
-1. 从 [Releases](https://github.com/l0o0/zotero-markdown/releases) 下载最新 `.xpi`
-2. Zotero：**工具 → 插件 → 齿轮 → 从文件安装插件…**
-3. 如有提示，重启 Zotero
+从 [Releases](https://github.com/l0o0/zotero-markdown/releases) 下载最新 `.xpi`，在 Zotero 中：**工具 → 插件 → 齿轮 → 从文件安装插件…**，如有提示重启 Zotero。
 
 ### 本地构建
 
@@ -64,29 +49,6 @@ pnpm install
 pnpm run build
 # 产物：.scaffold/build/zotero-markdown.xpi
 ```
-
-### 发布 Release（自动生成 XPI）
-
-推送版本 tag 后，GitHub Actions 会构建 XPI 并创建 Release。
-
-1. 修改 `package.json` 中的 `version`（例如 `0.1.1`）
-2. 提交版本号
-3. 打 tag 并推送：
-
-```bash
-git tag v0.1.1
-git push origin main
-git push origin v0.1.1
-```
-
-也可在 GitHub：**Actions → Release → Run workflow**，填写 tag（如 `v0.1.1`）。
-
-Release 资源：
-
-- `zotero-markdown.xpi` — 可安装插件
-- `update.json` / `update-beta.json` — 自动更新清单（同时挂在 floating `release` tag 上，供 `updateURL` 使用）
-
-公开仓库一般只需默认 `GITHUB_TOKEN`，无需额外 Secrets。
 
 ---
 
@@ -105,7 +67,7 @@ Release 资源：
 
 ## 环境要求
 
-- Zotero **7** 或 **8**（含 beta）
+- Zotero **9** 或 **10**
 - 桌面客户端（不支持 Zotero 网页版）
 
 ---
@@ -117,7 +79,7 @@ Release 资源：
 ### 环境准备
 
 ```bash
-# 配置 Zotero 可执行文件 / 开发 profile / 数据目录
+# 配置 Zotero 可执行文件 / 开发 profile / 数据目录（见 .env.example）
 cp .env.example .env
 
 pnpm install
@@ -136,31 +98,6 @@ pnpm start          # 构建并启动 Zotero，支持热重载
 | `pnpm run lint:check` | Prettier + ESLint   |
 | `pnpm run lint:fix`   | 自动修复            |
 
-### 目录结构
-
-```
-src/
-  hooks.ts                 # 生命周期
-  modules/markdown/
-    detect.ts              # 识别 markdown 附件
-    create.ts              # 新建 stored .md
-    open.ts                # 拦截 FileHandlers
-    tab.ts                 # Tab UI、自动保存
-    editor.ts              # 内置编辑器（行号、快捷键、统计）
-    preview.ts             # markdown-it 渲染
-    menu.ts                # 右键菜单
-    styles.ts              # 样式注入
-addon/                     # bootstrap、语言包、偏好、图标
-```
-
-### `.env`（仅开发）
-
-见 [`.env.example`](../.env.example)，主要变量：
-
-- `ZOTERO_PLUGIN_ZOTERO_BIN_PATH` — Zotero 可执行文件
-- `ZOTERO_PLUGIN_PROFILE_PATH` — 开发用 profile
-- `ZOTERO_PLUGIN_DATA_DIR` — 可选数据目录
-
 ---
 
 ## 设置
@@ -168,6 +105,54 @@ addon/                     # bootstrap、语言包、偏好、图标
 **编辑 → 设置 → Zotero Markdown**
 
 - **使用 Markdown 编辑器打开 .md 附件** — 关闭后，`.md` 恢复为系统默认程序打开
+
+---
+
+## 供其他插件调用的 API
+
+Zotero Markdown 在 `Zotero.ZoteroMarkdown.api.markdown` 暴露进程内 API，供其他插件 / MCP 桥接层在 Zotero 内创建与编辑 `.md` 文档。所有方法均为异步、JSON 友好，失败时抛出 `MarkdownApiError`（`error.code` 稳定不变）。
+
+```js
+const md = Zotero.ZoteroMarkdown.api.markdown;
+
+// 列出用户文库中的 markdown 附件
+const docs = await md.list({ q: "note" });
+
+// 读取
+const { content } = await md.read(docs[0].itemID);
+
+// 在文献条目下创建，然后编辑
+const created = await md.create({
+  parentItemID: 123,
+  initialContent: "# Title",
+});
+await md.update(created.itemID, { content: "# New\n\nupdated" });
+
+// 只改 frontmatter
+await md.patchFrontmatter(created.itemID, {
+  set: { tags: ["ai", "draft"] },
+  delete: ["old-key"],
+});
+
+// 打开 / 强制保存 / 关闭编辑器 Tab
+await md.openTab(created.itemID);
+await md.flush(created.itemID);
+await md.closeTab(tabID);
+```
+
+方法：`list`、`stat`、`read`、`create`、`createLinked`、`update`、
+`patchFrontmatter`、`rename`、`trash`、`openTab`、`closeTab`、`sessions`、
+`flush`、`toHtml`、`render`、`documentTitle`。
+
+错误码：`ITEM_NOT_FOUND`、`NOT_MARKDOWN`、`WRITE_CONFLICT`、
+`WRITE_FAILED`、`INVALID_ARGUMENT`、`NOT_OPEN`。
+
+说明：
+
+- 所有写入都走与编辑器相同的持久化路径（写文件、图片资源清理、标题同步、Zotero 文件同步标记）。
+- `update` 在编辑器 Tab 存在未保存修改时返回 `WRITE_CONFLICT`——传 `force: true` 可覆盖。
+- `rename` 会重命名底层文件；对 linked 附件会直接重命名磁盘上的文件。
+- API 版本号：`Zotero.ZoteroMarkdown.api.version`（当前 `2`）。
 
 ---
 

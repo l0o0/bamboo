@@ -49,6 +49,7 @@ import {
 import { formatSavedStatus, formatStats } from "./status";
 import { MARKDOWN_TAB_TYPE, resolveMarkdownTabTitle } from "./tabHooks";
 import { SaveCoordinator } from "./save-coordinator";
+import { persistMarkdownContent } from "./persist";
 import {
   sessionRegistry,
   type OpenSession,
@@ -1539,20 +1540,12 @@ async function persistSession(
 ) {
   const item = Zotero.Items.get(session.itemID);
   if (!item) throw new Error("Item gone");
-  const path = (await item.getFilePathAsync()) || session.path;
+  const { path, titleChanged } = await persistMarkdownContent(item, value, {
+    cleanupImages: opts.cleanupImages,
+    syncTitle: true,
+  });
   session.path = path;
-  await Zotero.File.putContentsAsync(path, value);
-  if (opts.cleanupImages) {
-    try {
-      await cleanupUnusedImageAssets(item, value);
-    } catch (error) {
-      ztoolkit.log("Failed to clean markdown image assets after save", error);
-    }
-  }
-  const headingTitle = extractFirstHeadingTitle(value);
-  if (headingTitle && item.getField("title") !== headingTitle) {
-    item.setField("title", headingTitle);
-    await item.saveTx({ skipSelect: true });
+  if (titleChanged) {
     ensureTabTitle(session.win, session.tabID, session.itemID);
   }
   session.savedAt = new Date();
@@ -1649,6 +1642,14 @@ async function closeSession(tabID: string, opts: { flush?: boolean } = {}) {
     sessionRegistry.unregister(tabID);
   })();
   await session.closePromise;
+}
+
+/** Close (and flush) an open Markdown tab by its tabID. */
+export async function closeMarkdownTab(tabID: string): Promise<boolean> {
+  const session = sessionRegistry.get(tabID);
+  if (!session) return false;
+  await closeSession(tabID, { flush: true });
+  return true;
 }
 
 export async function flushSessionsForWindow(win: Window) {

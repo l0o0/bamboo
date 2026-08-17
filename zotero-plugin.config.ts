@@ -1,6 +1,14 @@
 import { defineConfig } from "zotero-plugin-scaffold";
 import pkg from "./package.json";
 
+// Extra options forwarded to bumpp's `versionBump` (not yet typed by the
+// scaffold): bump the README version badges together with package.json so
+// `pnpm release` keeps them in sync automatically.
+const releaseBumpp = {
+  release: "prompt",
+  files: ["README.md", "doc/README-zhCN.md"],
+};
+
 export default defineConfig({
   source: ["src", "addon"],
   dist: ".scaffold/build",
@@ -49,6 +57,10 @@ export default defineConfig({
 
   test: {
     waitForPlugin: `() => Zotero.${pkg.config.addonInstance}.data.initialized`,
+  },
+
+  release: {
+    bumpp: releaseBumpp,
   },
 
   // If you need to see a more detailed log, uncomment the following line:

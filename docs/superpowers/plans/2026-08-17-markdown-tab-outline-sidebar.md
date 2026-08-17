@@ -37,12 +37,14 @@
 ### Task 1: Extract A Correct Outline From CodeMirror State
 
 **Files:**
+
 - Create: `src/editor/outline.ts`
 - Create: `test/editor-outline.test.ts`
 - Modify: `src/modules/markdown/editor-protocol.ts:15-48`
 - Modify: `package.json:31`
 
 **Interfaces:**
+
 - Produces: `EditorOutlineItem` with `{ id, level, text, from }`.
 - Produces: `extractEditorOutline(state: EditorState): EditorOutlineItem[]`.
 - Produces: `activeOutlineID(items, position): string | null`.
@@ -75,9 +77,24 @@ const source = [
 ].join("\n");
 assert.deepEqual(extractEditorOutline(markdownState(source)), [
   { id: "h1:0", level: 1, text: "One", from: 0 },
-  { id: `h2:${source.indexOf("Two")}`, level: 2, text: "Two", from: source.indexOf("Two") },
-  { id: `h3:${source.indexOf("###")}`, level: 3, text: "Three and link", from: source.indexOf("###") },
-  { id: `h6:${source.indexOf("######")}`, level: 6, text: "Six", from: source.indexOf("######") },
+  {
+    id: `h2:${source.indexOf("Two")}`,
+    level: 2,
+    text: "Two",
+    from: source.indexOf("Two"),
+  },
+  {
+    id: `h3:${source.indexOf("###")}`,
+    level: 3,
+    text: "Three and link",
+    from: source.indexOf("###"),
+  },
+  {
+    id: `h6:${source.indexOf("######")}`,
+    level: 6,
+    text: "Six",
+    from: source.indexOf("######"),
+  },
 ]);
 ```
 
@@ -116,7 +133,7 @@ function frontmatterEnd(doc: string): number {
 }
 ```
 
-Traverse `syntaxTree(state).cursor()`, accept only mapped nodes after the frontmatter boundary, and produce IDs as ``h${level}:${cursor.from}``. Strip ATX/Setext markers, closing hashes, emphasis markers, and link destinations from display text. Implement `activeOutlineID()` as the last item whose `from <= position` and clamp reveal positions to `0..docLength`.
+Traverse `syntaxTree(state).cursor()`, accept only mapped nodes after the frontmatter boundary, and produce IDs as `h${level}:${cursor.from}`. Strip ATX/Setext markers, closing hashes, emphasis markers, and link destinations from display text. Implement `activeOutlineID()` as the last item whose `from <= position` and clamp reveal positions to `0..docLength`.
 
 - [ ] **Step 4: Run the focused test and commit**
 
@@ -133,6 +150,7 @@ Expected: PASS and one scoped commit. If the installed grammar reports a differe
 ### Task 2: Bridge Outline Updates And Reveal Commands
 
 **Files:**
+
 - Create: `test/editor-outline-bridge.test.ts`
 - Modify: `src/modules/markdown/editor-protocol.ts:50-169`
 - Modify: `src/editor/bootstrap.ts:80-120, 630-790, 970-1160`
@@ -140,6 +158,7 @@ Expected: PASS and one scoped commit. If the installed grammar reports a differe
 - Modify: `package.json:31`
 
 **Interfaces:**
+
 - Produces iframe messages `outline` and `outlineActive`.
 - Produces parent command `revealPosition`.
 - Produces callbacks `onOutline()` and `onOutlineActive()`.
@@ -266,6 +285,7 @@ Expected: all focused tests PASS.
 ### Task 3: Build The Native Tab Outline Sidebar
 
 **Files:**
+
 - Create: `src/modules/markdown/outline-sidebar.ts`
 - Create: `test/markdown-outline-sidebar.test.ts`
 - Modify: `src/modules/markdown/session-registry.ts:6-37`
@@ -278,6 +298,7 @@ Expected: all focused tests PASS.
 - Modify: `package.json:31`
 
 **Interfaces:**
+
 - Produces `mountOutlineSidebar(options): OutlineSidebarHandle`.
 - Produces per-session items, active ID, expanded state, and cleanup handle.
 - Consumes editor callbacks and `revealPosition()` from Task 2.
@@ -387,7 +408,9 @@ Live/Source navigation calls `session.editor?.revealPosition(item.from)`. Destro
 Export and interpolate `outlineSidebarCSS()`:
 
 ```css
-.zotero-markdown-body { flex-direction: row; }
+.zotero-markdown-body {
+  flex-direction: row;
+}
 .zotero-markdown-outline-sidebar {
   flex: 0 0 auto;
   inline-size: clamp(200px, 18vw, 280px);
@@ -427,11 +450,13 @@ Expected: all focused UI tests PASS and unrelated dirty files remain unstaged.
 ### Task 4: Navigate Preview Headings Without Switching Modes
 
 **Files:**
+
 - Modify: `src/modules/markdown/preview.ts:18-44, 271-318`
 - Modify: `src/modules/markdown/tab.ts:1123-1160`
 - Modify: `test/preview-document.test.ts`
 
 **Interfaces:**
+
 - Produces `previewOutlineAnchors(items, headingCount)`.
 - Produces `scrollPreviewToOutline(host, outlineID)`.
 - Extends `mountPreviewHtml(host, source, outlineItems?)`.
@@ -458,7 +483,10 @@ export function previewOutlineAnchors(
   items: readonly EditorOutlineItem[],
   headingCount: number,
 ): Array<string | null> {
-  return Array.from({ length: headingCount }, (_, index) => items[index]?.id ?? null);
+  return Array.from(
+    { length: headingCount },
+    (_, index) => items[index]?.id ?? null,
+  );
 }
 ```
 
@@ -502,10 +530,12 @@ git commit -m "feat(markdown): navigate outline in preview mode"
 ### Task 5: Verify Isolation And Regression Safety
 
 **Files:**
+
 - Modify: `test/editor-channel.test.ts`
 - Modify only if a failure requires it: files already listed in Tasks 1-4
 
 **Interfaces:**
+
 - Consumes the completed extraction, bridge, sidebar, and Preview navigation.
 - Produces a verified feature with no known regression.
 

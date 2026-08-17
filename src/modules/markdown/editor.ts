@@ -11,6 +11,7 @@ import {
   computeStats,
   type EditorMode,
   type EditorOutlineItem,
+  type EditorSurface,
   type ImageAssetMap,
   type EditorStats,
   type EditorTheme,
@@ -49,6 +50,7 @@ export interface MarkdownEditorHandle {
   setTheme: (theme: EditorTheme) => void;
   /** Switch Live Preview vs full Source mode inside the iframe. */
   setMode: (mode: EditorMode) => void;
+  setReadOnly: (readOnly: boolean) => void;
   setImageAssets: (assets: ImageAssetMap) => void;
 }
 
@@ -130,6 +132,7 @@ export function createMarkdownEditor(
     ) => Promise<{ dataUrl?: string; error?: string }>;
     win?: Window;
     channel?: string;
+    surface?: EditorSurface;
   } = {},
 ): MarkdownEditorHandle {
   const {
@@ -142,6 +145,7 @@ export function createMarkdownEditor(
     onPasteImage,
     onResolveAsset,
   } = options;
+  const surface = options.surface ?? "default";
 
   const ownerWin =
     options.win || parent.ownerDocument?.defaultView || undefined;
@@ -160,10 +164,8 @@ export function createMarkdownEditor(
 
   const iframe = documentRef.createElement("iframe") as HTMLIFrameElement;
   iframe.className = "zmd-codemirror-iframe";
-  iframe.setAttribute(
-    "src",
-    `${editorPageURL()}?channel=${encodeURIComponent(channel)}`,
-  );
+  const iframeSrc = `${editorPageURL()}?channel=${encodeURIComponent(channel)}`;
+  iframe.setAttribute("src", iframeSrc);
   Object.assign(iframe.style, {
     border: "none",
     width: "100%",
@@ -173,6 +175,19 @@ export function createMarkdownEditor(
     minWidth: "0",
     display: "block",
     background: "transparent",
+  });
+
+  // Diagnostics: distinguish "page never loaded" from "page loaded but the
+  // iframe never posted ready" (e.g. a script error in editor.js).
+  let iframeLoaded = false;
+  iframe.addEventListener("load", () => {
+    iframeLoaded = true;
+    if (!iframeReady) {
+      ztoolkit.log("Markdown editor iframe loaded but no ready yet", {
+        channel,
+        src: iframeSrc,
+      });
+    }
   });
 
   wrap.appendChild(iframe);
@@ -273,6 +288,7 @@ export function createMarkdownEditor(
             fontSize: resolveFontSize(),
             theme: currentTheme,
             mode: currentMode,
+            surface,
           },
         });
         flushPending();
@@ -385,6 +401,7 @@ export function createMarkdownEditor(
     if (!iframeReady && !destroyed) {
       ztoolkit.log(
         "Markdown editor iframe ready timeout; commands will queue until ready",
+        { channel, src: iframeSrc, loaded: iframeLoaded },
       );
       // Do not resolve yet — keep waiting; getValue still works via cache
     }
@@ -497,6 +514,13 @@ export function createMarkdownEditor(
         source: EDITOR_MESSAGE_SOURCE,
         type: "setMode",
         payload: { mode: currentMode },
+      });
+    },
+    setReadOnly: (readOnly: boolean) => {
+      sendOrQueue({
+        source: EDITOR_MESSAGE_SOURCE,
+        type: "setReadOnly",
+        payload: { readOnly },
       });
     },
     setImageAssets: (assets: ImageAssetMap) => {

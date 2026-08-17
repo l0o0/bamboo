@@ -14,6 +14,12 @@ import {
   unregisterItemContextMenu,
   unregisterShortcuts,
 } from "./modules/markdown";
+import { markdownApi } from "./modules/markdown/api";
+import {
+  disposeSidebarForWindow,
+  registerSidebarSection,
+  unregisterSidebarSection,
+} from "./modules/markdown/sidebar";
 import { ensureDOMGlobals } from "./utils/dom";
 import { getString, initLocale } from "./utils/locale";
 
@@ -35,10 +41,13 @@ async function onStartup() {
     Zotero.getMainWindows().map((win) => onMainWindowLoad(win)),
   );
 
+  registerSidebarSection();
+
   addon.api = {
-    version: 1,
+    version: 2,
     openMarkdown: openMarkdownAttachment,
     createMarkdown: createMarkdownAttachment,
+    markdown: markdownApi,
   };
   addon.data.initialized = true;
   ztoolkit.log(`${addon.data.config.addonName} initialized`);
@@ -82,10 +91,12 @@ async function onMainWindowUnload(_win: Window): Promise<void> {
   // onCloseWindow callbacks (unInitKeyboardListener for the closing window).
   await flushSessionsForWindow(_win);
   unregisterItemContextMenu(_win);
+  disposeSidebarForWindow(_win);
 }
 
 async function onShutdown(): Promise<void> {
   await flushAllSessions();
+  unregisterSidebarSection();
   unregisterFileOpenInterceptor();
   unregisterMenus();
   unregisterShortcuts();

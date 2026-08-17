@@ -9,9 +9,24 @@ import { openMarkdownAttachment } from "./open";
  */
 export async function createMarkdownAttachment(
   parentItem?: Zotero.Item | null,
-  options: { open?: boolean; initialContent?: string } = {},
+  options: {
+    open?: boolean;
+    initialContent?: string;
+    /** Suppress UI side effects (ProgressWindow, pane selection) for API use. */
+    silent?: boolean;
+    /** Target library for top-level attachments (defaults to user library). */
+    libraryID?: number;
+    /** Target collection for top-level attachments (defaults to the selection). */
+    collectionID?: number;
+  } = {},
 ): Promise<Zotero.Item | null> {
-  const { open = true, initialContent } = options;
+  const {
+    open = true,
+    initialContent,
+    silent = false,
+    libraryID,
+    collectionID,
+  } = options;
 
   let parent: Zotero.Item | undefined;
   if (parentItem) {
@@ -54,17 +69,18 @@ export async function createMarkdownAttachment(
     // Standalone attachments need a real libraryID; fall back to user library.
     // Child attachments inherit library from parentItemID (do not pass both
     // parentItemID and collections — Zotero throws).
-    const libraryID = parent?.libraryID ?? Zotero.Libraries.userLibraryID;
+    const targetLibraryID =
+      parent?.libraryID ?? libraryID ?? Zotero.Libraries.userLibraryID;
 
     const collection = !parent
-      ? resolveMarkdownCollectionID(pane)
+      ? resolveMarkdownCollectionID(pane, collectionID)
       : undefined;
     const collections = collection == null ? undefined : [collection];
 
     ztoolkit.log("createMarkdownAttachment import", {
       tmpPath,
       parentItemID: parent?.id,
-      libraryID: parent ? undefined : libraryID,
+      libraryID: parent ? undefined : targetLibraryID,
       collections,
     });
 
@@ -72,7 +88,7 @@ export async function createMarkdownAttachment(
       file: tmpPath,
       parentItemID: parent?.id,
       // Only for top-level items; parent path uses parentItemID alone
-      libraryID: parent ? undefined : libraryID,
+      libraryID: parent ? undefined : targetLibraryID,
       collections,
       title: filename,
       contentType: "text/markdown",
@@ -89,12 +105,14 @@ export async function createMarkdownAttachment(
     }
 
     // Select so the item is visible in the library / item list
-    try {
-      if (pane?.selectItem) {
-        await pane.selectItem(attachment.id);
+    if (!silent) {
+      try {
+        if (pane?.selectItem) {
+          await pane.selectItem(attachment.id);
+        }
+      } catch (e) {
+        ztoolkit.log("selectItem after create failed", e);
       }
-    } catch (e) {
-      ztoolkit.log("selectItem after create failed", e);
     }
 
     if (open) {
@@ -104,12 +122,14 @@ export async function createMarkdownAttachment(
     return attachment;
   } catch (e) {
     ztoolkit.log("createMarkdownAttachment failed", e);
-    new ztoolkit.ProgressWindow(addon.data.config.addonName)
-      .createLine({
-        text: `Create failed: ${e instanceof Error ? e.message : String(e)}`,
-        type: "fail",
-      })
-      .show();
+    if (!silent) {
+      new ztoolkit.ProgressWindow(addon.data.config.addonName)
+        .createLine({
+          text: `Create failed: ${e instanceof Error ? e.message : String(e)}`,
+          type: "fail",
+        })
+        .show();
+    }
     return null;
   } finally {
     try {

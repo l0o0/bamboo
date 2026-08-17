@@ -1,6 +1,7 @@
 import { config } from "../package.json";
 import hooks from "./hooks";
 import { createZToolkit } from "./utils/ztoolkit";
+import type { MarkdownApi } from "./modules/markdown/api";
 
 class Addon {
   public data: {
@@ -18,6 +19,8 @@ class Addon {
     version: number;
     openMarkdown?: typeof import("./modules/markdown").openMarkdownAttachment;
     createMarkdown?: typeof import("./modules/markdown").createMarkdownAttachment;
+    /** Populated on startup (see hooks.ts). */
+    markdown?: MarkdownApi;
   };
 
   constructor() {

@@ -39,6 +39,142 @@ export function toolbarWidthAlignmentCSS(): string {
 }`;
 }
 
+export function sidebarEditorGeometryCSS(): string {
+  return `
+.zmd-sidebar {
+  height: auto;
+}
+
+.zmd-sidebar-editor-host {
+  flex: 0 0 auto;
+  block-size: min(50vh, 600px);
+  min-block-size: 320px;
+  max-block-size: 600px;
+}
+
+.zmd-sidebar-focus-mode {
+  overflow: hidden !important;
+  --min-scroll-height: 0px;
+}
+
+.zmd-sidebar-focus-shell > #zotero-item-pane-header {
+  display: none !important;
+}
+
+.zmd-sidebar-focus-mode > [data-pane]:not(.zmd-sidebar-focus-section) {
+  display: none !important;
+}
+
+.zmd-sidebar-focus-mode > .zmd-sidebar-focus-section {
+  position: absolute !important;
+  inset: 0;
+  display: flex !important;
+  block-size: 100%;
+  min-block-size: 0;
+  margin: 0;
+  padding: 0;
+}
+
+.zmd-sidebar-focus-section > collapsible-section,
+.zmd-sidebar-focus-section > collapsible-section > [data-type="body"],
+.zmd-sidebar-focus-section .zmd-sidebar {
+  flex: 1 1 auto;
+  min-block-size: 0;
+}
+
+.zmd-sidebar-focus-section > collapsible-section {
+  block-size: 100%;
+  padding: 0 !important;
+}
+
+.zmd-sidebar-focus-section > collapsible-section > .head {
+  display: none !important;
+}
+
+.zmd-sidebar-focus-section > collapsible-section > [data-type="body"] {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  margin: 0;
+  padding: 0 !important;
+}
+
+.zmd-sidebar-focus-section .zmd-sidebar {
+  block-size: 100%;
+  padding: 0;
+}
+
+.zmd-sidebar-focus-section .zmd-sidebar-editor-host {
+  flex: 1 1 auto;
+  block-size: 100%;
+  min-block-size: 0;
+  max-block-size: none;
+  border: 0;
+  border-radius: 0;
+}
+
+.zmd-sidebar-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  box-sizing: border-box;
+  flex: 0 0 auto;
+  block-size: 41px;
+  min-block-size: 41px;
+  padding: 2px 8px;
+  border-bottom: var(--material-panedivider);
+  background: var(--material-toolbar);
+}
+
+.zmd-sidebar-toolbar-spacer {
+  flex: 1 1 auto;
+  min-width: 4px;
+}
+
+.zmd-sidebar-toolbar-separator {
+  flex: 0 0 1px;
+  width: 1px;
+  height: 20px;
+  margin: 0 5px;
+  background: var(--zmd-border);
+}
+
+.zmd-sidebar-toolbar-button {
+  appearance: none;
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 35px;
+  width: 35px;
+  height: 35px;
+  min-height: 35px;
+  max-height: 35px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--zmd-text-muted);
+  cursor: pointer;
+}
+
+.zmd-sidebar-toolbar-button:hover {
+  background: var(--zmd-surface-2);
+  color: var(--zmd-text);
+}
+
+.zmd-sidebar-toolbar-button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.zmd-sidebar-toolbar-button .zmd-icon {
+  width: 17px;
+  height: 17px;
+}`;
+}
+
 export function outlineSidebarCSS(): string {
   return `
 .zotero-markdown-outline-sidebar {
@@ -694,6 +830,120 @@ ${previewDocumentCss()}
   color: var(--zmd-success);
   border-color: rgba(5, 150, 105, 0.25);
   background: var(--zmd-success-soft);
+}
+
+/* ========== sidebar (item pane Markdown section) ========== */
+${themeTokenCss(".zmd-sidebar", THEME_TOKENS.light)}
+html[data-theme="dark"] .zmd-sidebar,
+html.theme-dark .zmd-sidebar {
+  ${themeTokenCss(".zmd-sidebar", THEME_TOKENS.dark)}
+}
+
+${sidebarEditorGeometryCSS()}
+
+.zmd-sidebar [hidden] {
+  display: none !important;
+}
+
+.zmd-sidebar {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  box-sizing: border-box;
+  padding: 4px 10px 10px;
+  color: var(--zmd-text);
+  font-family: system-ui, -apple-system, "Segoe UI", "PingFang SC",
+    "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  font-size: 13px;
+}
+
+.zmd-sidebar-list {
+  flex: 0 0 auto;
+  max-height: 38%;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 6px;
+}
+
+.zmd-sidebar-list-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 8px;
+  border: 1px solid var(--zmd-border);
+  border-radius: 8px;
+  background: var(--zmd-surface);
+  color: var(--zmd-text);
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+.zmd-sidebar-list-item:hover {
+  background: var(--zmd-surface-2);
+}
+.zmd-sidebar-list-item.is-active {
+  border-color: var(--zmd-accent);
+  background: var(--zmd-accent-soft);
+}
+.zmd-sidebar-list-item strong {
+  font-size: 12px;
+  font-weight: 600;
+}
+.zmd-sidebar-list-item span {
+  font-size: 11px;
+  color: var(--zmd-text-muted);
+}
+.zmd-sidebar-list-item .zmd-sidebar-list-snippet {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.zmd-sidebar-editor-host {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--zmd-border);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--zmd-surface);
+}
+.zmd-sidebar-editor-host .zmd-editor-wrap {
+  position: absolute;
+  inset: 0;
+}
+
+.zmd-sidebar-empty,
+.zmd-sidebar-hint {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 16px;
+  text-align: center;
+  color: var(--zmd-text-muted);
+}
+.zmd-sidebar-empty p,
+.zmd-sidebar-hint p {
+  margin: 0;
+}
+
+.zmd-sidebar-action {
+  padding: 5px 12px;
+  border: 1px solid var(--zmd-border);
+  border-radius: 6px;
+  background: var(--zmd-accent);
+  color: #fff;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.zmd-sidebar-action:hover {
+  opacity: 0.9;
 }
 `;
   doc.documentElement?.appendChild(style);

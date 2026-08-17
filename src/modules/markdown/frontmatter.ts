@@ -66,6 +66,34 @@ export function extractFirstHeadingTitle(source: string): string | null {
   return null;
 }
 
+/**
+ * Merge a frontmatter patch into a Markdown source document.
+ * Pure function; used by the public API (`markdown.patchFrontmatter`).
+ */
+export function applyFrontmatterPatch(
+  source: string,
+  patch: { set?: Record<string, unknown>; delete?: string[] },
+): string {
+  const { data, body } = parseFrontmatter(source);
+  const next: Record<string, unknown> = { ...data };
+  for (const [key, value] of Object.entries(patch.set ?? {})) {
+    if (value === undefined || value === null) delete next[key];
+    else next[key] = value;
+  }
+  for (const key of patch.delete ?? []) {
+    delete next[key];
+  }
+
+  const yaml = serializeFrontmatter(next as FrontmatterData);
+  if (!yaml) {
+    // Frontmatter removed entirely — return the bare body.
+    return body.replace(/^[\r\n]+/, "");
+  }
+  const eol = source.includes("\r\n") ? "\r\n" : "\n";
+  const bodyText = body.replace(/^[\r\n]+/, "");
+  return `---${eol}${yaml}---${eol}${eol}${bodyText}`;
+}
+
 /** Update only frontmatter title while preserving the rest of the document. */
 export function syncFrontmatterTitle(source: string, title: string): string {
   const normalized = title.trim();
