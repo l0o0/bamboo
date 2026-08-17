@@ -4,6 +4,7 @@ import {
   applyAssetsToHtml,
   buildStandaloneDocument,
   documentTitle,
+  previewOutlineAnchors,
   renderMarkdown,
 } from "../src/modules/markdown/preview.ts";
 
@@ -72,4 +73,14 @@ test("exports semantic Highlight.js styles", () => {
   assert.match(doc.standaloneHtml, /--zmd-code-keyword: #c084fc/);
   assert.match(doc.standaloneHtml, /\.hljs-keyword/);
   assert.match(doc.standaloneHtml, /var\(--zmd-code-keyword\)/);
+});
+
+test("maps rendered headings to outline anchors by order", () => {
+  const items = [
+    { id: "h1:0", level: 1 as const, text: "One", from: 0 },
+    { id: "h2:12", level: 2 as const, text: "Two", from: 12 },
+  ];
+
+  assert.deepEqual(previewOutlineAnchors(items, 3), ["h1:0", "h2:12", null]);
+  assert.deepEqual(previewOutlineAnchors(items, 1), ["h1:0"]);
 });

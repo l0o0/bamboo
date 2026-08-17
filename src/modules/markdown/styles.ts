@@ -39,6 +39,91 @@ export function toolbarWidthAlignmentCSS(): string {
 }`;
 }
 
+export function outlineSidebarCSS(): string {
+  return `
+.zotero-markdown-outline-sidebar {
+  flex: 0 0 auto;
+  inline-size: clamp(200px, 18vw, 280px);
+  min-inline-size: 0;
+  min-block-size: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--zmd-surface-2);
+  border-inline-end: 1px solid var(--zmd-border);
+}
+
+.zotero-markdown-root.is-outline-collapsed .zotero-markdown-outline-sidebar,
+.zotero-markdown-root.is-outline-auto-hidden .zotero-markdown-outline-sidebar {
+  display: none;
+}
+
+.zotero-markdown-outline-item:hover {
+  background: var(--zmd-surface);
+  color: var(--zmd-text);
+}
+
+.zotero-markdown-outline-list {
+  flex: 1 1 auto;
+  min-block-size: 0;
+  overflow: auto;
+  padding: 6px;
+}
+
+.zotero-markdown-outline-item {
+  appearance: none;
+  box-sizing: border-box;
+  display: block;
+  inline-size: 100%;
+  block-size: 30px;
+  margin: 0;
+  padding-block: 0;
+  padding-inline-end: 8px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--zmd-text-muted);
+  font: inherit;
+  font-size: 12px;
+  line-height: 30px;
+  text-align: start;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+.zotero-markdown-outline-item[aria-level="1"] {
+  color: var(--zmd-text);
+  font-weight: 600;
+}
+
+.zotero-markdown-outline-item.is-active {
+  background: var(--zmd-accent-soft);
+  color: var(--zmd-accent-hover);
+}
+
+.zotero-markdown-outline-item:focus-visible {
+  outline: 2px solid var(--zmd-accent);
+  outline-offset: -2px;
+}
+
+.zotero-markdown-outline-empty {
+  padding: 10px 8px;
+  color: var(--zmd-text-muted);
+  font-size: 12px;
+}
+
+.zotero-markdown-workspace {
+  position: relative;
+  flex: 1 1 auto;
+  min-inline-size: 0;
+  min-block-size: 0;
+  overflow: hidden;
+  background: var(--zmd-surface);
+}`;
+}
+
 export function injectMarkdownStyles(win: Window) {
   const doc = win.document;
   const id = `${addon.data.config.addonRef}-markdown-styles`;
@@ -79,6 +164,8 @@ tab-content.zotero-markdown-tab-content {
   box-sizing: border-box;
   overflow: hidden;
 }
+
+${outlineSidebarCSS()}
 
 /* ========== toolbar ========== */
 ${responsiveToolbarSizingCSS()}
@@ -351,7 +438,7 @@ ${toolbarWidthAlignmentCSS()}
   min-height: 0;
   position: relative;
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   overflow: hidden;
   background: var(--zmd-surface);
 }

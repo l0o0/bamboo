@@ -11,6 +11,7 @@ import {
   iconLink,
   iconMoreHorizontal,
   iconOnlyButtonHtml,
+  iconPanelLeft,
   iconRedo,
   iconSave,
   iconTable,
@@ -23,7 +24,11 @@ import {
   MORE_MENU_SECTIONS,
   type MoreMenuAction,
 } from "./more-menu";
-import { hydratePreviewImages, mountPreviewHtml } from "./preview";
+import {
+  hydratePreviewImages,
+  mountPreviewHtml,
+  scrollPreviewToOutline,
+} from "./preview";
 import {
   buildExportHtml,
   exportBasename,
@@ -50,7 +55,9 @@ import {
   type SessionView,
 } from "./session-registry";
 import { ensureDOMGlobals, getDOMDocument } from "../../utils/dom";
-import type { EditorTheme } from "./editor-protocol";
+import { getString } from "../../utils/locale";
+import type { EditorOutlineItem, EditorTheme } from "./editor-protocol";
+import { mountOutlineSidebar } from "./outline-sidebar";
 
 const AUTOSAVE_MS = 800;
 const TITLE_SYNC_MS = 1000;
@@ -143,6 +150,9 @@ export async function openMarkdownTab(
     itemID: item.id,
     path,
     mode: "live",
+    outlineItems: [],
+    outlineActiveID: null,
+    outlineExpanded: true,
     storageLabel,
     win,
     save: null as unknown as SaveCoordinator,
@@ -302,6 +312,29 @@ function mountEditorUI(
             namespace: "html",
             classList: ["zotero-markdown-toolbar-inner"],
             children: [
+              {
+                tag: "button",
+                namespace: "html",
+                classList: [
+                  "zotero-markdown-btn",
+                  "zotero-markdown-outline-toggle",
+                ],
+                properties: {
+                  type: "button",
+                  innerHTML: iconOnlyButtonHtml(iconPanelLeft()),
+                },
+                attributes: {
+                  "data-action": "outline-toggle",
+                  title: getString("markdown-outline-toggle"),
+                  "aria-label": getString("markdown-outline-toggle"),
+                  "aria-expanded": "true",
+                },
+              },
+              {
+                tag: "div",
+                namespace: "html",
+                classList: ["zotero-markdown-sep"],
+              },
               {
                 tag: "button",
                 namespace: "html",
@@ -582,14 +615,37 @@ function mountEditorUI(
         classList: ["zotero-markdown-body"],
         children: [
           {
-            tag: "div",
+            tag: "nav",
             namespace: "html",
-            classList: ["zotero-markdown-editor-host"],
+            classList: ["zotero-markdown-outline-sidebar"],
+            attributes: {
+              "aria-label": getString("markdown-outline-title"),
+            },
+            children: [
+              {
+                tag: "div",
+                namespace: "html",
+                classList: ["zotero-markdown-outline-list"],
+                attributes: { role: "tree" },
+              },
+            ],
           },
           {
             tag: "div",
             namespace: "html",
-            classList: ["zotero-markdown-preview-host"],
+            classList: ["zotero-markdown-workspace"],
+            children: [
+              {
+                tag: "div",
+                namespace: "html",
+                classList: ["zotero-markdown-editor-host"],
+              },
+              {
+                tag: "div",
+                namespace: "html",
+                classList: ["zotero-markdown-preview-host"],
+              },
+            ],
           },
         ],
       },
@@ -665,6 +721,18 @@ function mountEditorUI(
 
   const view: SessionView = {
     root,
+    outlineSidebarEl: root.querySelector(
+      ".zotero-markdown-outline-sidebar",
+    ) as HTMLElement,
+    outlineListEl: root.querySelector(
+      ".zotero-markdown-outline-list",
+    ) as HTMLElement,
+    outlineToggleEl: root.querySelector(
+      ".zotero-markdown-outline-toggle",
+    ) as HTMLButtonElement,
+    workspaceEl: root.querySelector(
+      ".zotero-markdown-workspace",
+    ) as HTMLElement,
     editorHost: root.querySelector(
       ".zotero-markdown-editor-host",
     ) as HTMLElement,
@@ -677,6 +745,21 @@ function mountEditorUI(
     ) as HTMLElement,
   };
   session.view = view;
+  session.outlineSidebar = mountOutlineSidebar({
+    root,
+    sidebar: view.outlineSidebarEl,
+    list: view.outlineListEl,
+    toolbarToggle: view.outlineToggleEl,
+    emptyLabel: getString("markdown-outline-empty"),
+    getExpanded: () => session.outlineExpanded !== false,
+    onExpandedChange: (expanded) => {
+      setOutlineExpanded(session, expanded);
+    },
+    onNavigate: (outlineItem) => {
+      navigateToOutlineItem(session, outlineItem);
+    },
+  });
+  session.outlineSidebar.update([], null);
   view.previewEl.addEventListener("click", (event) => {
     const anchor = (event.target as Element | null)?.closest?.("a");
     const href = anchor?.getAttribute("href");
@@ -695,6 +778,15 @@ function mountEditorUI(
     readOnly,
     win,
     channel: `${session.tabID}:${session.itemID}`,
+    onOutline: (items, activeID) => {
+      session.outlineItems = [...items];
+      session.outlineActiveID = activeID;
+      session.outlineSidebar?.update(items, activeID);
+    },
+    onOutlineActive: (activeID) => {
+      session.outlineActiveID = activeID;
+      session.outlineSidebar?.setActive(activeID);
+    },
     onChange: (value) => {
       const appliedTitleSync = !!session.applyingTitleSync;
       session.applyingTitleSync = false;
@@ -757,6 +849,22 @@ function mountEditorUI(
   win.requestAnimationFrame(measure);
   win.setTimeout(measure, 50);
   win.setTimeout(measure, 200);
+}
+
+function setOutlineExpanded(session: OpenSession, expanded: boolean) {
+  session.outlineExpanded = expanded;
+  session.outlineSidebar?.setExpanded(expanded);
+  session.win.requestAnimationFrame(() => {
+    session.editor?.view.requestMeasure();
+  });
+}
+
+function navigateToOutlineItem(session: OpenSession, item: EditorOutlineItem) {
+  if (session.mode === "preview" && session.view?.previewEl) {
+    scrollPreviewToOutline(session.view.previewEl, item.id);
+    return;
+  }
+  session.editor?.revealPosition(item.from);
 }
 
 function applyModeVisibility(
@@ -1147,7 +1255,11 @@ async function showReadOnlyPreview(session: OpenSession) {
     "";
   if (!session.view?.previewEl) return;
   try {
-    mountPreviewHtml(session.view.previewEl, source);
+    mountPreviewHtml(
+      session.view.previewEl,
+      source,
+      session.outlineItems || [],
+    );
     void hydrateSessionPreviewImages(session, source);
     setStatus(session, "只读预览");
   } catch (e) {
@@ -1532,6 +1644,7 @@ async function closeSession(tabID: string, opts: { flush?: boolean } = {}) {
     } catch {
       // ignore
     }
+    session.outlineSidebar?.destroy();
     session.editor?.destroy();
     sessionRegistry.unregister(tabID);
   })();

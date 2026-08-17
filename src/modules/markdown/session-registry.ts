@@ -1,4 +1,6 @@
 import type { MarkdownEditorHandle } from "./editor";
+import type { EditorOutlineItem } from "./editor-protocol";
+import type { OutlineSidebarHandle } from "./outline-sidebar";
 import type { SaveCoordinator } from "./save-coordinator";
 
 export type SessionMode = "live" | "source" | "preview";
@@ -7,6 +9,10 @@ export interface SessionView {
   root: HTMLElement;
   editorHost: HTMLElement;
   previewEl: HTMLElement;
+  outlineSidebarEl: HTMLElement;
+  outlineListEl: HTMLElement;
+  outlineToggleEl: HTMLButtonElement;
+  workspaceEl: HTMLElement;
   metaEl: HTMLElement;
   saveStatusEl: HTMLElement;
 }
@@ -21,6 +27,10 @@ export interface OpenSession {
   mode: SessionMode;
   view?: SessionView;
   editor?: MarkdownEditorHandle;
+  outlineItems?: EditorOutlineItem[];
+  outlineActiveID?: string | null;
+  outlineExpanded?: boolean;
+  outlineSidebar?: OutlineSidebarHandle;
   savedAt?: Date;
   autosaveTimer?: number;
   imageRefreshTimer?: number;

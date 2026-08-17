@@ -109,6 +109,10 @@ export const iconMoreHorizontal = () =>
     `<circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/>`,
   );
 
+/** panel-left */
+export const iconPanelLeft = () =>
+  svg(`<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M9 3v18"/>`);
+
 /** Label + icon for mode segment buttons */
 export function modeButtonHtml(icon: string, label: string): string {
   return `<span class="zmd-btn-inner">${icon}<span class="zmd-btn-label">${label}</span></span>`;

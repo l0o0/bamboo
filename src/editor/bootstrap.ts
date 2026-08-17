@@ -48,10 +48,16 @@ import {
   type EditorDocChange,
   type EditorInitPayload,
   type EditorMode,
+  type EditorOutlineItem,
   type ImageAssetMap,
   type EditorTheme,
   type ParentToEditorMessage,
 } from "../modules/markdown/editor-protocol";
+import {
+  activeOutlineID,
+  clampOutlinePosition,
+  extractEditorOutline,
+} from "./outline";
 import { codeSyntaxHighlighting, editorThemeExtension } from "./theme";
 import { resolveCodeMirrorLanguage } from "./code-languages";
 import { imageDebug } from "./image-debug";
@@ -130,6 +136,9 @@ interface EditorRuntime {
   tableContextPosition: number | null;
   activeTableCell: TableCellEditTarget | null;
   tableDragSession: TableDragSession | null;
+  outlineItems: EditorOutlineItem[];
+  outlineTimer: number | null;
+  activeOutlineID: string | null;
 }
 
 const runtime: EditorRuntime = {
@@ -145,6 +154,9 @@ const runtime: EditorRuntime = {
   tableContextPosition: null,
   activeTableCell: null,
   tableDragSession: null,
+  outlineItems: [],
+  outlineTimer: null,
+  activeOutlineID: null,
 };
 
 const editorChannel =
@@ -625,6 +637,8 @@ function forwardImageFile(files: File[], event: Event) {
 function postToParent(message: {
   type:
     | "ready"
+    | "outline"
+    | "outlineActive"
     | "change"
     | "snapshot"
     | "resolveAsset"
@@ -643,6 +657,36 @@ function postToParent(message: {
     },
     "*",
   );
+}
+
+function publishOutline(view: EditorView) {
+  runtime.outlineTimer = null;
+  const items = extractEditorOutline(view.state);
+  const activeID = activeOutlineID(items, view.state.selection.main.head);
+  runtime.outlineItems = items;
+  runtime.activeOutlineID = activeID;
+  postToParent({ type: "outline", payload: { items, activeID } });
+}
+
+function scheduleOutlineUpdate(view: EditorView, immediate = false) {
+  if (runtime.outlineTimer != null) {
+    window.clearTimeout(runtime.outlineTimer);
+  }
+  if (immediate) {
+    publishOutline(view);
+    return;
+  }
+  runtime.outlineTimer = window.setTimeout(() => publishOutline(view), 100);
+}
+
+function publishActiveOutline(view: EditorView) {
+  const activeID = activeOutlineID(
+    runtime.outlineItems,
+    view.state.selection.main.head,
+  );
+  if (activeID === runtime.activeOutlineID) return;
+  runtime.activeOutlineID = activeID;
+  postToParent({ type: "outlineActive", payload: { activeID } });
 }
 
 function guttersForMode(mode: EditorMode): Extension {
@@ -767,7 +811,9 @@ function buildExtensions(init: EditorInitPayload): Extension[] {
           );
         }
       }
+      if (update.selectionSet) publishActiveOutline(update.view);
       if (!update.docChanged) return;
+      scheduleOutlineUpdate(update.view);
       if (
         update.transactions.some((transaction) =>
           transaction.annotation(fromParentAnnotation),
@@ -897,6 +943,10 @@ function createOrResetEditor(init: EditorInitPayload) {
   }
 
   if (runtime.view) {
+    if (runtime.outlineTimer != null) {
+      window.clearTimeout(runtime.outlineTimer);
+      runtime.outlineTimer = null;
+    }
     runtime.removeImageDoubleClickListener?.();
     runtime.removeTableCellListeners?.();
     cancelTableDrag();
@@ -954,6 +1004,7 @@ function createOrResetEditor(init: EditorInitPayload) {
   });
   bindImageDoubleClick(host);
   bindTableCellEditing(host);
+  scheduleOutlineUpdate(runtime.view, true);
 }
 
 function handleParentMessage(data: ParentToEditorMessage) {
@@ -1007,6 +1058,23 @@ function handleParentMessage(data: ParentToEditorMessage) {
     case "prefixLine": {
       if (!runtime.view) return;
       prefixLineInView(runtime.view, data.payload.prefix);
+      break;
+    }
+    case "revealPosition": {
+      if (!runtime.view) return;
+      const position = clampOutlinePosition(
+        data.payload.position,
+        runtime.view.state.doc.length,
+      );
+      if (position == null) return;
+      runtime.view.dispatch({
+        selection: { anchor: position },
+        effects: EditorView.scrollIntoView(position, {
+          y: "start",
+          yMargin: 24,
+        }),
+      });
+      runtime.view.focus();
       break;
     }
     case "requestSnapshot": {
@@ -1098,6 +1166,12 @@ function handleParentMessage(data: ParentToEditorMessage) {
       break;
     }
     case "destroy": {
+      if (runtime.outlineTimer != null) {
+        window.clearTimeout(runtime.outlineTimer);
+        runtime.outlineTimer = null;
+      }
+      runtime.outlineItems = [];
+      runtime.activeOutlineID = null;
       runtime.removeImageDoubleClickListener?.();
       runtime.removeTableCellListeners?.();
       cancelTableDrag();
@@ -1122,6 +1196,7 @@ const PARENT_TO_EDITOR_TYPES = new Set([
   "command",
   "wrapSelection",
   "prefixLine",
+  "revealPosition",
   "focus",
   "requestMeasure",
   "setTheme",

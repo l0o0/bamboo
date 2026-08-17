@@ -17,6 +17,15 @@ export interface EditorStats {
   words: number;
 }
 
+export type EditorHeadingLevel = 1 | 2 | 3 | 4 | 5 | 6;
+
+export interface EditorOutlineItem {
+  id: string;
+  level: EditorHeadingLevel;
+  text: string;
+  from: number;
+}
+
 export type EditorCommand = "undo" | "redo" | "find";
 
 export interface ImageAssetMap {
@@ -81,6 +90,11 @@ export type ParentToEditorMessage = (
       type: "prefixLine";
       payload: { prefix: string };
     }
+  | {
+      source: typeof EDITOR_MESSAGE_SOURCE;
+      type: "revealPosition";
+      payload: { position: number };
+    }
   | { source: typeof EDITOR_MESSAGE_SOURCE; type: "focus" }
   | { source: typeof EDITOR_MESSAGE_SOURCE; type: "requestMeasure" }
   | {
@@ -130,6 +144,16 @@ export type ParentToEditorMessage = (
 /** iframe → parent */
 export type EditorToParentMessage = (
   | { source: typeof EDITOR_MESSAGE_SOURCE; type: "ready" }
+  | {
+      source: typeof EDITOR_MESSAGE_SOURCE;
+      type: "outline";
+      payload: { items: EditorOutlineItem[]; activeID: string | null };
+    }
+  | {
+      source: typeof EDITOR_MESSAGE_SOURCE;
+      type: "outlineActive";
+      payload: { activeID: string | null };
+    }
   | {
       source: typeof EDITOR_MESSAGE_SOURCE;
       type: "change";

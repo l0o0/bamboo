@@ -3,6 +3,9 @@
 /* eslint-disable */
 // @ts-nocheck
 export type FluentMessageId =
+  | 'markdown-outline-empty'
+  | 'markdown-outline-title'
+  | 'markdown-outline-toggle'
   | 'menuitem-create-item-md'
   | 'menuitem-create-md'
   | 'menuitem-create-standalone-md'

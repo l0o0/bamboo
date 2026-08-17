@@ -5,7 +5,7 @@ import {
   stripFrontmatter,
 } from "./frontmatter";
 import { normalizeAssetReference } from "./images/model";
-import type { ImageAssetMap } from "./editor-protocol";
+import type { EditorOutlineItem, ImageAssetMap } from "./editor-protocol";
 import { THEME_TOKENS, themeTokenCss } from "./theme-tokens";
 import { highlightFencedCode } from "./code-highlight";
 
@@ -29,6 +29,16 @@ export interface ReadOnlyDocument {
   title: string;
   bodyHtml: string;
   standaloneHtml: string;
+}
+
+export function previewOutlineAnchors(
+  items: readonly EditorOutlineItem[],
+  headingCount: number,
+): Array<string | null> {
+  return Array.from(
+    { length: headingCount },
+    (_, index) => items[index]?.id ?? null,
+  );
 }
 
 /**
@@ -268,7 +278,11 @@ body { padding: 28px 32px 48px; }
  * Mount a read-only document page. Editing stays in Live/Source;
  * this view is the HTML/PDF export surface.
  */
-export function mountPreviewHtml(host: HTMLElement, source: string): void {
+export function mountPreviewHtml(
+  host: HTMLElement,
+  source: string,
+  outlineItems: readonly EditorOutlineItem[] = [],
+): void {
   const doc = host.ownerDocument || (globalThis as any).document;
   const rendered = buildStandaloneDocument({ source });
   host.replaceChildren();
@@ -318,8 +332,29 @@ export function mountPreviewHtml(host: HTMLElement, source: string): void {
     article.innerHTML = rendered.bodyHtml;
   }
 
+  const headings = Array.from(
+    article.querySelectorAll<HTMLElement>("h1, h2, h3, h4, h5, h6"),
+  );
+  const anchors = previewOutlineAnchors(outlineItems, headings.length);
+  headings.forEach((heading, index) => {
+    const outlineID = anchors[index];
+    if (outlineID) heading.dataset.zmdOutlineId = outlineID;
+  });
+
   page.append(bar, article);
   host.appendChild(page);
+}
+
+export function scrollPreviewToOutline(
+  host: HTMLElement,
+  outlineID: string,
+): boolean {
+  const heading = Array.from(
+    host.querySelectorAll<HTMLElement>("[data-zmd-outline-id]"),
+  ).find((element) => element.dataset.zmdOutlineId === outlineID);
+  if (!heading) return false;
+  heading.scrollIntoView({ block: "start", behavior: "smooth" });
+  return true;
 }
 
 export function hydratePreviewImages(

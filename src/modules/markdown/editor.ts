@@ -10,6 +10,7 @@ import {
   applyDocChanges,
   computeStats,
   type EditorMode,
+  type EditorOutlineItem,
   type ImageAssetMap,
   type EditorStats,
   type EditorTheme,
@@ -43,6 +44,7 @@ export interface MarkdownEditorHandle {
   ) => void;
   wrapSelection: (before: string, after?: string) => void;
   prefixLine: (prefix: string) => void;
+  revealPosition: (position: number) => void;
   /** Push light/dark to the iframe CM theme (also auto-synced from OS/Zotero). */
   setTheme: (theme: EditorTheme) => void;
   /** Switch Live Preview vs full Source mode inside the iframe. */
@@ -82,6 +84,7 @@ type PendingCommand = Extract<
       | "command"
       | "wrapSelection"
       | "prefixLine"
+      | "revealPosition"
       | "focus"
       | "requestMeasure"
       | "setTheme"
@@ -111,6 +114,11 @@ export function createMarkdownEditor(
     doc?: string;
     readOnly?: boolean;
     onChange?: (value: string) => void;
+    onOutline?: (
+      items: readonly EditorOutlineItem[],
+      activeID: string | null,
+    ) => void;
+    onOutlineActive?: (activeID: string | null) => void;
     onSave?: () => void;
     onPasteImage?: (payload: {
       bytes: ArrayBuffer;
@@ -128,6 +136,8 @@ export function createMarkdownEditor(
     doc = "",
     readOnly = false,
     onChange,
+    onOutline,
+    onOutlineActive,
     onSave,
     onPasteImage,
     onResolveAsset,
@@ -273,6 +283,14 @@ export function createMarkdownEditor(
         lastValue = applyDocChanges(lastValue, data.payload.changes);
         lastStats = computeStats(lastValue);
         onChange?.(lastValue);
+        break;
+      }
+      case "outline": {
+        onOutline?.(data.payload.items, data.payload.activeID);
+        break;
+      }
+      case "outlineActive": {
+        onOutlineActive?.(data.payload.activeID);
         break;
       }
       case "snapshot": {
@@ -460,6 +478,13 @@ export function createMarkdownEditor(
         source: EDITOR_MESSAGE_SOURCE,
         type: "prefixLine",
         payload: { prefix },
+      });
+    },
+    revealPosition: (position: number) => {
+      sendOrQueue({
+        source: EDITOR_MESSAGE_SOURCE,
+        type: "revealPosition",
+        payload: { position },
       });
     },
     setTheme: (theme: EditorTheme) => {
