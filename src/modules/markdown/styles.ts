@@ -260,6 +260,176 @@ export function outlineSidebarCSS(): string {
 }`;
 }
 
+export function markdownModalCSS(): string {
+  return `
+.zotero-markdown-modal-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(15, 23, 42, 0.28);
+}
+
+.zotero-markdown-modal-backdrop[hidden] {
+  display: none;
+}
+
+.zotero-markdown-modal {
+  box-sizing: border-box;
+  inline-size: min(460px, 100%);
+  max-block-size: min(640px, 100%);
+  overflow: auto;
+  border: 1px solid var(--zmd-border);
+  border-radius: 10px;
+  background: var(--zmd-surface);
+  color: var(--zmd-text);
+  box-shadow: 0 18px 50px rgba(15, 23, 42, 0.24);
+}
+
+.zotero-markdown-modal-header,
+.zotero-markdown-modal-footer {
+  display: flex;
+  align-items: center;
+}
+
+.zotero-markdown-modal-header {
+  justify-content: space-between;
+  min-block-size: 48px;
+  padding: 0 16px;
+  border-block-end: 1px solid var(--zmd-border);
+}
+
+.zotero-markdown-modal-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 650;
+}
+
+.zotero-markdown-modal-body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px;
+}
+
+.zotero-markdown-modal-info {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr);
+  gap: 10px 14px;
+  margin: 0;
+  font-size: 12px;
+}
+
+.zotero-markdown-modal-info dt {
+  color: var(--zmd-text-muted);
+}
+
+.zotero-markdown-modal-info dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.zotero-markdown-modal-label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: var(--zmd-text-muted);
+  font-size: 12px;
+}
+
+.zotero-markdown-modal-input {
+  box-sizing: border-box;
+  inline-size: 100%;
+  min-block-size: 34px;
+  padding: 6px 9px;
+  border: 1px solid var(--zmd-border-strong);
+  border-radius: 6px;
+  background: var(--zmd-bg);
+  color: var(--zmd-text);
+  font: inherit;
+  font-size: 13px;
+}
+
+.zotero-markdown-modal-input.is-small {
+  inline-size: 76px;
+}
+
+.zotero-markdown-modal-input:focus-visible,
+.zotero-markdown-modal-button:focus-visible,
+.zotero-markdown-modal-check input:focus-visible {
+  outline: 2px solid var(--zmd-accent);
+  outline-offset: 2px;
+}
+
+.zotero-markdown-modal-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.zotero-markdown-modal-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--zmd-text);
+  font-size: 13px;
+}
+
+.zotero-markdown-modal-check input {
+  accent-color: var(--zmd-accent);
+}
+
+.zotero-markdown-modal-footer {
+  justify-content: flex-end;
+  gap: 8px;
+  margin-block-start: 4px;
+}
+
+.zotero-markdown-modal-button {
+  min-block-size: 32px;
+  padding: 0 11px;
+  border: 1px solid var(--zmd-border-strong);
+  border-radius: 6px;
+  background: var(--zmd-surface);
+  color: var(--zmd-text);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.zotero-markdown-modal-button:hover {
+  background: var(--zmd-surface-2);
+}
+
+.zotero-markdown-modal-button.is-primary {
+  border-color: var(--zmd-accent);
+  background: var(--zmd-accent);
+  color: #fff;
+}
+
+.zotero-markdown-modal-button.is-close {
+  min-block-size: 30px;
+  inline-size: 30px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--zmd-text-muted);
+  font-size: 22px;
+  line-height: 1;
+}
+
+.zotero-markdown-modal-error {
+  margin: 0;
+  color: var(--zmd-danger, #c2410c);
+  font-size: 12px;
+}
+`;
+}
+
 export function injectMarkdownStyles(win: Window) {
   const doc = win.document;
   const id = `${addon.data.config.addonRef}-markdown-styles`;
@@ -302,6 +472,8 @@ tab-content.zotero-markdown-tab-content {
 }
 
 ${outlineSidebarCSS()}
+
+${markdownModalCSS()}
 
 /* ========== toolbar ========== */
 ${responsiveToolbarSizingCSS()}

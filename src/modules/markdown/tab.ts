@@ -46,6 +46,14 @@ import {
   resolveImageAssets,
   writeImageAsset,
 } from "./images/service";
+import { parseMarkdownImages } from "./images/model";
+import {
+  applySettings,
+  createMarkdownModalController,
+  normalizeMarkdownFilename,
+  type DocumentModalData,
+  type SettingsModalData,
+} from "./modal";
 import { formatSavedStatus, formatStats } from "./status";
 import { MARKDOWN_TAB_TYPE, resolveMarkdownTabTitle } from "./tabHooks";
 import { SaveCoordinator } from "./save-coordinator";
@@ -761,6 +769,12 @@ function mountEditorUI(
     },
   });
   session.outlineSidebar.update([], null);
+  session.modal = createMarkdownModalController(win.document, {
+    onRename: (filename) => renameSessionAttachment(session, filename),
+    onReveal: () => revealSessionFolder(session),
+    onSettings: (settings) => saveModalSettings(settings),
+    onNativeSettings: () => openNativePreferences(win),
+  });
   view.previewEl.addEventListener("click", (event) => {
     const anchor = (event.target as Element | null)?.closest?.("a");
     const href = anchor?.getAttribute("href");
@@ -979,6 +993,21 @@ function mountMoreMenu(session: OpenSession) {
       close();
       return;
     }
+    if (action === "document-info") {
+      void openDocumentInfoModal(session);
+      close();
+      return;
+    }
+    if (action === "rename") {
+      void openRenameModal(session);
+      close();
+      return;
+    }
+    if (action === "show-in-folder") {
+      void revealSessionFolder(session);
+      close();
+      return;
+    }
     if (action === "import-external-images") {
       void importExternalImagesInSession(session);
       close();
@@ -996,6 +1025,11 @@ function mountMoreMenu(session: OpenSession) {
     }
     if (action === "export-pdf") {
       void exportSessionPdf(session);
+      close();
+      return;
+    }
+    if (action === "settings") {
+      session.modal?.open("settings");
       close();
       return;
     }
@@ -1180,6 +1214,89 @@ function showUnavailableAction(action: MoreMenuAction) {
   const label = labels[action] || "此功能";
   new ztoolkit.ProgressWindow(addon.data.config.addonName)
     .createLine({ text: `${label}功能规划中`, type: "default" })
+    .show();
+}
+
+async function buildDocumentModalData(session: OpenSession): Promise<DocumentModalData> {
+  const item = Zotero.Items.get(session.itemID);
+  const source = session.editor?.getValue() || "";
+  if (!item) throw new Error("Markdown 附件已不存在");
+  let size: number | null = null;
+  try {
+    size = (await IOUtils.stat(session.path)).size ?? null;
+  } catch {
+    size = null;
+  }
+  return {
+    title: String(item.attachmentFilename || item.getDisplayTitle() || "Note.md"),
+    path: session.path,
+    size,
+    imageCount: parseMarkdownImages(source).length,
+    created: item.dateAdded || null,
+    modified: item.dateModified || null,
+    storageLabel: session.storageLabel,
+  };
+}
+
+async function openDocumentInfoModal(session: OpenSession) {
+  try {
+    session.modal?.open("document-info", await buildDocumentModalData(session));
+  } catch (error) {
+    showModalError(error);
+  }
+}
+
+async function openRenameModal(session: OpenSession) {
+  try {
+    session.modal?.open("rename", await buildDocumentModalData(session));
+  } catch (error) {
+    showModalError(error);
+  }
+}
+
+async function renameSessionAttachment(session: OpenSession, filename: string) {
+  const item = Zotero.Items.get(session.itemID);
+  if (!item) throw new Error("Markdown 附件已不存在");
+  const newName = normalizeMarkdownFilename(filename);
+  const result = await item.renameAttachmentFile(newName, false);
+  if (result === false) throw new Error("附件文件不存在");
+  if (result === -1) throw new Error("目标文件已存在");
+  if (result === -2) throw new Error("重命名附件失败");
+  session.path = (await item.getFilePathAsync()) || session.path;
+  ensureTabTitle(session.win, session.tabID, session.itemID);
+}
+
+async function revealSessionFolder(session: OpenSession) {
+  if (typeof Zotero.File?.reveal === "function") {
+    await Zotero.File.reveal(session.path);
+    return;
+  }
+  const parent = PathUtils.parent(session.path);
+  if (!parent) throw new Error("无法定位附件目录");
+  Zotero.launchURL(`file://${encodeURI(parent)}`);
+}
+
+function saveModalSettings(settings: SettingsModalData) {
+  applySettings(settings);
+}
+
+function openNativePreferences(win: _ZoteroTypes.MainWindow) {
+  try {
+    (Zotero.Utilities.Internal as any).openPreferences?.(
+      addon.data.config.addonID,
+      { win },
+    );
+  } catch (error) {
+    ztoolkit.log("Failed to open native preferences", error);
+  }
+}
+
+function showModalError(error: unknown) {
+  new ztoolkit.ProgressWindow(addon.data.config.addonName)
+    .createLine({
+      text: error instanceof Error ? error.message : String(error),
+      type: "fail",
+    })
     .show();
 }
 
@@ -1621,6 +1738,7 @@ async function closeSession(tabID: string, opts: { flush?: boolean } = {}) {
   session.closing = true;
   session.closePromise = (async () => {
     session.closeMoreMenu?.();
+    session.modal?.destroy();
     session.unbindTablePicker?.();
     if (session.autosaveTimer) {
       session.win.clearTimeout(session.autosaveTimer);

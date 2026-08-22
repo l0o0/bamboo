@@ -2,6 +2,7 @@ import type { MarkdownEditorHandle } from "./editor";
 import type { EditorOutlineItem } from "./editor-protocol";
 import type { OutlineSidebarHandle } from "./outline-sidebar";
 import type { SaveCoordinator } from "./save-coordinator";
+import type { MarkdownModalController } from "./modal";
 
 export type SessionMode = "live" | "source" | "preview";
 
@@ -45,6 +46,7 @@ export interface OpenSession {
   closeTablePicker?: () => void;
   unbindTablePicker?: () => void;
   unbindTheme?: () => void;
+  modal?: MarkdownModalController;
 }
 
 export class SessionRegistry {

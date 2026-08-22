@@ -37,7 +37,7 @@ declare namespace IOUtils {
   function getChildren(path: string): Promise<string[]>;
   function stat(
     path: string,
-  ): Promise<{ type?: "directory" | "other" | "regular" }>;
+  ): Promise<{ type?: "directory" | "other" | "regular"; size?: number }>;
 }
 
 declare const IOUtils: typeof IOUtils;
