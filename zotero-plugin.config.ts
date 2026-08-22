@@ -1,6 +1,8 @@
 import { defineConfig } from "zotero-plugin-scaffold";
 import pkg from "./package.json";
 
+const scriptBuildTime = new Date().toISOString();
+
 // Extra options forwarded to bumpp's `versionBump` (not yet typed by the
 // scaffold): bump the README version badges together with package.json so
 // `pnpm release` keeps them in sync automatically.
@@ -39,6 +41,8 @@ export default defineConfig({
         entryPoints: ["src/index.ts"],
         define: {
           __env__: `"${process.env.NODE_ENV}"`,
+          __buildVersion__: JSON.stringify(pkg.version),
+          __buildTime__: JSON.stringify(scriptBuildTime),
         },
         bundle: true,
         target: "firefox115",

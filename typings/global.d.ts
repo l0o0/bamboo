@@ -16,6 +16,8 @@ declare const rootURI: string;
 declare const addon: import("../src/addon").default;
 
 declare const __env__: "production" | "development";
+declare const __buildVersion__: string;
+declare const __buildTime__: string;
 
 /** Firefox / Zotero PathUtils (IOUtils companion). */
 declare namespace PathUtils {

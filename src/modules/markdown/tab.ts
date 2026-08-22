@@ -53,7 +53,7 @@ import {
   type DocumentModalData,
   type SettingsModalData,
 } from "./modal";
-import { saveMarkdownSettings } from "./settings";
+import { markdownSettingsAbout, saveMarkdownSettings } from "./settings";
 import { formatSavedStatus, formatStats } from "./status";
 import { MARKDOWN_TAB_TYPE, resolveMarkdownTabTitle } from "./tabHooks";
 import { SaveCoordinator } from "./save-coordinator";
@@ -776,7 +776,7 @@ function mountEditorUI(
       onReveal: () => revealSessionFolder(session),
       onSettings: (settings) => saveModalSettings(settings),
     },
-    { mount: root },
+    { mount: root, about: markdownSettingsAbout() },
   );
   view.previewEl.addEventListener("click", (event) => {
     const anchor = (event.target as Element | null)?.closest?.("a");

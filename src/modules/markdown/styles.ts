@@ -296,6 +296,16 @@ export function markdownModalCSS(): string {
   box-shadow: 0 18px 50px rgba(15, 23, 42, 0.24);
 }
 
+.zotero-markdown-modal.is-settings {
+  inline-size: min(760px, 100%);
+  block-size: min(620px, 100%);
+  max-block-size: min(680px, 100%);
+  display: grid;
+  grid-template-rows: 52px minmax(0, 1fr);
+  overflow: hidden;
+  border-radius: 8px;
+}
+
 .zotero-markdown-modal-header,
 .zotero-markdown-modal-footer {
   display: flex;
@@ -320,6 +330,254 @@ export function markdownModalCSS(): string {
   flex-direction: column;
   gap: 14px;
   padding: 16px;
+}
+
+.zotero-markdown-modal-body-settings {
+  min-block-size: 0;
+  padding: 0;
+  gap: 0;
+  overflow: hidden;
+}
+
+.zotero-markdown-settings-workspace {
+  display: grid;
+  grid-template-columns: 188px minmax(0, 1fr);
+  min-block-size: 0;
+  block-size: 100%;
+}
+
+.zotero-markdown-settings-navigation {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-inline-size: 0;
+  padding: 18px 12px;
+  border-inline-end: 1px solid var(--zmd-border);
+  background: var(--zmd-surface-2);
+}
+
+.zotero-markdown-settings-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-block-size: 36px;
+  padding: 0 10px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--zmd-text-muted);
+  font: inherit;
+  font-size: 13px;
+  text-align: start;
+  cursor: pointer;
+}
+
+.zotero-markdown-settings-nav-item:hover {
+  background: var(--zmd-bg);
+  color: var(--zmd-text);
+}
+
+.zotero-markdown-settings-nav-item[aria-selected="true"] {
+  border-color: var(--zmd-border);
+  background: var(--zmd-surface);
+  color: var(--zmd-text);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
+  font-weight: 600;
+}
+
+.zotero-markdown-settings-nav-item:focus-visible {
+  outline: 2px solid var(--zmd-accent);
+  outline-offset: 1px;
+}
+
+.zotero-markdown-settings-nav-icon,
+.zotero-markdown-settings-nav-icon .zmd-icon {
+  display: inline-flex;
+  inline-size: 16px;
+  block-size: 16px;
+  flex: 0 0 16px;
+}
+
+.zotero-markdown-settings-main {
+  display: flex;
+  flex-direction: column;
+  min-inline-size: 0;
+  min-block-size: 0;
+  padding: 24px 28px;
+  overflow: hidden;
+}
+
+.zotero-markdown-settings-page {
+  flex: 1 1 auto;
+  min-block-size: 0;
+  overflow: auto;
+}
+
+.zotero-markdown-settings-page-title {
+  margin: 0 0 16px;
+  color: var(--zmd-text);
+  font-size: 15px;
+  font-weight: 650;
+}
+
+.zotero-markdown-settings-page-title:focus {
+  outline: none;
+}
+
+.zotero-markdown-settings-description {
+  margin: -8px 0 14px;
+  color: var(--zmd-text-muted);
+  font-size: 12px;
+}
+
+.zotero-markdown-settings-check-row,
+.zotero-markdown-settings-row,
+.zotero-markdown-settings-shortcut-row {
+  box-sizing: border-box;
+  min-block-size: 52px;
+  border-block-end: 1px solid var(--zmd-border);
+  color: var(--zmd-text);
+  font-size: 13px;
+}
+
+.zotero-markdown-settings-check-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+}
+
+.zotero-markdown-settings-check-row input {
+  accent-color: var(--zmd-accent);
+}
+
+.zotero-markdown-settings-row,
+.zotero-markdown-settings-shortcut-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.zotero-markdown-settings-shortcut-controls {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.zotero-markdown-shortcut-overflow {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: 32px;
+  block-size: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--zmd-text-muted);
+  cursor: pointer;
+}
+
+.zotero-markdown-shortcut-overflow:hover {
+  background: var(--zmd-surface-2);
+  color: var(--zmd-text);
+}
+
+.zotero-markdown-shortcut-overflow-menu {
+  position: absolute;
+  z-index: 2;
+  inset-block-start: calc(100% + 4px);
+  inset-inline-end: 0;
+  display: flex;
+  flex-direction: column;
+  min-inline-size: 112px;
+  padding: 4px;
+  border: 1px solid var(--zmd-border);
+  border-radius: 6px;
+  background: var(--zmd-surface);
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.14);
+}
+
+.zotero-markdown-shortcut-overflow-menu[hidden] {
+  display: none;
+}
+
+.zotero-markdown-shortcut-overflow-menu .zotero-markdown-modal-button {
+  justify-content: flex-start;
+  border: 0;
+  text-align: start;
+}
+
+.zotero-markdown-settings-about {
+  display: grid;
+  grid-template-columns: 88px minmax(0, 1fr);
+  gap: 14px 18px;
+  margin: 0;
+  padding-block: 8px;
+  font-size: 13px;
+}
+
+.zotero-markdown-settings-about dt {
+  color: var(--zmd-text-muted);
+}
+
+.zotero-markdown-settings-about dd {
+  margin: 0;
+  color: var(--zmd-text);
+  overflow-wrap: anywhere;
+}
+
+.zotero-markdown-settings-footer {
+  flex: 0 0 auto;
+  padding-block-start: 18px;
+  border-block-start: 1px solid var(--zmd-border);
+}
+
+.zotero-markdown-settings-footer .zotero-markdown-modal-button.is-primary {
+  min-inline-size: 72px;
+  border-color: var(--zmd-text);
+  background: var(--zmd-text);
+  color: var(--zmd-surface);
+}
+
+@media (max-width: 560px) {
+  .zotero-markdown-modal.is-settings {
+    block-size: min(680px, 100%);
+  }
+
+  .zotero-markdown-settings-workspace {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+
+  .zotero-markdown-settings-navigation {
+    flex-direction: row;
+    padding: 8px;
+    border-inline-end: 0;
+    border-block-end: 1px solid var(--zmd-border);
+    overflow-x: auto;
+  }
+
+  .zotero-markdown-settings-nav-item {
+    flex: 0 0 auto;
+  }
+
+  .zotero-markdown-settings-main {
+    padding: 18px 16px 16px;
+  }
+
+  .zotero-markdown-settings-row,
+  .zotero-markdown-settings-shortcut-row {
+    align-items: flex-start;
+    flex-direction: column;
+    padding-block: 12px;
+  }
+
+  .zotero-markdown-settings-shortcut-controls {
+    inline-size: 100%;
+  }
 }
 
 .zotero-markdown-modal-info {
@@ -363,29 +621,6 @@ export function markdownModalCSS(): string {
 
 .zotero-markdown-modal-input.is-small {
   inline-size: 76px;
-}
-
-.zotero-markdown-modal-inline-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  min-block-size: 34px;
-}
-
-.zotero-markdown-modal-inline-label {
-  color: var(--zmd-text-muted);
-  font-size: 13px;
-}
-
-.zotero-markdown-modal-shortcut-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 8px;
-  min-block-size: 34px;
-  color: var(--zmd-text);
-  font-size: 13px;
 }
 
 .zotero-markdown-modal-shortcut-control {
@@ -443,44 +678,10 @@ export function markdownModalCSS(): string {
   text-align: center;
 }
 
-.zotero-markdown-modal-shortcut-actions {
-  display: inline-flex;
-  align-items: center;
-  grid-column: 2;
-  gap: 4px;
-  white-space: nowrap;
-}
-
-.zotero-markdown-modal-section-title {
-  margin: 2px 0 -4px;
-  color: var(--zmd-text-muted);
-  font-size: 12px;
-  font-weight: 600;
-}
-
 .zotero-markdown-modal-input:focus-visible,
-.zotero-markdown-modal-button:focus-visible,
-.zotero-markdown-modal-check input:focus-visible {
+.zotero-markdown-modal-button:focus-visible {
   outline: 2px solid var(--zmd-accent);
   outline-offset: 2px;
-}
-
-.zotero-markdown-modal-settings {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-
-.zotero-markdown-modal-check {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  color: var(--zmd-text);
-  font-size: 13px;
-}
-
-.zotero-markdown-modal-check input {
-  accent-color: var(--zmd-accent);
 }
 
 .zotero-markdown-modal-footer {

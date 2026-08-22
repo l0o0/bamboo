@@ -44,6 +44,6 @@ export const MORE_MENU_SECTIONS: readonly (readonly MoreMenuItem[])[] = [
     { action: "import-external-images", label: "导入外链图片" },
     { action: "cleanup-images", label: "清理未引用图片" },
     { action: "shortcuts", label: "快捷键" },
-    { action: "settings", label: "设置", submenu: true },
+    { action: "settings", label: "设置" },
   ],
 ];

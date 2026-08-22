@@ -24,4 +24,14 @@ test("binds the preference entry to the shared Markdown settings opener", () => 
   assert.match(source, /openMarkdownSettings/);
   assert.match(source, /bindMarkdownSettingsPreferencePane/);
   assert.match(source, /zotero-markdown-open-settings/);
+  assert.match(source, /markdownSettingsAbout/);
+  assert.match(source, /about:\s*markdownSettingsAbout\(\)/);
+});
+
+test("passes the same about metadata to tab settings", () => {
+  const source = readFileSync(
+    new URL("../src/modules/markdown/tab.ts", import.meta.url),
+    "utf8",
+  );
+  assert.match(source, /about:\s*markdownSettingsAbout\(\)/);
 });

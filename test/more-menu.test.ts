@@ -25,4 +25,12 @@ describe("more menu", () => {
       ["live", "source", "preview"],
     );
   });
+
+  it("opens settings as a direct command without a submenu chevron", () => {
+    const settings = MORE_MENU_SECTIONS.flat().find(
+      (item) => item.action === "settings",
+    );
+    assert.ok(settings);
+    assert.notEqual(settings.submenu, true);
+  });
 });

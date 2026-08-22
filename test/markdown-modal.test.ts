@@ -69,6 +69,18 @@ test("defines a centered accessible modal surface", () => {
   assert.match(css, /\.zotero-markdown-modal-button\.is-primary/);
 });
 
+test("defines a responsive settings workspace without changing compact dialogs", () => {
+  const css = markdownModalCSS();
+  assert.match(css, /\.zotero-markdown-modal\.is-settings/);
+  assert.match(css, /grid-template-columns:\s*188px minmax\(0, 1fr\)/);
+  assert.match(
+    css,
+    /zotero-markdown-settings-nav-item\[aria-selected="true"\]/,
+  );
+  assert.match(css, /zotero-markdown-settings-footer/);
+  assert.match(css, /@media \(max-width:\s*560px\)/);
+});
+
 test("supports a tab-root mount without relying on document.body", () => {
   const source = readFileSync(
     new URL("../src/modules/markdown/modal.ts", import.meta.url),
@@ -81,19 +93,24 @@ test("supports a tab-root mount without relying on document.body", () => {
   assert.match(source, /mount\.appendChild\(backdrop\)/);
 });
 
-test("defines inline font-size and editable shortcut settings", () => {
+test("defines editor and shortcut settings controls", () => {
   const css = markdownModalCSS();
-  assert.match(css, /zotero-markdown-modal-inline-row/);
-  assert.match(css, /zotero-markdown-modal-shortcut-row/);
+  assert.match(css, /zotero-markdown-settings-row/);
+  assert.match(css, /zotero-markdown-settings-shortcut-row/);
   assert.match(css, /zotero-markdown-modal-shortcut-control/);
   const source = readFileSync(
     new URL("../src/modules/markdown/modal.ts", import.meta.url),
     "utf8",
   );
-  assert.match(source, /button\(doc, "编辑", "edit-shortcut"\)/);
-  assert.match(source, /button\(doc, "清除", "clear-shortcut"\)/);
-  assert.match(source, /button\(doc, "恢复默认", "restore-shortcut"\)/);
-  assert.match(source, /"快捷键"/);
+  assert.match(source, /button\(doc, "编辑", "shortcut-edit"\)/);
+  assert.match(source, /zotero-markdown-settings-workspace/);
+  assert.match(source, /zotero-markdown-settings-navigation/);
+  assert.match(source, /aria-selected/);
+  assert.match(source, /SETTINGS_PAGES/);
+  assert.match(source, /"完成"/);
+  assert.match(source, /shortcut-overflow/);
+  assert.doesNotMatch(source, /button\(doc, "清除", "clear-shortcut"\)/);
+  assert.doesNotMatch(source, /button\(doc, "恢复默认", "restore-shortcut"\)/);
   assert.match(source, /shortcutNewStandaloneMd/);
   assert.doesNotMatch(source, /打开 Zotero 设置/);
   assert.doesNotMatch(source, /native-settings/);

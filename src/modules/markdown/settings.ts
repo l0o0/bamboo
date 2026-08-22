@@ -7,6 +7,14 @@ import { injectMarkdownStyles } from "./styles";
 
 let activeSettingsDestroy: (() => void) | null = null;
 
+export function markdownSettingsAbout() {
+  return {
+    name: addon.data.config.addonName,
+    version: __buildVersion__,
+    buildTime: __buildTime__,
+  };
+}
+
 export async function saveMarkdownSettings(
   settings: SettingsModalData,
 ): Promise<void> {
@@ -47,7 +55,7 @@ export function openMarkdownSettings(win?: _ZoteroTypes.MainWindow): void {
         target.setTimeout(destroy, 0);
       },
     },
-    { mount: host },
+    { mount: host, about: markdownSettingsAbout() },
   );
   activeSettingsDestroy = destroy;
   controller.open("settings");
