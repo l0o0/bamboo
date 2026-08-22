@@ -22,6 +22,7 @@ import {
 } from "./modules/markdown/sidebar";
 import { ensureDOMGlobals } from "./utils/dom";
 import { getString, initLocale } from "./utils/locale";
+import { bindMarkdownSettingsPreferencePane } from "./modules/markdown/settings";
 
 async function onStartup() {
   await Promise.all([
@@ -118,8 +119,7 @@ function registerPrefs() {
 async function onPrefsEvent(type: string, data: { [key: string]: any }) {
   switch (type) {
     case "load":
-      // Prefs pane is preference-bound; nothing extra for MVP
-      void data;
+      bindMarkdownSettingsPreferencePane(data.window.document);
       break;
     default:
       break;

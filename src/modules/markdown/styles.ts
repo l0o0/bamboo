@@ -262,6 +262,13 @@ export function outlineSidebarCSS(): string {
 
 export function markdownModalCSS(): string {
   return `
+.zotero-markdown-settings-host {
+  position: fixed !important;
+  inset: 0 !important;
+  z-index: 1000;
+  background: transparent !important;
+}
+
 .zotero-markdown-modal-backdrop {
   position: absolute;
   inset: 0;
@@ -356,6 +363,99 @@ export function markdownModalCSS(): string {
 
 .zotero-markdown-modal-input.is-small {
   inline-size: 76px;
+}
+
+.zotero-markdown-modal-inline-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-block-size: 34px;
+}
+
+.zotero-markdown-modal-inline-label {
+  color: var(--zmd-text-muted);
+  font-size: 13px;
+}
+
+.zotero-markdown-modal-shortcut-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  min-block-size: 34px;
+  color: var(--zmd-text);
+  font-size: 13px;
+}
+
+.zotero-markdown-modal-shortcut-control {
+  min-block-size: 34px;
+  min-inline-size: 126px;
+  padding: 4px 7px;
+  border: 1px solid var(--zmd-border-strong);
+  border-radius: 6px;
+  background: var(--zmd-bg);
+  color: var(--zmd-text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.zotero-markdown-modal-shortcut-control:hover,
+.zotero-markdown-modal-shortcut-control.is-recording {
+  background: var(--zmd-surface-2);
+}
+
+.zotero-markdown-modal-shortcut-control.is-recording {
+  border-color: var(--zmd-accent);
+}
+
+.zotero-markdown-modal-shortcut-control:focus-visible {
+  outline: 2px solid var(--zmd-accent);
+  outline-offset: 2px;
+}
+
+.zotero-markdown-modal-shortcut-control .zotero-markdown-modal-shortcut-value {
+  border: 0;
+  padding: 0;
+  background: transparent;
+}
+
+.zotero-markdown-modal-shortcut-value {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--zmd-text-muted);
+  font: inherit;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.zotero-markdown-modal-shortcut-value kbd {
+  min-inline-size: 20px;
+  padding: 2px 5px;
+  border: 1px solid var(--zmd-border-strong);
+  border-radius: 4px;
+  background: var(--zmd-surface-2);
+  color: var(--zmd-text);
+  font: inherit;
+  font-size: 11px;
+  line-height: 1.2;
+  text-align: center;
+}
+
+.zotero-markdown-modal-shortcut-actions {
+  display: inline-flex;
+  align-items: center;
+  grid-column: 2;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+.zotero-markdown-modal-section-title {
+  margin: 2px 0 -4px;
+  color: var(--zmd-text-muted);
+  font-size: 12px;
+  font-weight: 600;
 }
 
 .zotero-markdown-modal-input:focus-visible,

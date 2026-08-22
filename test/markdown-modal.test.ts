@@ -80,3 +80,22 @@ test("supports a tab-root mount without relying on document.body", () => {
   );
   assert.match(source, /mount\.appendChild\(backdrop\)/);
 });
+
+test("defines inline font-size and editable shortcut settings", () => {
+  const css = markdownModalCSS();
+  assert.match(css, /zotero-markdown-modal-inline-row/);
+  assert.match(css, /zotero-markdown-modal-shortcut-row/);
+  assert.match(css, /zotero-markdown-modal-shortcut-control/);
+  const source = readFileSync(
+    new URL("../src/modules/markdown/modal.ts", import.meta.url),
+    "utf8",
+  );
+  assert.match(source, /button\(doc, "编辑", "edit-shortcut"\)/);
+  assert.match(source, /button\(doc, "清除", "clear-shortcut"\)/);
+  assert.match(source, /button\(doc, "恢复默认", "restore-shortcut"\)/);
+  assert.match(source, /"快捷键"/);
+  assert.match(source, /shortcutNewStandaloneMd/);
+  assert.doesNotMatch(source, /打开 Zotero 设置/);
+  assert.doesNotMatch(source, /native-settings/);
+  assert.match(source, /if \(event\.defaultPrevented\) return/);
+});

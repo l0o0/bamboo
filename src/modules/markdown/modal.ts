@@ -1,4 +1,9 @@
 import { getPref, setPref } from "../../utils/prefs";
+import {
+  DEFAULT_NEW_MARKDOWN_SHORTCUT,
+  shortcutFromKeyboardEvent,
+  shortcutKeycaps,
+} from "./shortcut";
 
 export type ModalKind = "document-info" | "rename" | "settings";
 
@@ -23,7 +28,6 @@ export interface MarkdownModalCallbacks {
   onRename?: (filename: string) => Promise<void> | void;
   onReveal?: () => Promise<void> | void;
   onSettings?: (settings: SettingsModalData) => Promise<void> | void;
-  onNativeSettings?: () => void;
   onClose?: () => void;
 }
 
@@ -156,6 +160,8 @@ export function createMarkdownModalController(
 
   let activeKind: ModalKind | null = null;
   let restoreFocus: HTMLElement | null = null;
+  let pendingShortcut = "";
+  let recordingPrevious = "";
 
   const closeModal = () => {
     if (backdrop.hidden) return;
@@ -240,11 +246,13 @@ export function createMarkdownModalController(
     };
     checkbox("enable", "使用 Markdown 编辑器打开 .md 附件");
     checkbox("frontmatter", "新建笔记时写入 YAML frontmatter");
+    const sizeRow = doc.createElement("div");
+    sizeRow.className = "zotero-markdown-modal-inline-row";
     const sizeLabel = textElement(
       doc,
-      "label",
+      "span",
       "编辑器字号",
-      "zotero-markdown-modal-label",
+      "zotero-markdown-modal-inline-label",
     );
     const size = doc.createElement("input");
     size.type = "number";
@@ -254,27 +262,93 @@ export function createMarkdownModalController(
     size.step = "1";
     size.value = String(settings.fontSize);
     size.className = "zotero-markdown-modal-input is-small";
-    sizeLabel.appendChild(size);
-    form.appendChild(sizeLabel);
-    const shortcutLabel = textElement(
+    size.setAttribute("aria-label", "编辑器字号");
+    sizeRow.append(sizeLabel, size);
+    form.appendChild(sizeRow);
+    const shortcutHeading = textElement(
       doc,
-      "label",
-      "新建独立 Markdown 快捷键",
-      "zotero-markdown-modal-label",
+      "h3",
+      "快捷键",
+      "zotero-markdown-modal-section-title",
     );
+    form.appendChild(shortcutHeading);
+    pendingShortcut = settings.shortcutNewStandaloneMd;
+    recordingPrevious = pendingShortcut;
+    const shortcutRow = doc.createElement("div");
+    shortcutRow.className = "zotero-markdown-modal-shortcut-row";
+    const shortcutLabel = textElement(doc, "span", "新建独立 Markdown 笔记");
     const shortcut = doc.createElement("input");
-    shortcut.type = "text";
+    shortcut.type = "hidden";
     shortcut.name = "shortcutNewStandaloneMd";
-    shortcut.value = settings.shortcutNewStandaloneMd;
-    shortcut.className = "zotero-markdown-modal-input";
-    shortcutLabel.appendChild(shortcut);
-    form.appendChild(shortcutLabel);
+    shortcut.value = pendingShortcut;
+    const shortcutControl = doc.createElement("button");
+    shortcutControl.type = "button";
+    shortcutControl.className = "zotero-markdown-modal-shortcut-control";
+    shortcutControl.setAttribute("aria-label", "编辑快捷键");
+    shortcutControl.dataset.modalAction = "edit-shortcut";
+    const shortcutValue = doc.createElement("span");
+    shortcutValue.className = "zotero-markdown-modal-shortcut-value";
+    const renderShortcut = () => {
+      shortcut.value = pendingShortcut;
+      shortcutValue.replaceChildren();
+      const keycaps = shortcutKeycaps(
+        pendingShortcut,
+        doc.defaultView?.navigator?.platform,
+      );
+      if (!keycaps.length) {
+        shortcutValue.textContent = "未设置";
+        return;
+      }
+      for (const keycap of keycaps) {
+        shortcutValue.appendChild(textElement(doc, "kbd", keycap));
+      }
+    };
+    renderShortcut();
+    const editShortcut = button(doc, "编辑", "edit-shortcut");
+    const clearShortcut = button(doc, "清除", "clear-shortcut");
+    const restoreShortcut = button(doc, "恢复默认", "restore-shortcut");
+    const shortcutActions = doc.createElement("span");
+    shortcutActions.className = "zotero-markdown-modal-shortcut-actions";
+    shortcutActions.append(editShortcut, clearShortcut, restoreShortcut);
+    shortcutControl.appendChild(shortcutValue);
+    shortcutRow.append(
+      shortcutLabel,
+      shortcutControl,
+      shortcutActions,
+      shortcut,
+    );
+    form.appendChild(shortcutRow);
+    shortcutControl.addEventListener("keydown", (event) => {
+      if (!shortcutControl.classList.contains("is-recording")) return;
+      if (event.key === "Escape") {
+        event.preventDefault();
+        pendingShortcut = recordingPrevious;
+        shortcutControl.classList.remove("is-recording");
+        shortcutControl.removeAttribute("aria-live");
+        renderShortcut();
+        return;
+      }
+      if (event.key === "Backspace" || event.key === "Delete") {
+        event.preventDefault();
+        pendingShortcut = "";
+        shortcutControl.classList.remove("is-recording");
+        renderShortcut();
+        return;
+      }
+      const recorded = shortcutFromKeyboardEvent(
+        event,
+        doc.defaultView?.navigator?.platform,
+      );
+      if (!recorded) return;
+      event.preventDefault();
+      pendingShortcut = recorded;
+      shortcutControl.classList.remove("is-recording");
+      shortcutControl.removeAttribute("aria-live");
+      renderShortcut();
+    });
     const footer = doc.createElement("footer");
     footer.className = "zotero-markdown-modal-footer";
-    footer.append(
-      button(doc, "打开 Zotero 设置", "native-settings"),
-      button(doc, "保存", "save-settings", true),
-    );
+    footer.append(button(doc, "保存", "save-settings", true));
     form.appendChild(footer);
     const error = textElement(doc, "p", "", "zotero-markdown-modal-error");
     error.hidden = true;
@@ -306,7 +380,48 @@ export function createMarkdownModalController(
         showActionError,
       );
     }
-    if (action === "native-settings") return callbacks.onNativeSettings?.();
+    if (action === "edit-shortcut") {
+      const control = body.querySelector<HTMLButtonElement>(
+        ".zotero-markdown-modal-shortcut-control",
+      );
+      if (!control) return;
+      recordingPrevious = pendingShortcut;
+      control.classList.add("is-recording");
+      control.setAttribute("aria-live", "polite");
+      control.querySelector(
+        ".zotero-markdown-modal-shortcut-value",
+      )!.textContent = "请按下新的快捷键";
+      control.focus();
+      return;
+    }
+    if (action === "clear-shortcut" || action === "restore-shortcut") {
+      const input = body.querySelector<HTMLInputElement>(
+        'input[name="shortcutNewStandaloneMd"]',
+      );
+      const control = body.querySelector<HTMLButtonElement>(
+        ".zotero-markdown-modal-shortcut-control",
+      );
+      if (!input || !control) return;
+      pendingShortcut =
+        action === "clear-shortcut" ? "" : DEFAULT_NEW_MARKDOWN_SHORTCUT;
+      input.value = pendingShortcut;
+      control.classList.remove("is-recording");
+      const value = control.querySelector<HTMLElement>(
+        ".zotero-markdown-modal-shortcut-value",
+      );
+      if (value) {
+        value.replaceChildren();
+        const keycaps = shortcutKeycaps(
+          pendingShortcut,
+          doc.defaultView?.navigator?.platform,
+        );
+        if (!keycaps.length) value.textContent = "未设置";
+        else
+          for (const keycap of keycaps)
+            value.appendChild(textElement(doc, "kbd", keycap));
+      }
+      return;
+    }
     if (action === "rename") {
       const input = body.querySelector<HTMLInputElement>(
         'input[name="filename"]',
@@ -331,6 +446,7 @@ export function createMarkdownModalController(
     }
   };
   const onKeyDown = (event: KeyboardEvent) => {
+    if (event.defaultPrevented) return;
     if (event.key === "Escape") closeModal();
   };
   backdrop.addEventListener("click", onClick);

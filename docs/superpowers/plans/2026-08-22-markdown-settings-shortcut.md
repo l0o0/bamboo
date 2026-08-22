@@ -25,11 +25,13 @@
 ### Task 1: Shortcut Serialization and Display
 
 **Files:**
+
 - Create: `src/modules/markdown/shortcut.ts`
 - Create: `test/markdown-shortcut.test.ts`
 - Modify: `package.json`
 
 **Interfaces:**
+
 - Produces: `DEFAULT_NEW_MARKDOWN_SHORTCUT: string`
 - Produces: `shortcutKeycaps(raw: string, platform?: string): string[]`
 - Produces: `shortcutFromKeyboardEvent(event: Pick<KeyboardEvent, ...>, platform?: string): string | null`
@@ -65,11 +67,13 @@ git commit -m "feat(markdown): add shortcut recording model"
 ### Task 2: Keycap Recorder in the Custom Modal
 
 **Files:**
+
 - Modify: `src/modules/markdown/modal.ts`
 - Modify: `src/modules/markdown/styles.ts`
 - Modify: `test/markdown-modal.test.ts`
 
 **Interfaces:**
+
 - Consumes: `DEFAULT_NEW_MARKDOWN_SHORTCUT`, `shortcutKeycaps`, `shortcutFromKeyboardEvent`
 - Produces: `SettingsModalData.shortcutNewStandaloneMd` with the pending recorded value
 
@@ -107,6 +111,7 @@ git commit -m "feat(markdown): add shortcut recorder settings"
 ### Task 3: Shared Settings Opener and Preference Entry
 
 **Files:**
+
 - Create: `src/modules/markdown/settings.ts`
 - Modify: `src/modules/markdown/tab.ts`
 - Modify: `src/hooks.ts`
@@ -117,6 +122,7 @@ git commit -m "feat(markdown): add shortcut recorder settings"
 - Modify: `package.json`
 
 **Interfaces:**
+
 - Produces: `openMarkdownSettings(win?: _ZoteroTypes.MainWindow): void`
 - Produces: `bindMarkdownSettingsPreferencePane(doc: Document): () => void`
 - Consumes: existing modal controller and `applySettings`
@@ -155,10 +161,12 @@ git commit -m "feat(markdown): unify settings entry points"
 ### Task 4: Shortcut Binding and Full Verification
 
 **Files:**
+
 - Modify: `src/modules/markdown/menu.ts`
 - Modify: `test/markdown-shortcut.test.ts`
 
 **Interfaces:**
+
 - Consumes: `DEFAULT_NEW_MARKDOWN_SHORTCUT`
 - Behavior: empty preference values register a callback that never matches; non-empty values rebind immediately after Save
 

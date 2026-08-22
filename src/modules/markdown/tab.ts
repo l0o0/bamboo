@@ -48,12 +48,12 @@ import {
 } from "./images/service";
 import { parseMarkdownImages } from "./images/model";
 import {
-  applySettings,
   createMarkdownModalController,
   normalizeMarkdownFilename,
   type DocumentModalData,
   type SettingsModalData,
 } from "./modal";
+import { saveMarkdownSettings } from "./settings";
 import { formatSavedStatus, formatStats } from "./status";
 import { MARKDOWN_TAB_TYPE, resolveMarkdownTabTitle } from "./tabHooks";
 import { SaveCoordinator } from "./save-coordinator";
@@ -775,7 +775,6 @@ function mountEditorUI(
       onRename: (filename) => renameSessionAttachment(session, filename),
       onReveal: () => revealSessionFolder(session),
       onSettings: (settings) => saveModalSettings(settings),
-      onNativeSettings: () => openNativePreferences(win),
     },
     { mount: root },
   );
@@ -1282,18 +1281,7 @@ async function revealSessionFolder(session: OpenSession) {
 }
 
 function saveModalSettings(settings: SettingsModalData) {
-  applySettings(settings);
-}
-
-function openNativePreferences(win: _ZoteroTypes.MainWindow) {
-  try {
-    (Zotero.Utilities.Internal as any).openPreferences?.(
-      addon.data.config.addonID,
-      { win },
-    );
-  } catch (error) {
-    ztoolkit.log("Failed to open native preferences", error);
-  }
+  return saveMarkdownSettings(settings);
 }
 
 function showModalError(error: unknown) {

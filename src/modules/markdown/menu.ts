@@ -3,6 +3,7 @@ import { getPref } from "../../utils/prefs";
 import { createMarkdownAttachment, createMarkdownForSelection } from "./create";
 import { isMarkdownAttachment } from "./detect";
 import { openMarkdownAttachment } from "./open";
+import { resolveConfiguredShortcut } from "./shortcut";
 
 const registeredMenuIDs: string[] = [];
 const itemMenuCleanups = new Map<Window, () => void>();
@@ -164,7 +165,7 @@ export function unregisterShortcuts() {
  * unregisters the previous callback (KeyboardManager is per-instance).
  */
 export function registerShortcuts() {
-  const raw = getPref("shortcutNewStandaloneMd") || "accel,shift,M";
+  const raw = resolveConfiguredShortcut(getPref("shortcutNewStandaloneMd"));
 
   if (shortcutCallback) {
     ztoolkit.Keyboard.unregister(shortcutCallback);
@@ -173,7 +174,7 @@ export function registerShortcuts() {
 
   shortcutCallback = (ev, options) => {
     if (options.type !== "keyup" || !options.keyboard) return;
-    if (!options.keyboard.equals(raw)) return;
+    if (!raw || !options.keyboard.equals(raw)) return;
 
     const target = ev.target as Element | null;
     if (
