@@ -769,12 +769,16 @@ function mountEditorUI(
     },
   });
   session.outlineSidebar.update([], null);
-  session.modal = createMarkdownModalController(win.document, {
-    onRename: (filename) => renameSessionAttachment(session, filename),
-    onReveal: () => revealSessionFolder(session),
-    onSettings: (settings) => saveModalSettings(settings),
-    onNativeSettings: () => openNativePreferences(win),
-  });
+  session.modal = createMarkdownModalController(
+    win.document,
+    {
+      onRename: (filename) => renameSessionAttachment(session, filename),
+      onReveal: () => revealSessionFolder(session),
+      onSettings: (settings) => saveModalSettings(settings),
+      onNativeSettings: () => openNativePreferences(win),
+    },
+    { mount: root },
+  );
   view.previewEl.addEventListener("click", (event) => {
     const anchor = (event.target as Element | null)?.closest?.("a");
     const href = anchor?.getAttribute("href");

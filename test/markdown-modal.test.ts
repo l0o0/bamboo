@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import {
   formatModalBytes,
@@ -66,4 +67,16 @@ test("defines a centered accessible modal surface", () => {
   assert.match(css, /align-items:\s*center/);
   assert.match(css, /justify-content:\s*center/);
   assert.match(css, /\.zotero-markdown-modal-button\.is-primary/);
+});
+
+test("supports a tab-root mount without relying on document.body", () => {
+  const source = readFileSync(
+    new URL("../src/modules/markdown/modal.ts", import.meta.url),
+    "utf8",
+  );
+  assert.match(
+    source,
+    /options\.mount \|\| doc\.body \|\| doc\.documentElement/,
+  );
+  assert.match(source, /mount\.appendChild\(backdrop\)/);
 });

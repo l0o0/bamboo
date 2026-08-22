@@ -27,6 +27,10 @@ export interface MarkdownModalCallbacks {
   onClose?: () => void;
 }
 
+export interface MarkdownModalOptions {
+  mount?: HTMLElement;
+}
+
 export interface MarkdownModalController {
   open: (
     kind: ModalKind,
@@ -120,6 +124,7 @@ function button(doc: Document, label: string, action: string, primary = false) {
 export function createMarkdownModalController(
   doc: Document,
   callbacks: MarkdownModalCallbacks = {},
+  options: MarkdownModalOptions = {},
 ): MarkdownModalController {
   const backdrop = doc.createElement("div");
   backdrop.className = "zotero-markdown-modal-backdrop";
@@ -143,7 +148,11 @@ export function createMarkdownModalController(
   body.className = "zotero-markdown-modal-body";
   dialog.append(header, body);
   backdrop.appendChild(dialog);
-  doc.body.appendChild(backdrop);
+  const mount = options.mount || doc.body || doc.documentElement;
+  if (!mount) {
+    throw new Error("Markdown modal mount is not available");
+  }
+  mount.appendChild(backdrop);
 
   let activeKind: ModalKind | null = null;
   let restoreFocus: HTMLElement | null = null;
