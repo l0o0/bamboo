@@ -1,6 +1,6 @@
 import { getPref } from "../../utils/prefs";
 import { resolveMarkdownCollectionID } from "./create-target";
-import { defaultMarkdownFilename } from "./detect";
+import { defaultMarkdownFilename, markdownDocumentTitle } from "./detect";
 import { buildNoteWithFrontmatter } from "./frontmatter";
 import { openMarkdownAttachment } from "./open";
 
@@ -45,16 +45,17 @@ export async function createMarkdownAttachment(
     ? parent.getField("title") || parent.getDisplayTitle()
     : "Note";
   const filename = defaultMarkdownFilename(String(titleBase));
+  const documentTitle = markdownDocumentTitle(filename);
 
   const useFrontmatter = getPref("frontmatter") !== false;
   const content =
     initialContent ??
     (useFrontmatter
       ? buildNoteWithFrontmatter({
-          title: String(titleBase),
+          title: documentTitle,
           parent: parent || null,
         })
-      : buildPlainContent(String(titleBase), parent));
+      : buildPlainContent(documentTitle, parent));
 
   const tmpDir = Zotero.getTempDirectory().path;
   const tmpPath = PathUtils.join(
@@ -101,6 +102,10 @@ export async function createMarkdownAttachment(
 
     if (attachment.attachmentContentType !== "text/markdown") {
       attachment.attachmentContentType = "text/markdown";
+      await attachment.saveTx({ skipSelect: true });
+    }
+    if (attachment.getField("title") !== filename) {
+      attachment.setField("title", filename);
       await attachment.saveTx({ skipSelect: true });
     }
 

@@ -1,4 +1,5 @@
 import { extractFirstHeadingTitle } from "./frontmatter";
+import { markdownAttachmentTitle } from "./detect";
 import { cleanupUnusedImageAssets } from "./images/service";
 
 /**
@@ -49,7 +50,7 @@ export async function persistMarkdownContent(
     const headingTitle = extractFirstHeadingTitle(value);
     if (headingTitle && item.getField("title") !== headingTitle) {
       titleChanged = true;
-      item.setField("title", headingTitle);
+      item.setField("title", markdownAttachmentTitle(headingTitle));
       await item.saveTx({ skipSelect: true });
     }
   }

@@ -54,6 +54,15 @@ export function buildTimestampedMarkdownFilename(
   return `${base || "Note"}-${timestamp}.md`;
 }
 
+export function markdownDocumentTitle(filename: string): string {
+  return filename.replace(/\.md$/i, "") || "Note";
+}
+
+export function markdownAttachmentTitle(documentTitle: string): string {
+  const title = documentTitle.trim() || "Note";
+  return /\.md$/i.test(title) ? title : `${title}.md`;
+}
+
 function pad2(value: number): string {
   return String(value).padStart(2, "0");
 }

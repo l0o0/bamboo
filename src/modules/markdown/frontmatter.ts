@@ -145,7 +145,7 @@ export function buildNoteWithFrontmatter(options: {
 }): string {
   const { title, parent, includeBodyTitle = true } = options;
   const data = parent
-    ? frontmatterFromItem(parent)
+    ? { ...frontmatterFromItem(parent), title }
     : frontmatterForPersonalNote(title);
 
   const yaml = serializeFrontmatter(data);

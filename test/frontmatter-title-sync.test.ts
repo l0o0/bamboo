@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  buildNoteWithFrontmatter,
   extractFirstHeadingTitle,
   frontmatterTitleChange,
   syncFrontmatterTitle,
@@ -33,4 +34,22 @@ test("returns a minimal frontmatter-only editor change", () => {
   const source = "---\ntitle: Old\ntype: note\n---\n\n# New";
   const change = frontmatterTitleChange(source, "New");
   assert.deepEqual(change, { from: 11, to: 14, insert: "New" });
+});
+
+test("uses the generated document title in literature frontmatter and H1", () => {
+  const parent = {
+    getField: (field: string) =>
+      field === "title" ? "Source title" : field === "date" ? "2026" : "",
+    getCreators: () => [],
+    itemType: "journalArticle",
+    key: "ABC123",
+    libraryID: 1,
+  } as unknown as Zotero.Item;
+  const source = buildNoteWithFrontmatter({
+    title: "Source-title-2026-08-13-14-35",
+    parent,
+  });
+  assert.match(source, /title: Source-title-2026-08-13-14-35/);
+  assert.match(source, /# Source-title-2026-08-13-14-35/);
+  assert.doesNotMatch(source, /title: Source title/);
 });
