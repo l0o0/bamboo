@@ -59,7 +59,8 @@ export function normalizeMarkdownFilename(value: string): string {
 export function formatModalBytes(size: number | null): string {
   if (size === null || !Number.isFinite(size) || size < 0) return "—";
   if (size < 1024) return `${Math.round(size)} B`;
-  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1).replace(/\.0$/, "")} KB`;
+  if (size < 1024 * 1024)
+    return `${(size / 1024).toFixed(1).replace(/\.0$/, "")} KB`;
   if (size < 1024 * 1024 * 1024) {
     return `${(size / (1024 * 1024)).toFixed(1).replace(/\.0$/, "")} MB`;
   }
@@ -95,7 +96,12 @@ export function prefsFromSettings(settings: SettingsModalData) {
   return settingsFromPrefs(settings);
 }
 
-function textElement(doc: Document, tag: string, text: string, className?: string) {
+function textElement(
+  doc: Document,
+  tag: string,
+  text: string,
+  className?: string,
+) {
   const element = doc.createElement(tag);
   element.textContent = text;
   if (className) element.className = className;
@@ -175,7 +181,12 @@ export function createMarkdownModalController(
   };
 
   const renderRename = (data: DocumentModalData) => {
-    const label = textElement(doc, "label", "文件名", "zotero-markdown-modal-label");
+    const label = textElement(
+      doc,
+      "label",
+      "文件名",
+      "zotero-markdown-modal-label",
+    );
     const input = doc.createElement("input");
     input.type = "text";
     input.name = "filename";
@@ -188,7 +199,10 @@ export function createMarkdownModalController(
     body.appendChild(error);
     const footer = doc.createElement("footer");
     footer.className = "zotero-markdown-modal-footer";
-    footer.append(button(doc, "取消", "close"), button(doc, "重命名", "rename", true));
+    footer.append(
+      button(doc, "取消", "close"),
+      button(doc, "重命名", "rename", true),
+    );
     body.appendChild(footer);
     input.focus();
     input.select();
@@ -200,7 +214,8 @@ export function createMarkdownModalController(
       frontmatter: payload.frontmatter ?? Boolean(getPref("frontmatter")),
       fontSize: payload.fontSize ?? (Number(getPref("fontSize")) || 14),
       shortcutNewStandaloneMd:
-        payload.shortcutNewStandaloneMd ?? String(getPref("shortcutNewStandaloneMd") || ""),
+        payload.shortcutNewStandaloneMd ??
+        String(getPref("shortcutNewStandaloneMd") || ""),
     });
     const form = doc.createElement("form");
     form.className = "zotero-markdown-modal-settings";
@@ -216,7 +231,12 @@ export function createMarkdownModalController(
     };
     checkbox("enable", "使用 Markdown 编辑器打开 .md 附件");
     checkbox("frontmatter", "新建笔记时写入 YAML frontmatter");
-    const sizeLabel = textElement(doc, "label", "编辑器字号", "zotero-markdown-modal-label");
+    const sizeLabel = textElement(
+      doc,
+      "label",
+      "编辑器字号",
+      "zotero-markdown-modal-label",
+    );
     const size = doc.createElement("input");
     size.type = "number";
     size.name = "fontSize";
@@ -227,7 +247,12 @@ export function createMarkdownModalController(
     size.className = "zotero-markdown-modal-input is-small";
     sizeLabel.appendChild(size);
     form.appendChild(sizeLabel);
-    const shortcutLabel = textElement(doc, "label", "新建独立 Markdown 快捷键", "zotero-markdown-modal-label");
+    const shortcutLabel = textElement(
+      doc,
+      "label",
+      "新建独立 Markdown 快捷键",
+      "zotero-markdown-modal-label",
+    );
     const shortcut = doc.createElement("input");
     shortcut.type = "text";
     shortcut.name = "shortcutNewStandaloneMd";
@@ -237,34 +262,63 @@ export function createMarkdownModalController(
     form.appendChild(shortcutLabel);
     const footer = doc.createElement("footer");
     footer.className = "zotero-markdown-modal-footer";
-    footer.append(button(doc, "打开 Zotero 设置", "native-settings"), button(doc, "保存", "save-settings", true));
+    footer.append(
+      button(doc, "打开 Zotero 设置", "native-settings"),
+      button(doc, "保存", "save-settings", true),
+    );
     form.appendChild(footer);
+    const error = textElement(doc, "p", "", "zotero-markdown-modal-error");
+    error.hidden = true;
+    form.appendChild(error);
     form.addEventListener("submit", (event) => event.preventDefault());
     body.appendChild(form);
+  };
+
+  const showActionError = (error: unknown) => {
+    const element = body.querySelector<HTMLElement>(
+      ".zotero-markdown-modal-error",
+    );
+    if (!element) return;
+    element.textContent =
+      error instanceof Error ? error.message : String(error);
+    element.hidden = false;
   };
 
   const onClick = (event: MouseEvent) => {
     const target = event.target as HTMLElement | null;
     if (target === backdrop) return closeModal();
-    const action = target?.closest?.("[data-modal-action]")?.getAttribute("data-modal-action");
+    const action = target
+      ?.closest?.("[data-modal-action]")
+      ?.getAttribute("data-modal-action");
     if (!action) return;
     if (action === "close") return closeModal();
-    if (action === "reveal") return void callbacks.onReveal?.();
+    if (action === "reveal") {
+      return void Promise.resolve(callbacks.onReveal?.()).catch(
+        showActionError,
+      );
+    }
     if (action === "native-settings") return callbacks.onNativeSettings?.();
     if (action === "rename") {
-      const input = body.querySelector<HTMLInputElement>('input[name="filename"]');
+      const input = body.querySelector<HTMLInputElement>(
+        'input[name="filename"]',
+      );
       const filename = normalizeMarkdownFilename(input?.value || "");
-      return void Promise.resolve(callbacks.onRename?.(filename)).then(closeModal);
+      return void Promise.resolve(callbacks.onRename?.(filename))
+        .then(closeModal)
+        .catch(showActionError);
     }
     if (action === "save-settings") {
-      const get = (name: string) => body.querySelector<HTMLInputElement>(`[name="${name}"]`);
+      const get = (name: string) =>
+        body.querySelector<HTMLInputElement>(`[name="${name}"]`);
       const settings = prefsFromSettings({
         enable: !!get("enable")?.checked,
         frontmatter: !!get("frontmatter")?.checked,
         fontSize: Number(get("fontSize")?.value) || 14,
         shortcutNewStandaloneMd: get("shortcutNewStandaloneMd")?.value || "",
       });
-      return void Promise.resolve(callbacks.onSettings?.(settings)).then(closeModal);
+      return void Promise.resolve(callbacks.onSettings?.(settings))
+        .then(closeModal)
+        .catch(showActionError);
     }
   };
   const onKeyDown = (event: KeyboardEvent) => {
@@ -279,7 +333,8 @@ export function createMarkdownModalController(
       restoreFocus = doc.activeElement as HTMLElement | null;
       title.textContent = modalTitle(kind);
       body.replaceChildren();
-      if (kind === "document-info") renderDocumentInfo(payload as DocumentModalData);
+      if (kind === "document-info")
+        renderDocumentInfo(payload as DocumentModalData);
       else if (kind === "rename") renderRename(payload as DocumentModalData);
       else renderSettings(payload as Partial<SettingsModalData>);
       backdrop.hidden = false;

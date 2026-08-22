@@ -27,6 +27,8 @@ Zotero is excellent for collecting and organizing research. In the AI era, **pla
 - **New Markdown…** from the item context menu (stored attachment by default)
 - Supports **stored** and **linked** attachments
 - Preference to enable/disable intercepting open
+- Kebab menu with document info, safe renaming, folder reveal, and plugin settings
+- Import remote Markdown images into the note's local `assets/` directory for offline use
 
 ### Planned
 
@@ -60,6 +62,12 @@ pnpm run build
 3. Click **Preview** to render; **Edit** to return to source.
 4. Double-click any `.md` attachment later to reopen the editor.
 5. Or right-click a `.md` attachment → **Open with Markdown Editor**.
+
+Use the tab's kebab menu for document metadata, renaming, opening the containing
+folder, and Markdown-specific settings. **Import external images** downloads
+`http(s)` image references into the attachment's `assets/` directory and
+rewrites the Markdown links to local paths, so the document remains usable
+offline.
 
 Drag existing `.md` files into Zotero (or attach linked files) — double-click still opens them here.
 

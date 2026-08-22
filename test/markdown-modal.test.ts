@@ -11,8 +11,14 @@ import {
 import { markdownModalCSS } from "../src/modules/markdown/styles.ts";
 
 test("normalizes Markdown filenames without losing the extension", () => {
-  assert.equal(normalizeMarkdownFilename("  Meeting notes  "), "Meeting-notes.md");
-  assert.equal(normalizeMarkdownFilename("Meeting notes.md"), "Meeting-notes.md");
+  assert.equal(
+    normalizeMarkdownFilename("  Meeting notes  "),
+    "Meeting-notes.md",
+  );
+  assert.equal(
+    normalizeMarkdownFilename("Meeting notes.md"),
+    "Meeting-notes.md",
+  );
   assert.equal(normalizeMarkdownFilename("报告.md"), "报告.md");
 });
 
@@ -20,7 +26,10 @@ test("formats document metadata values for the modal", () => {
   assert.equal(formatModalBytes(0), "0 B");
   assert.equal(formatModalBytes(1536), "1.5 KB");
   assert.equal(formatModalBytes(null), "—");
-  assert.equal(formatModalDate("2026-08-22T10:00:00.000Z", "en-US"), "8/22/2026");
+  assert.equal(
+    formatModalDate("2026-08-22T10:00:00.000Z", "en-US"),
+    "8/22/2026",
+  );
   assert.equal(formatModalDate(null, "en-US"), "—");
 });
 

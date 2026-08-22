@@ -1217,18 +1217,19 @@ function showUnavailableAction(action: MoreMenuAction) {
     .show();
 }
 
-async function buildDocumentModalData(session: OpenSession): Promise<DocumentModalData> {
+async function buildDocumentModalData(
+  session: OpenSession,
+): Promise<DocumentModalData> {
   const item = Zotero.Items.get(session.itemID);
   const source = session.editor?.getValue() || "";
   if (!item) throw new Error("Markdown 附件已不存在");
-  let size: number | null = null;
-  try {
-    size = (await IOUtils.stat(session.path)).size ?? null;
-  } catch {
-    size = null;
-  }
+  const size = await IOUtils.stat(session.path)
+    .then((info) => info.size ?? null)
+    .catch(() => null);
   return {
-    title: String(item.attachmentFilename || item.getDisplayTitle() || "Note.md"),
+    title: String(
+      item.attachmentFilename || item.getDisplayTitle() || "Note.md",
+    ),
     path: session.path,
     size,
     imageCount: parseMarkdownImages(source).length,
