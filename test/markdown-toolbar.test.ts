@@ -80,7 +80,7 @@ describe("toolbar insert templates", () => {
   it("switches the toolbar icon and target with the current editor mode", () => {
     const live = modeToggleState("live");
     assert.equal(live.target, "source");
-    assert.match(live.icon, /m18 16 4-4-4-4/);
+    assert.match(live.icon, /M15 2H6a2 2 0 0 0-2 2v16/);
     assert.match(live.label, /Source Code/);
 
     const source = modeToggleState("source");
