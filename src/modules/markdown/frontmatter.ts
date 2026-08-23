@@ -1,5 +1,5 @@
 /**
- * YAML frontmatter helpers for Zotero Markdown notes.
+ * YAML frontmatter helpers for Bamboo notes.
  * Lightweight: no full YAML engine — serialize known fields, parse simple keys.
  */
 

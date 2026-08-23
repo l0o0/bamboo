@@ -2,7 +2,7 @@
 const MD_EXTENSIONS = new Set(["md", "markdown", "mdown", "mkd", "mkdn"]);
 
 /**
- * Whether an item is a file attachment that should open in Zotero Markdown.
+ * Whether an item is a file attachment that should open in Bamboo.
  */
 export function isMarkdownAttachment(
   item: Zotero.Item | false | undefined,

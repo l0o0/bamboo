@@ -1,10 +1,10 @@
-# Zotero Markdown
+# Bamboo 竹子
 
 [![Zotero compatibility](https://img.shields.io/badge/Zotero-9%2F10-green?style=flat-square&logo=zotero&logoColor=CC2936)](https://www.zotero.org)
 [![version](https://img.shields.io/badge/version-0.1.4-blue?style=flat-square)](https://github.com/l0o0/zotero-markdown/releases)
 [![license](https://img.shields.io/badge/license-AGPL--3.0-orange?style=flat-square)](./LICENSE)
 
-**Native Markdown for Zotero.** Treat `.md` files as first-class attachments — open, edit, preview, and create them inside Zotero.
+**Bamboo 竹子 brings native Markdown to Zotero.** Treat `.md` files as first-class attachments — open, edit, preview, and create them inside Zotero.
 
 [English](README.md) | [简体中文](doc/README-zhCN.md)
 
@@ -14,7 +14,7 @@
 
 Zotero is excellent for collecting and organizing research. In the AI era, **plain Markdown files** are the common currency of knowledge tools (Obsidian, LLMs, static sites, git).
 
-[Better Notes](https://github.com/windingwind/zotero-better-notes) greatly improves Zotero's built-in **Notes**, but those notes are still Zotero notes — not native `.md` files on disk. **Zotero Markdown** fills that gap: it complements Better Notes without touching Notes, and its Markdown files are drop-in plain text for Obsidian and AI workflows.
+[Better Notes](https://github.com/windingwind/zotero-better-notes) greatly improves Zotero's built-in **Notes**, but those notes are still Zotero notes — not native `.md` files on disk. **Bamboo 竹子** fills that gap: it complements Better Notes without touching Notes, and its Markdown files are drop-in plain text for Obsidian and AI workflows.
 
 ---
 
@@ -49,7 +49,7 @@ Download the latest `.xpi` from [Releases](https://github.com/l0o0/zotero-markdo
 ```bash
 pnpm install
 pnpm run build
-# XPI: .scaffold/build/zotero-markdown.xpi
+# XPI: .scaffold/build/bamboo-竹子.xpi
 ```
 
 ---
@@ -110,7 +110,7 @@ China mainland users: project `.npmrc` already uses [npmmirror](https://npmmirro
 
 ## Configuration
 
-**Edit → Settings → Zotero Markdown**
+**Edit → Settings → Bamboo 竹子**
 
 - **Enable Markdown editor for .md attachments** — when off, Zotero opens `.md` with the system handler again
 
@@ -118,7 +118,7 @@ China mainland users: project `.npmrc` already uses [npmmirror](https://npmmirro
 
 ## API for other plugins
 
-Zotero Markdown exposes an in-process API at `Zotero.ZoteroMarkdown.api.markdown`
+For compatibility, Bamboo 竹子 exposes its in-process API at `Zotero.ZoteroMarkdown.api.markdown`
 for other plugins / MCP bridges to create and edit `.md` documents inside Zotero.
 All methods are async, JSON-friendly, and reject with `MarkdownApiError`
 (`error.code` is stable).
@@ -166,7 +166,7 @@ Notes:
   changes — pass `force: true` to overwrite.
 - `rename` renames the underlying file; for linked attachments this renames
   the file on disk.
-- API version: `Zotero.ZoteroMarkdown.api.version` (currently `2`).
+- API version: `Zotero.ZoteroMarkdown.api.version` (currently `2`). The `ZoteroMarkdown` namespace remains stable for existing integrations.
 
 ---
 

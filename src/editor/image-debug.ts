@@ -18,7 +18,7 @@ export function imageDebug(
   details: Record<string, unknown> = {},
 ) {
   if (!imageDebugEnabled()) return;
-  console.info("[Zotero Markdown][ImageDebug]", event, details);
+  console.info("[Bamboo][ImageDebug]", event, details);
   window.parent?.postMessage(
     {
       source: EDITOR_MESSAGE_SOURCE,

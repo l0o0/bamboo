@@ -1,7 +1,7 @@
-startup-begin = Zotero Markdown is loading
-startup-finish = Zotero Markdown is ready
+startup-begin = Bamboo 竹子 is loading
+startup-finish = Bamboo 竹子 is ready
 menuitem-create-md = New Markdown…
 menuitem-create-standalone-md = New Standalone Markdown…
 menuitem-create-item-md = New Item Markdown…
 menuitem-open-md = Open with Markdown Editor
-prefs-title = Zotero Markdown
+prefs-title = Bamboo 竹子

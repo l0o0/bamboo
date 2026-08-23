@@ -1,7 +1,8 @@
 /**
- * Public in-process API for Zotero Markdown.
+ * Public in-process API for Bamboo.
  *
- * Exposed to other plugins / MCP bridges as `Zotero.ZoteroMarkdown.api.markdown`.
+ * Exposed to other plugins / MCP bridges as the legacy-compatible
+ * `Zotero.ZoteroMarkdown.api.markdown` namespace.
  * All methods are async, JSON-friendly, and throw `MarkdownApiError` with a
  * stable `code` on failure.
  *

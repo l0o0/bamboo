@@ -1,10 +1,10 @@
-# Zotero Markdown
+# Bamboo 竹子
 
 [![Zotero compatibility](https://img.shields.io/badge/Zotero-9%2F10-green?style=flat-square&logo=zotero&logoColor=CC2936)](https://www.zotero.org)
 [![version](https://img.shields.io/badge/version-0.1.4-blue?style=flat-square)](https://github.com/l0o0/zotero-markdown/releases)
 [![license](https://img.shields.io/badge/license-AGPL--3.0-orange?style=flat-square)](../LICENSE)
 
-**让 Zotero 原生支持 Markdown。** 把 `.md` 文件当作一等公民附件——在 Zotero 内打开、编辑、预览、创建。
+**Bamboo 竹子让 Zotero 原生支持 Markdown。** 把 `.md` 文件当作一等公民附件——在 Zotero 内打开、编辑、预览、创建。
 
 [English](../README.md) | [简体中文](README-zhCN.md)
 
@@ -14,7 +14,7 @@
 
 Zotero 擅长文献收集与组织。在 AI 时代，**纯 Markdown 文件**才是知识工具之间的通用货币（Obsidian、大模型、静态站点、Git）。
 
-[Better Notes](https://github.com/windingwind/zotero-better-notes) 大幅增强了 Zotero 自带的 **Note**，但那仍然是 Zotero 笔记，不是磁盘上的原生 `.md` 文件。**Zotero Markdown** 补上这块短板：与 Better Notes **互补**、不触碰 Note，让 Markdown 文件成为 Obsidian 与 AI 工作流里直接可用的纯文本。
+[Better Notes](https://github.com/windingwind/zotero-better-notes) 大幅增强了 Zotero 自带的 **Note**，但那仍然是 Zotero 笔记，不是磁盘上的原生 `.md` 文件。**Bamboo 竹子**补上这块短板：与 Better Notes **互补**、不触碰 Note，让 Markdown 文件成为 Obsidian 与 AI 工作流里直接可用的纯文本。
 
 ---
 
@@ -49,7 +49,7 @@ Zotero 擅长文献收集与组织。在 AI 时代，**纯 Markdown 文件**才�
 ```bash
 pnpm install
 pnpm run build
-# 产物：.scaffold/build/zotero-markdown.xpi
+# 产物：.scaffold/build/bamboo-竹子.xpi
 ```
 
 ---
@@ -108,7 +108,7 @@ pnpm start          # 构建并启动 Zotero，支持热重载
 
 ## 设置
 
-**编辑 → 设置 → Zotero Markdown**
+**编辑 → 设置 → Bamboo 竹子**
 
 - **使用 Markdown 编辑器打开 .md 附件** — 关闭后，`.md` 恢复为系统默认程序打开
 
@@ -116,7 +116,7 @@ pnpm start          # 构建并启动 Zotero，支持热重载
 
 ## 供其他插件调用的 API
 
-Zotero Markdown 在 `Zotero.ZoteroMarkdown.api.markdown` 暴露进程内 API，供其他插件 / MCP 桥接层在 Zotero 内创建与编辑 `.md` 文档。所有方法均为异步、JSON 友好，失败时抛出 `MarkdownApiError`（`error.code` 稳定不变）。
+Bamboo 竹子在 `Zotero.ZoteroMarkdown.api.markdown` 暴露进程内 API，供其他插件 / MCP 桥接层在 Zotero 内创建与编辑 `.md` 文档。为兼容已有集成，`ZoteroMarkdown` 命名空间保持不变。所有方法均为异步、JSON 友好，失败时抛出 `MarkdownApiError`（`error.code` 稳定不变）。
 
 ```js
 const md = Zotero.ZoteroMarkdown.api.markdown;

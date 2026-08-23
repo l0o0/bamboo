@@ -1544,7 +1544,7 @@ async function refreshImageAssets(session: OpenSession) {
   const item = Zotero.Items.get(session.itemID);
   if (!item || !session.editor) {
     Zotero.debug(
-      `[Zotero Markdown][ImageDebug] asset-refresh-skipped ${JSON.stringify({
+      `[Bamboo][ImageDebug] asset-refresh-skipped ${JSON.stringify({
         hasItem: !!item,
         hasEditor: !!session.editor,
         mode: session.mode,
@@ -1553,7 +1553,7 @@ async function refreshImageAssets(session: OpenSession) {
     return;
   }
   Zotero.debug(
-    `[Zotero Markdown][ImageDebug] asset-refresh-start ${JSON.stringify({
+    `[Bamboo][ImageDebug] asset-refresh-start ${JSON.stringify({
       mode: session.mode,
       itemID: session.itemID,
     })}`,
@@ -1561,7 +1561,7 @@ async function refreshImageAssets(session: OpenSession) {
   try {
     const assets = await resolveImageAssets(item, session.editor.getValue());
     if (sessionRegistry.get(session.tabID) !== session) {
-      Zotero.debug("[Zotero Markdown][ImageDebug] asset-refresh-stale-session");
+      Zotero.debug("[Bamboo][ImageDebug] asset-refresh-stale-session");
       return;
     }
     const summary = Object.fromEntries(
@@ -1571,7 +1571,7 @@ async function refreshImageAssets(session: OpenSession) {
       ]),
     );
     Zotero.debug(
-      `[Zotero Markdown][ImageDebug] asset-refresh-complete ${JSON.stringify({
+      `[Bamboo][ImageDebug] asset-refresh-complete ${JSON.stringify({
         mode: session.mode,
         assets: summary,
       })}`,
@@ -1581,9 +1581,7 @@ async function refreshImageAssets(session: OpenSession) {
       hydratePreviewImages(session.view.previewEl, assets);
     }
   } catch (error) {
-    Zotero.debug(
-      `[Zotero Markdown][ImageDebug] asset-refresh-error ${String(error)}`,
-    );
+    Zotero.debug(`[Bamboo][ImageDebug] asset-refresh-error ${String(error)}`);
     throw error;
   }
 }

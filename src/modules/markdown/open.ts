@@ -18,7 +18,7 @@ export async function openMarkdownAttachment(
 
 /**
  * Intercept Zotero.FileHandlers.open so double-click / view attachment
- * on .md files opens Zotero Markdown instead of the system handler.
+ * on .md files opens Bamboo instead of the system handler.
  */
 export function registerFileOpenInterceptor() {
   if (fileHandlerPatch) return;

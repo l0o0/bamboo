@@ -1,5 +1,5 @@
 ---
-name: Zotero Markdown
+name: Bamboo 竹子
 description: A focused Markdown editor that feels native to Zotero and readable at writing speed.
 colors:
   canvas: "#fbfbfc"
@@ -53,13 +53,13 @@ components:
     size: "{spacing.control}"
 ---
 
-# Design System: Zotero Markdown
+# Design System: Bamboo 竹子
 
 ## Overview
 
 **Creative North Star: "The Quiet Research Desk"**
 
-Zotero Markdown is a compact, native-feeling writing surface for researchers working inside Zotero. Its interface should recede while the document remains legible, using a restrained neutral palette, thin structural borders, and one consistent icon vocabulary.
+Bamboo 竹子 is a compact, native-feeling writing surface for researchers working inside Zotero. Its interface should recede while the document remains legible, using a restrained neutral palette, thin structural borders, and one consistent icon vocabulary.
 
 The editor is document-first, not an IDE or a dashboard. Live Preview uses a centered reading column; the toolbar and status bar align to the same horizontal rhythm. The UI should feel deliberate and calm, never like a collection of floating controls.
 

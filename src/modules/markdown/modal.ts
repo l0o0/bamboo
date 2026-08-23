@@ -440,7 +440,7 @@ export function createMarkdownModalController(
     const renderAbout = () => {
       const heading = renderHeading("关于");
       const about = options.about || {
-        name: "Zotero Markdown",
+        name: "Bamboo 竹子",
         version: "—",
         buildTime: "—",
       };

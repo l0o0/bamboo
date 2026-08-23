@@ -342,7 +342,7 @@ export function createMarkdownEditor(
         break;
       }
       case "imageDebug": {
-        const message = `[Zotero Markdown][ImageDebug] ${data.payload.event}`;
+        const message = `[Bamboo][ImageDebug] ${data.payload.event}`;
         try {
           Zotero.debug(
             `${message} ${JSON.stringify(data.payload.details || {})}`,

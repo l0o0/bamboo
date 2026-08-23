@@ -1,7 +1,7 @@
-startup-begin = Zotero Markdown 加载中
-startup-finish = Zotero Markdown 已就绪
+startup-begin = Bamboo 竹子加载中
+startup-finish = Bamboo 竹子已就绪
 menuitem-create-md = 新建 Markdown…
 menuitem-create-standalone-md = 新建独立 Markdown…
 menuitem-create-item-md = 新建条目 Markdown…
 menuitem-open-md = 用 Markdown 编辑器打开
-prefs-title = Zotero Markdown
+prefs-title = Bamboo 竹子
