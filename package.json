@@ -1,7 +1,7 @@
 {
   "name": "zotero-markdown",
   "type": "module",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "Native Markdown attachment support for Zotero — open, edit, and create .md files as first-class citizens.",
   "config": {
     "addonName": "Zotero Markdown",
