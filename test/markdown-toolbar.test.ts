@@ -1,10 +1,12 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import {
   imageInsertTemplate,
   tableInsertTemplate,
 } from "../src/modules/markdown/insert-template.ts";
 import { iconH3 } from "../src/modules/markdown/icons.ts";
+import { modeToggleState } from "../src/modules/markdown/tab.ts";
 import {
   responsiveToolbarSizingCSS,
   toolbarWidthAlignmentCSS,
@@ -73,5 +75,31 @@ describe("toolbar insert templates", () => {
     assert.match(css, /padding: 4px 30px 4px 34px/);
     assert.match(css, /width: 100%/);
     assert.match(css, /max-width: 60rem/);
+  });
+
+  it("switches the toolbar icon and target with the current editor mode", () => {
+    const live = modeToggleState("live");
+    assert.equal(live.target, "source");
+    assert.match(live.icon, /m18 16 4-4-4-4/);
+    assert.match(live.label, /Source Code/);
+
+    const source = modeToggleState("source");
+    assert.equal(source.target, "live");
+    assert.match(source.icon, /M12 20h9/);
+    assert.match(source.label, /Live/);
+
+    const preview = modeToggleState("preview");
+    assert.equal(preview.target, "live");
+  });
+
+  it("declares a mode toggle before the more menu", () => {
+    const source = readFileSync(
+      new URL("../src/modules/markdown/tab.ts", import.meta.url),
+      "utf8",
+    );
+    assert.match(source, /zotero-markdown-mode-toggle/);
+    assert.match(source, /data-action.*mode-toggle/);
+    assert.match(source, /aria-pressed/);
+    assert.match(source, /updateModeToggle\(session\)/);
   });
 });

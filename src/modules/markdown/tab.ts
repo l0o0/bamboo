@@ -7,6 +7,7 @@ import {
   iconH3,
   iconItalic,
   iconImage,
+  iconLive,
   iconList,
   iconLink,
   iconMoreHorizontal,
@@ -14,6 +15,7 @@ import {
   iconPanelLeft,
   iconRedo,
   iconSave,
+  iconSource,
   iconTable,
   iconTask,
   iconUndo,
@@ -70,6 +72,21 @@ import { mountOutlineSidebar } from "./outline-sidebar";
 
 const AUTOSAVE_MS = 800;
 const TITLE_SYNC_MS = 1000;
+
+export function modeToggleState(mode: "live" | "source" | "preview") {
+  if (mode === "source" || mode === "preview") {
+    return {
+      target: "live" as const,
+      icon: iconLive(),
+      label: "切换到 Live 模式",
+    };
+  }
+  return {
+    target: "source" as const,
+    icon: iconSource(),
+    label: "切换到 Source Code 模式",
+  };
+}
 
 export function getSessionByTabID(tabID: string) {
   return sessionRegistry.get(tabID);
@@ -597,6 +614,24 @@ function mountEditorUI(
               {
                 tag: "button",
                 namespace: "html",
+                classList: [
+                  "zotero-markdown-btn",
+                  "zotero-markdown-mode-toggle",
+                ],
+                properties: {
+                  type: "button",
+                  innerHTML: iconOnlyButtonHtml(iconSource()),
+                },
+                attributes: {
+                  "data-action": "mode-toggle",
+                  title: "切换到 Source Code 模式",
+                  "aria-label": "切换到 Source Code 模式",
+                  "aria-pressed": "false",
+                },
+              },
+              {
+                tag: "button",
+                namespace: "html",
                 classList: ["zotero-markdown-btn", "zotero-markdown-more"],
                 properties: {
                   type: "button",
@@ -723,6 +758,9 @@ function mountEditorUI(
       toggleTablePicker(session);
     } else if (action === "image") {
       void chooseAndInsertImage(session);
+    } else if (action === "mode-toggle") {
+      const toggle = modeToggleState(session.mode);
+      setMode(session, toggle.target);
     } else if (action === "more") {
       toggleMoreMenu(session);
     }
@@ -1338,6 +1376,18 @@ async function cleanupImagesInSession(session: OpenSession) {
   }
 }
 
+function updateModeToggle(session: OpenSession) {
+  const button = session.view?.root?.querySelector<HTMLButtonElement>(
+    ".zotero-markdown-mode-toggle",
+  );
+  if (!button) return;
+  const state = modeToggleState(session.mode);
+  button.innerHTML = iconOnlyButtonHtml(state.icon);
+  button.title = state.label;
+  button.setAttribute("aria-label", state.label);
+  button.setAttribute("aria-pressed", String(session.mode === "source"));
+}
+
 function setMode(session: OpenSession, mode: "live" | "source" | "preview") {
   if (mode === "preview") {
     void showReadOnlyPreview(session);
@@ -1345,6 +1395,7 @@ function setMode(session: OpenSession, mode: "live" | "source" | "preview") {
   }
   session.mode = mode;
   applyModeVisibility(session, mode);
+  updateModeToggle(session);
   session.editor?.setMode(mode);
   if (mode === "live") {
     void refreshImageAssets(session);
@@ -1360,6 +1411,7 @@ function setMode(session: OpenSession, mode: "live" | "source" | "preview") {
 async function showReadOnlyPreview(session: OpenSession) {
   session.mode = "preview";
   applyModeVisibility(session, "preview");
+  updateModeToggle(session);
   const source =
     (await session.editor?.requestSnapshot()) ??
     session.editor?.getValue() ??
