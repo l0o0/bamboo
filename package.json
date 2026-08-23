@@ -35,7 +35,7 @@
     "update-deps": "pnpm update --save"
   },
   "dependencies": {
-    "@codemirror/commands": "^6.10.4",
+    "@codemirror/commands": "^6.11.0",
     "@codemirror/lang-cpp": "^6.0.3",
     "@codemirror/lang-css": "^6.3.1",
     "@codemirror/lang-go": "^6.0.1",
@@ -52,7 +52,7 @@
     "@codemirror/legacy-modes": "^6.5.3",
     "@codemirror/search": "^6.7.1",
     "@codemirror/state": "^6.7.1",
-    "@codemirror/view": "^6.43.8",
+    "@codemirror/view": "^6.43.9",
     "@lezer/highlight": "^1.2.3",
     "@lezer/markdown": "^1.7.2",
     "highlight.js": "^11.12.0",
@@ -61,9 +61,9 @@
   },
   "devDependencies": {
     "@types/chai": "^5.2.3",
-    "@types/markdown-it": "^14.1.2",
+    "@types/markdown-it": "^14.2.0",
     "@types/mocha": "^10.0.10",
-    "@types/node": "^26.1.2",
+    "@types/node": "^26.2.0",
     "@zotero-plugin/eslint-config": "^0.6.10",
     "chai": "^6.2.1",
     "eslint": "^10.8.0",
