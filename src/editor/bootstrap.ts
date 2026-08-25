@@ -392,7 +392,7 @@ function applyTableSelectionDelete(): boolean {
   const view = runtime.view;
   const selection = runtime.tableSelection;
   if (!view || !selection) return false;
-  if (view.state.readOnly) return true;
+  if (view.state.readOnly) return false;
   const plan = planTableSelectionOperation(
     view.state,
     selection,
@@ -1474,7 +1474,10 @@ function handleParentMessage(data: ParentToEditorMessage) {
     case "setReadOnly": {
       if (!runtime.view) return;
       const readOnly = !!data.payload.readOnly;
-      if (readOnly) runtime.activeTableCell = null;
+      if (readOnly) {
+        setTableSelection(null);
+        runtime.activeTableCell = null;
+      }
       runtime.view.dispatch({
         effects: [
           readOnlyCompartment.reconfigure(EditorState.readOnly.of(readOnly)),
