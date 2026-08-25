@@ -32,6 +32,7 @@ import {
   sameTableCellIdentity,
   type TableAlignment,
 } from "../table";
+import { selectionContainsCell, type TableSelection } from "../table-selection";
 import {
   remapActiveCell,
   TABLE_CELL_ACTIVATE_EVENT,
@@ -50,6 +51,7 @@ import {
 export const setLiveImageAssets = StateEffect.define<ImageAssetMap>();
 export const setLiveTableCellEdit =
   StateEffect.define<TableCellEditTarget | null>();
+export const setLiveTableSelection = StateEffect.define<TableSelection>();
 
 function asDocLines(state: EditorState): DocLines {
   return {
@@ -205,6 +207,7 @@ class TableCellWidget extends WidgetType {
     readonly to: number,
     readonly editing: boolean,
     readonly caretOffset: number,
+    readonly selected: boolean,
     readonly readOnly: boolean,
   ) {
     super();
@@ -232,6 +235,7 @@ class TableCellWidget extends WidgetType {
       this.to === other.to &&
       this.editing === other.editing &&
       this.caretOffset === other.caretOffset &&
+      this.selected === other.selected &&
       this.readOnly === other.readOnly
     );
   }
@@ -285,6 +289,7 @@ class TableCellWidget extends WidgetType {
     cell.className = `zmd-lp-table-cell zmd-lp-table-align-${this.alignment || "default"}`;
     if (this.header) cell.classList.add("zmd-lp-table-header-cell");
     if (this.lastColumn) cell.classList.add("zmd-lp-table-last-cell");
+    if (this.selected) cell.classList.add("zmd-lp-table-cell-selected");
     cell.style.gridColumn = String(this.columnIndex + 1);
     cell.dataset.zmdTableFrom = String(this.tableFrom);
     cell.dataset.zmdTableCellFrom = String(this.from);
@@ -463,6 +468,8 @@ class TableEdgeActionsWidget extends WidgetType {
     readonly columnCount: number,
     readonly firstRow: boolean,
     readonly finalRow: boolean,
+    readonly selectedRow: boolean,
+    readonly selectedColumn: number | null,
     readonly readOnly: boolean,
   ) {
     super();
@@ -478,6 +485,8 @@ class TableEdgeActionsWidget extends WidgetType {
       this.columnCount === other.columnCount &&
       this.firstRow === other.firstRow &&
       this.finalRow === other.finalRow &&
+      this.selectedRow === other.selectedRow &&
+      this.selectedColumn === other.selectedColumn &&
       this.readOnly === other.readOnly
     );
   }
@@ -553,6 +562,13 @@ class TableEdgeActionsWidget extends WidgetType {
       }
       button.title = label;
       button.setAttribute("aria-label", label);
+      const selected =
+        (kind === "row" && this.selectedRow) ||
+        (kind === "column" && this.selectedColumn === columnIndex);
+      if (selected) {
+        button.classList.add("is-selected");
+        button.setAttribute("aria-pressed", "true");
+      }
       button.addEventListener("pointerdown", (event) => {
         event.preventDefault();
       });
@@ -765,6 +781,7 @@ function buildDecorations(
   composing: boolean,
   imageAssets: ImageAssetMap,
   activeCell: TableCellEditTarget | null,
+  tableSelection: TableSelection,
 ): DecorationSet {
   const ranges: ReturnType<Decoration["range"]>[] = [];
   const doc = asDocLines(state);
@@ -826,6 +843,12 @@ function buildDecorations(
             activeCell.rowIndex === (cell.rowIndex ?? 0) &&
             activeCell.columnIndex === (cell.columnIndex ?? 0),
           activeCell?.caretOffset || 0,
+          tableSelection?.tableFrom === tableRow.tableFrom &&
+            selectionContainsCell(
+              tableSelection,
+              cell.rowIndex ?? 0,
+              cell.columnIndex ?? 0,
+            ),
           state.readOnly,
         );
         const widgetRange = cellWidgetRange(cell);
@@ -858,6 +881,13 @@ function buildDecorations(
             tableRow.columnCount,
             (tableRow.cells[0]?.rowIndex ?? 0) === 0,
             tableRow.isLast,
+            tableSelection?.tableFrom === tableRow.tableFrom &&
+              tableSelection?.kind === "row" &&
+              tableSelection.rowIndex === (tableRow.cells[0]?.rowIndex ?? 0),
+            tableSelection?.tableFrom === tableRow.tableFrom &&
+              tableSelection?.kind === "column"
+              ? tableSelection.columnIndex
+              : null,
             state.readOnly,
           ),
           side: 1,
@@ -972,6 +1002,7 @@ class LivePreviewPlugin {
   composing = false;
   imageAssets: ImageAssetMap = {};
   activeCell: TableCellEditTarget | null = null;
+  tableSelection: TableSelection = null;
 
   constructor(view: EditorView) {
     this.decorations = buildDecorations(
@@ -979,6 +1010,7 @@ class LivePreviewPlugin {
       this.composing,
       this.imageAssets,
       this.activeCell,
+      this.tableSelection,
     );
   }
 
@@ -1000,6 +1032,9 @@ class LivePreviewPlugin {
           this.activeCell = effect.value;
           effectChanged = true;
           activeEffectSet = true;
+        } else if (effect.is(setLiveTableSelection)) {
+          this.tableSelection = effect.value;
+          effectChanged = true;
         }
       }
     }
@@ -1024,6 +1059,7 @@ class LivePreviewPlugin {
         this.composing,
         this.imageAssets,
         this.activeCell,
+        this.tableSelection,
       );
     }
   }
@@ -1036,6 +1072,7 @@ class LivePreviewPlugin {
       this.composing,
       this.imageAssets,
       this.activeCell,
+      this.tableSelection,
     );
     view.dispatch({});
   }
