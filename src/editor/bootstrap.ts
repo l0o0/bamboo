@@ -296,25 +296,6 @@ function selectionContainsTableTarget(
     : selection.columnIndex === target.columnIndex;
 }
 
-function supportsClipboardCommand(command: "copy" | "cut" | "paste"): boolean {
-  try {
-    return document.queryCommandSupported?.(command) !== false;
-  } catch {
-    return true;
-  }
-}
-
-function runTableClipboardCommand(command: "copy" | "cut" | "paste") {
-  const view = runtime.view;
-  if (!view) return false;
-  view.focus();
-  try {
-    return document.execCommand(command);
-  } catch {
-    return false;
-  }
-}
-
 function syncEditingCellDom(value: string, caretOffset: number) {
   const cell = runtime.view?.dom.querySelector(
     ".zmd-lp-table-cell-editing",
@@ -1084,11 +1065,6 @@ function buildExtensions(
             tableTarget,
             editorView.state.readOnly,
             contextSelection,
-            {
-              copy: supportsClipboardCommand("copy"),
-              cut: supportsClipboardCommand("cut"),
-              paste: supportsClipboardCommand("paste"),
-            },
           ),
         );
         event.preventDefault();
@@ -1294,10 +1270,6 @@ function createOrResetEditor(init: EditorInitPayload) {
     parent: runtime.view.dom,
     onAction: (action: TableMenuAction) => {
       if (!runtime.view) return;
-      if (action === "copy" || action === "cut" || action === "paste") {
-        runTableClipboardCommand(action);
-        return;
-      }
       if (isTableSelectionAction(action)) {
         dispatchTableSelectionAction(runtime.tableContextSelection, action);
         return;

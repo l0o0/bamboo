@@ -16,31 +16,25 @@ describe("toolbar insert templates", () => {
   it("inserts a default 3 by 3 editable table template", () => {
     assert.deepEqual(tableInsertTemplate(), {
       text:
-        "| Column 1 | Column 2 | Column 3 |\n" +
+        "|  |  |  |\n" +
         "| --- | --- | --- |\n" +
-        "| Cell | Cell | Cell |\n" +
-        "| Cell | Cell | Cell |",
+        "|  |  |  |\n" +
+        "|  |  |  |",
       selectionFrom: 2,
-      selectionTo: 10,
+      selectionTo: 2,
     });
   });
 
   it("builds a table from picker dimensions", () => {
     assert.deepEqual(tableInsertTemplate(2, 4), {
-      text:
-        "| Column 1 | Column 2 | Column 3 | Column 4 |\n" +
-        "| --- | --- | --- | --- |\n" +
-        "| Cell | Cell | Cell | Cell |",
+      text: "|  |  |  |  |\n" + "| --- | --- | --- | --- |\n" + "|  |  |  |  |",
       selectionFrom: 2,
-      selectionTo: 10,
+      selectionTo: 2,
     });
   });
 
   it("allows a one-row table without adding an unwanted body row", () => {
-    assert.equal(
-      tableInsertTemplate(1, 2).text,
-      "| Column 1 | Column 2 |\n| --- | --- |",
-    );
+    assert.equal(tableInsertTemplate(1, 2).text, "|  |  |\n| --- | --- |");
   });
 
   it("selects image alt text after insertion", () => {

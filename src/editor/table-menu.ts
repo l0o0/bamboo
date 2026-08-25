@@ -2,8 +2,7 @@ import type { TableAction, TableTarget } from "./table-operations";
 import type { TableSelectionAction } from "./table-operations";
 import type { TableSelection } from "./table-selection";
 
-export type TableMenuAction =
-  TableAction | TableSelectionAction | "copy" | "cut" | "paste";
+export type TableMenuAction = TableAction | TableSelectionAction;
 
 export interface TableMenuItem {
   action: TableMenuAction;
@@ -27,7 +26,6 @@ const columnItems: Array<[TableAction, string]> = [
   ["insert-column-right", "在右侧插入列"],
   ["move-column-left", "向左移动列"],
   ["move-column-right", "向右移动列"],
-  ["delete-column", "删除列"],
 ];
 
 const alignmentItems: Array<[TableAction, string]> = [
@@ -48,7 +46,6 @@ export function tableMenuItems(
   target: TableTarget,
   readOnly: boolean,
   selection: TableSelection = null,
-  clipboard: Partial<Record<"copy" | "cut" | "paste", boolean>> = {},
 ): TableMenuGroups {
   const header = target.rowIndex === 0;
   const firstBody = target.rowIndex === 1;
@@ -80,16 +77,6 @@ export function tableMenuItems(
         : {}),
     }));
   if (selection) {
-    const clipboardItems: TableMenuItem[] = [
-      ["copy", "复制"],
-      ["cut", "剪切"],
-      ["paste", "粘贴"],
-    ].map(([action, label]) => ({
-      action: action as "copy" | "cut" | "paste",
-      label,
-      disabled:
-        readOnly || clipboard[action as "copy" | "cut" | "paste"] === false,
-    }));
     const selectionItems: TableMenuItem[] = [
       ["clear-selection", "清空选中的单元格"],
       [
@@ -109,7 +96,6 @@ export function tableMenuItems(
     const selectedGroups =
       selection.kind === "row"
         ? [
-            clipboardItems,
             map(rowItems),
             selectionItems,
             [
@@ -140,7 +126,6 @@ export function tableMenuItems(
             ],
           ]
         : [
-            clipboardItems,
             map(columnItems),
             selectionItems,
             [

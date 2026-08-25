@@ -19,18 +19,15 @@ export function tableInsertTemplate(rows = 3, columns = 3): InsertTemplate {
     TABLE_PICKER_LIMIT,
     Math.max(1, Math.trunc(columns) || 3),
   );
-  const header = Array.from(
-    { length: safeColumns },
-    (_, index) => `Column ${index + 1}`,
-  );
+  const header = Array.from({ length: safeColumns }, () => "");
   const delimiter = Array.from({ length: safeColumns }, () => "---");
   const body = Array.from({ length: safeRows - 1 }, () =>
-    tableRow(Array.from({ length: safeColumns }, () => "Cell")),
+    tableRow(Array.from({ length: safeColumns }, () => "")),
   );
   return {
     text: [tableRow(header), tableRow(delimiter), ...body].join("\n"),
     selectionFrom: 2,
-    selectionTo: 10,
+    selectionTo: 2,
   };
 }
 

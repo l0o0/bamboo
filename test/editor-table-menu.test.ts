@@ -34,7 +34,6 @@ describe("table context menu state", () => {
           "insert-column-right",
           "move-column-left",
           "move-column-right",
-          "delete-column",
         ],
         ["align-default", "align-left", "align-center", "align-right"],
       ],
@@ -53,7 +52,7 @@ describe("table context menu state", () => {
     assert.equal(state["delete-row"], true);
   });
 
-  it("disables boundary moves and final-column deletion", () => {
+  it("disables boundary moves", () => {
     const first = tableMenuItems(target({ rowIndex: 1 }), false).flat();
     assert.equal(
       first.find((item) => item.action === "move-row-up")?.disabled,
@@ -62,14 +61,6 @@ describe("table context menu state", () => {
     const last = tableMenuItems(target({ rowIndex: 3 }), false).flat();
     assert.equal(
       last.find((item) => item.action === "move-row-down")?.disabled,
-      true,
-    );
-    const one = tableMenuItems(
-      target({ columnCount: 1, columnIndex: 0 }),
-      false,
-    ).flat();
-    assert.equal(
-      one.find((item) => item.action === "delete-column")?.disabled,
       true,
     );
   });
@@ -104,6 +95,11 @@ describe("table context menu state", () => {
     assert.ok(actions.includes("delete-selection"));
     assert.ok(actions.includes("insert-row-above"));
     assert.ok(!actions.includes("insert-column-left"));
+    assert.ok(
+      !actions.some((action) =>
+        ["copy", "cut", "paste"].includes(String(action)),
+      ),
+    );
   });
 
   it("disables deletion for a selected final column", () => {
@@ -122,7 +118,7 @@ describe("table context menu state", () => {
     assert.equal(deleteItem?.disabled, true);
   });
 
-  it("disables clipboard and mutation actions in read-only selection menus", () => {
+  it("disables every mutation action in read-only selection menus", () => {
     const selection: TableSelection = {
       kind: "column",
       tableFrom: 0,
