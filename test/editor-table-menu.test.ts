@@ -2,6 +2,7 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { tableMenuItems } from "../src/editor/table-menu.ts";
 import type { TableTarget } from "../src/editor/table-operations.ts";
+import type { TableSelection } from "../src/editor/table-selection.ts";
 
 function target(overrides: Partial<TableTarget> = {}): TableTarget {
   return {
@@ -88,5 +89,46 @@ describe("table context menu state", () => {
         .flat()
         .every((item) => item.disabled),
     );
+  });
+
+  it("scopes menu actions to a selected row", () => {
+    const selection: TableSelection = {
+      kind: "row",
+      tableFrom: 0,
+      rowIndex: 1,
+    };
+    const actions = tableMenuItems(target(), false, selection)
+      .flat()
+      .map((item) => item.action);
+    assert.ok(actions.includes("clear-selection"));
+    assert.ok(actions.includes("delete-selection"));
+    assert.ok(actions.includes("insert-row-above"));
+    assert.ok(!actions.includes("insert-column-left"));
+  });
+
+  it("disables deletion for a selected final column", () => {
+    const selection: TableSelection = {
+      kind: "column",
+      tableFrom: 0,
+      columnIndex: 0,
+    };
+    const deleteItem = tableMenuItems(
+      target({ columnCount: 1, columnIndex: 0 }),
+      false,
+      selection,
+    )
+      .flat()
+      .find((item) => item.action === "delete-selection");
+    assert.equal(deleteItem?.disabled, true);
+  });
+
+  it("disables clipboard and mutation actions in read-only selection menus", () => {
+    const selection: TableSelection = {
+      kind: "column",
+      tableFrom: 0,
+      columnIndex: 1,
+    };
+    const items = tableMenuItems(target(), true, selection).flat();
+    assert.ok(items.every((item) => item.disabled));
   });
 });

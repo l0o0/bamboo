@@ -36,7 +36,9 @@ function selectionExists(selection: TableSelection, layout: TableLayout) {
     const bodyRows = layout.rows.filter((row) => row.kind === "body");
     return selection.rowIndex >= 1 && selection.rowIndex <= bodyRows.length;
   }
-  return selection.columnIndex >= 0 && selection.columnIndex < layout.columnCount;
+  return (
+    selection.columnIndex >= 0 && selection.columnIndex < layout.columnCount
+  );
 }
 
 export function remapTableSelection(
@@ -51,7 +53,11 @@ export function remapTableSelection(
     Math.min(state.doc.length, tableFrom + 1),
   );
   const remapped = { ...selection, tableFrom };
-  if (!layout || layout.from !== tableFrom || !selectionExists(remapped, layout)) {
+  if (
+    !layout ||
+    layout.from !== tableFrom ||
+    !selectionExists(remapped, layout)
+  ) {
     return null;
   }
   return remapped;

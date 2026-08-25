@@ -106,7 +106,10 @@ describe("table selection remapping", () => {
     };
     const update = editor.update({ changes });
     const nextState = update.state;
-    assert.equal(remapTableSelection(nextState, selection, update.changes), null);
+    assert.equal(
+      remapTableSelection(nextState, selection, update.changes),
+      null,
+    );
   });
 });
 
@@ -115,9 +118,7 @@ describe("table selection after deletion", () => {
     const editor = stateFor();
     const layout = tableLayoutAt(editor, source.indexOf("| A |") + 1);
     assert.ok(layout);
-    const afterRowDelete = stateFor(
-      source.replace("| 1 | 2 | 3 |\n", ""),
-    );
+    const afterRowDelete = stateFor(source.replace("| 1 | 2 | 3 |\n", ""));
     const nextRowLayout = tableLayoutAt(
       afterRowDelete,
       afterRowDelete.doc.toString().indexOf("| A |") + 1,
