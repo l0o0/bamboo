@@ -168,6 +168,10 @@ function createLivePreviewStyles(
     ".zmd-lp-table-cell-active": {
       backgroundColor: "var(--zmd-table-active-bg)",
     },
+    ".zmd-lp-table-cell.zmd-lp-table-cell-selected": {
+      backgroundColor: "var(--zmd-table-selection-bg)",
+      boxShadow: "inset 0 0 0 2px var(--zmd-table-selection-line)",
+    },
     ".zmd-lp-table-cell.zmd-lp-table-drag-source": {
       backgroundColor: "var(--zmd-drag-source-bg)",
       boxShadow: "inset 0 0 0 1px var(--zmd-drag-source-line)",
@@ -271,6 +275,13 @@ function createLivePreviewStyles(
     ".zmd-lp-table-column-handle:hover": {
       opacity: "1",
     },
+    ".zmd-lp-table-row-handle.is-selected, .zmd-lp-table-column-handle.is-selected":
+      {
+        opacity: "1",
+        backgroundColor: "var(--zmd-table-selection-bg)",
+        borderColor: "var(--zmd-table-selection-line)",
+        color: "var(--zmd-table-selection-line)",
+      },
     ".zmd-lp-table-column-handle:active": {
       cursor: "grabbing",
     },
@@ -527,6 +538,8 @@ export function editorThemeExtension(
           "--zmd-table-bg": tokens.tableBg,
           "--zmd-table-header-bg": tokens.tableHeaderBg,
           "--zmd-table-active-bg": tokens.tableActiveBg,
+          "--zmd-table-selection-bg": tokens.accentSoft,
+          "--zmd-table-selection-line": tokens.accent,
           "--zmd-table-border": tokens.borderStrong,
           "--zmd-table-delimiter-text": tokens.textMuted,
           "--zmd-drag-source-bg": tokens.accentSoft,
@@ -620,6 +633,8 @@ export function editorThemeExtension(
       "--zmd-table-bg": tokens.tableBg,
       "--zmd-table-header-bg": tokens.tableHeaderBg,
       "--zmd-table-active-bg": tokens.tableActiveBg,
+      "--zmd-table-selection-bg": tokens.accentSoft,
+      "--zmd-table-selection-line": tokens.accent,
       "--zmd-table-border": tokens.borderStrong,
       "--zmd-table-delimiter-text": tokens.textMuted,
       "--zmd-drag-source-bg": tokens.accentSoft,
