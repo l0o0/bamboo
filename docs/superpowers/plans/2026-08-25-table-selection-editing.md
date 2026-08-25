@@ -23,24 +23,25 @@
 
 ## 文件与边界
 
-| 文件 | 责任 |
-| --- | --- |
-| `src/editor/table-selection.ts` | 选择类型、相等判断、cell 命中、ChangeDesc remap、删除后邻近选择、点击阈值判定 |
-| `test/editor-table-selection.test.ts` | 选择模型和边界的纯逻辑测试 |
-| `src/editor/table-operations.ts` | 整行/整列清空、删除、批量对齐 operation plan |
-| `test/editor-table-operations.test.ts` | 批量 operation 的 Markdown 结果和边界测试 |
-| `src/editor/table-menu.ts` | 选择作用域菜单模型、核心 action、现有菜单 DOM 的扩展 |
-| `test/editor-table-menu.test.ts` | 选择作用域下的菜单 action/disabled/checked 测试 |
-| `src/editor/live-preview/plugin.ts` | 通过 decoration widget 渲染 selected cell 和 selected handle |
-| `src/editor/live-preview/index.ts` | 导出 selection effect，保持 bootstrap 的现有导入边界 |
-| `src/editor/bootstrap.ts` | runtime selection、点击/拖拽区分、Delete key、context menu action、selection remap |
-| `src/editor/theme.ts` | light/dark selection tokens、cell/handle 高亮和 focus 样式 |
+| 文件                                   | 责任                                                                               |
+| -------------------------------------- | ---------------------------------------------------------------------------------- |
+| `src/editor/table-selection.ts`        | 选择类型、相等判断、cell 命中、ChangeDesc remap、删除后邻近选择、点击阈值判定      |
+| `test/editor-table-selection.test.ts`  | 选择模型和边界的纯逻辑测试                                                         |
+| `src/editor/table-operations.ts`       | 整行/整列清空、删除、批量对齐 operation plan                                       |
+| `test/editor-table-operations.test.ts` | 批量 operation 的 Markdown 结果和边界测试                                          |
+| `src/editor/table-menu.ts`             | 选择作用域菜单模型、核心 action、现有菜单 DOM 的扩展                               |
+| `test/editor-table-menu.test.ts`       | 选择作用域下的菜单 action/disabled/checked 测试                                    |
+| `src/editor/live-preview/plugin.ts`    | 通过 decoration widget 渲染 selected cell 和 selected handle                       |
+| `src/editor/live-preview/index.ts`     | 导出 selection effect，保持 bootstrap 的现有导入边界                               |
+| `src/editor/bootstrap.ts`              | runtime selection、点击/拖拽区分、Delete key、context menu action、selection remap |
+| `src/editor/theme.ts`                  | light/dark selection tokens、cell/handle 高亮和 focus 样式                         |
 
 ---
 
 ### Task 1: 建立纯逻辑 TableSelection 模型
 
 **Files:**
+
 - Create: `src/editor/table-selection.ts`
 - Create: `test/editor-table-selection.test.ts`
 - Read: `src/editor/table.ts` (`TableLayout`, `tableLayoutAt`, visible row/cell 索引)
@@ -153,6 +154,7 @@ git commit -m "feat: add table selection model"
 ### Task 2: Add bulk row/column operations and menu scope
 
 **Files:**
+
 - Modify: `src/editor/table-operations.ts:4-260`
 - Modify: `src/editor/table-menu.ts:1-180`
 - Modify: `test/editor-table-operations.test.ts`
@@ -182,7 +184,8 @@ export function planTableSelectionOperation(
   action: TableSelectionAction,
 ): TableSelectionOperationPlan | null;
 
-export type TableMenuAction = TableAction | TableSelectionAction | "copy" | "cut" | "paste";
+export type TableMenuAction =
+  TableAction | TableSelectionAction | "copy" | "cut" | "paste";
 
 export interface TableMenuItem {
   action: TableMenuAction;
@@ -237,6 +240,7 @@ git commit -m "feat: add bulk table selection operations"
 ### Task 3: Render persistent selection in Live Preview widgets
 
 **Files:**
+
 - Modify: `src/editor/live-preview/plugin.ts:40-360,450-620,780-900,960-1040`
 - Modify: `src/editor/live-preview/index.ts`
 - Read: `src/editor/table-selection.ts` and `src/editor/theme.ts`
@@ -244,8 +248,7 @@ git commit -m "feat: add bulk table selection operations"
 **Interfaces:**
 
 ```ts
-export const setLiveTableSelection =
-  StateEffect.define<TableSelection>();
+export const setLiveTableSelection = StateEffect.define<TableSelection>();
 
 function buildDecorations(
   state: EditorState,
@@ -284,6 +287,7 @@ git commit -m "feat: render selected table rows and columns"
 ### Task 4: Wire handle clicks, Delete, and scoped context menus in bootstrap
 
 **Files:**
+
 - Modify: `src/editor/bootstrap.ts:110-620,730-900,1020-1070`
 - Modify: `src/editor/table-menu.ts:80-180` if submenu/action rendering needs the existing menu DOM adapter
 - Read: `src/editor/table-selection.ts`, `src/editor/table-operations.ts`, `src/editor/live-preview/index.ts`
@@ -354,6 +358,7 @@ git commit -m "feat: support table selection interactions"
 ### Task 5: Add selection styling and complete verification
 
 **Files:**
+
 - Modify: `src/editor/theme.ts:145-280,500-640`
 - Modify: `test/editor-table-selection.test.ts` if token-independent class/priority helpers are extracted
 - Read: `docs/superpowers/specs/2026-08-25-table-selection-editing-design.md`
