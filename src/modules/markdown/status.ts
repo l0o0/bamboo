@@ -1,7 +1,10 @@
 import type { EditorStats } from "./editor-protocol";
+import { getString } from "../../utils/locale";
 
 export function formatStats(stats: EditorStats): string {
-  return `${stats.words} words · ${stats.lines} lines`;
+  return getString("status-stats", {
+    args: { words: stats.words, lines: stats.lines },
+  });
 }
 
 export function formatSavedStatus(savedAt: Date): string {
@@ -10,5 +13,5 @@ export function formatSavedStatus(savedAt: Date): string {
     minute: "2-digit",
     hour12: false,
   });
-  return `已保存 ${time} · 自动保存已开启`;
+  return getString("status-saved-at", { args: { time } });
 }

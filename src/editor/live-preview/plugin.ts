@@ -1,6 +1,11 @@
 /// <reference lib="dom" />
 
-import { EditorState, StateEffect, type Extension } from "@codemirror/state";
+import {
+  EditorState,
+  StateEffect,
+  StateField,
+  type Extension,
+} from "@codemirror/state";
 import {
   Decoration,
   type DecorationSet,
@@ -16,7 +21,7 @@ import {
 import { fencedCodeLineKindsFromLines, parseListPrefix } from "./structure";
 import { parseInlineL2 } from "./inline";
 import { requestLiveAsset } from "./assets";
-import { cachedLineParse, lineImageRanges } from "./line-cache";
+import { cachedLineParse } from "./line-cache";
 import type { DocLines, LineInfo } from "./types";
 import { normalizeAssetReference } from "../../modules/markdown/images/model";
 import type { ImageAssetMap } from "../../modules/markdown/editor-protocol";
@@ -137,7 +142,9 @@ class ImageWidget extends WidgetType {
     wrapper.dataset.zmdImageFrom = String(this.documentFrom);
     const displaySource =
       this.dataUrl || (/^https?:\/\//i.test(this.source) ? this.source : "");
-    if (!this.dataUrl && !this.error) requestLiveAsset(this.source);
+    // Re-request on every render while the asset is unresolved: `assets.ts`
+    // dedupes in-flight requests and cooldowns retries after failures.
+    if (!this.dataUrl) requestLiveAsset(this.source);
     imageDebug("widget-render", {
       source: this.source,
       documentFrom: this.documentFrom,
@@ -149,6 +156,9 @@ class ImageWidget extends WidgetType {
       image.src = displaySource;
       image.alt = this.alt;
       image.loading = "lazy";
+      // Remote images load inside a chrome:// document; opt out of referrer
+      // leakage for tracking-pixel style references.
+      image.referrerPolicy = "no-referrer";
       image.addEventListener(
         "load",
         () =>
@@ -415,6 +425,7 @@ class TableCellWidget extends WidgetType {
         }
       });
       const focus = () => {
+        if (!cell.isConnected) return;
         cell.focus();
         const selection = cell.ownerDocument.getSelection();
         const range = cell.ownerDocument.createRange();
@@ -641,6 +652,107 @@ function intersects(
   return ranges.some((range) => from < range.to && to > range.from);
 }
 
+/** Structural line decorations must come from a StateField, not a ViewPlugin. */
+function buildBlockDecorations(state: EditorState): DecorationSet {
+  try {
+    console.log("[Bamboo][EditorDebug] block-decorations-start", {
+      lines: state.doc.lines,
+      length: state.doc.length,
+    });
+  } catch {
+    // ignore console failures in chrome documents
+  }
+  const ranges: ReturnType<Decoration["range"]>[] = [];
+  const lines: Array<{ from: number; to: number; text: string }> = [];
+  for (let n = 1; n <= state.doc.lines; n++) {
+    const line = state.doc.line(n);
+    lines.push({ from: line.from, to: line.to, text: line.text });
+  }
+  const lineTexts = lines.map((line) => line.text);
+  const fm = frontmatterLineNumbersFromLines(lineTexts);
+  const fencedCode = fencedCodeLineKindsFromLines(lineTexts);
+  const tableRows = new Map(
+    liveTableRows(state).map((row) => [row.line, row] as const),
+  );
+  const tableDelimiterLines = new Set(
+    [...tableRows.values()]
+      .filter((row) => row.kind === "header")
+      .map((row) => row.line + 1),
+  );
+
+  for (let index = 0; index < lines.length; index++) {
+    const line = lines[index];
+    const lineNumber = index + 1;
+    if (fm.has(lineNumber)) continue;
+    const tableRow = tableRows.get(lineNumber);
+    if (tableRow) {
+      const rowClasses = ["zmd-lp-table-row", `zmd-lp-table-${tableRow.kind}`];
+      if (tableRow.isLast) rowClasses.push("zmd-lp-table-last-row");
+      ranges.push(
+        Decoration.line({
+          attributes: {
+            class: rowClasses.join(" "),
+            style: `--zmd-table-columns: ${tableRow.columnCount}; --zmd-table-visible-rows: ${tableRow.visibleRowCount}; --zmd-table-row-index: ${tableRow.cells[0]?.rowIndex ?? 0}`,
+            "data-zmd-table-from": String(tableRow.tableFrom),
+            "data-zmd-table-row-index": String(
+              tableRow.cells[0]?.rowIndex ?? 0,
+            ),
+          },
+        }).range(line.from),
+      );
+      continue;
+    }
+    if (tableDelimiterLines.has(lineNumber)) {
+      ranges.push(
+        Decoration.line({ class: "zmd-lp-table-delimiter" }).range(line.from),
+      );
+      continue;
+    }
+    const codeLineKind = fencedCode[index];
+    if (codeLineKind) {
+      ranges.push(
+        Decoration.line({
+          class:
+            codeLineKind === "content"
+              ? "zmd-lp-code-block"
+              : "zmd-lp-code-fence",
+        }).range(line.from),
+      );
+      continue;
+    }
+    const parsed = cachedLineParse(line.text, false);
+    if (parsed.heading) {
+      ranges.push(
+        Decoration.line({ class: `zmd-lp-h${parsed.heading.level}` }).range(
+          line.from,
+        ),
+      );
+    } else if (parsed.list) {
+      ranges.push(Decoration.line({ class: "zmd-lp-list" }).range(line.from));
+    } else if (parsed.quote) {
+      ranges.push(Decoration.line({ class: "zmd-lp-quote" }).range(line.from));
+    }
+  }
+  const decorations = Decoration.set(ranges, true);
+  try {
+    console.log("[Bamboo][EditorDebug] block-decorations-complete", {
+      count: ranges.length,
+    });
+  } catch {
+    // ignore console failures in chrome documents
+  }
+  return decorations;
+}
+
+const livePreviewBlockDecorations = StateField.define<DecorationSet>({
+  create: buildBlockDecorations,
+  update: (decorations, transaction) =>
+    transaction.docChanged
+      ? buildBlockDecorations(transaction.state)
+      : decorations,
+  provide: (field) => EditorView.decorations.from(field),
+});
+
 /**
  * Build live-preview decorations.
  *
@@ -661,10 +773,15 @@ function buildDecorations(
   if (composing) {
     active.add(doc.lineAt(sel.head).number);
   }
-  const lineTexts: string[] = [];
+  // Single pass over all lines; the parsed text array feeds the frontmatter /
+  // fenced-code passes and the main decoration loop, so a full rebuild is
+  // one scan instead of three.
+  const lines: Array<{ from: number; to: number; text: string }> = [];
   for (let n = 1; n <= state.doc.lines; n++) {
-    lineTexts.push(state.doc.line(n).text);
+    const line = state.doc.line(n);
+    lines.push({ from: line.from, to: line.to, text: line.text });
   }
+  const lineTexts = lines.map((line) => line.text);
   const fm = frontmatterLineNumbersFromLines(lineTexts);
   const fencedCode = fencedCodeLineKindsFromLines(lineTexts);
   const tableRows = new Map(
@@ -676,35 +793,22 @@ function buildDecorations(
       .map((row) => row.line + 1),
   );
 
-  for (let n = 1; n <= state.doc.lines; n++) {
+  for (let index = 0; index < lines.length; index++) {
+    const line = lines[index];
+    const n = index + 1;
     if (fm.has(n)) continue;
 
-    const line = state.doc.line(n);
     const text = line.text;
     const base = line.from;
     const isActive = active.has(n);
     const hideMarks = !isActive;
     const parsed = cachedLineParse(text, isActive);
-    const images = lineImageRanges(text);
+    const images = parsed.images;
     const imagePlans = parsed.imagePlans;
     const codeLineKind = fencedCode[n - 1];
 
     const tableRow = tableRows.get(n);
     if (tableRow) {
-      const rowClasses = ["zmd-lp-table-row", `zmd-lp-table-${tableRow.kind}`];
-      if (tableRow.isLast) rowClasses.push("zmd-lp-table-last-row");
-      ranges.push(
-        Decoration.line({
-          attributes: {
-            class: rowClasses.join(" "),
-            style: `--zmd-table-columns: ${tableRow.columnCount}; --zmd-table-visible-rows: ${tableRow.visibleRowCount}; --zmd-table-row-index: ${tableRow.cells[0]?.rowIndex ?? 0}`,
-            "data-zmd-table-from": String(tableRow.tableFrom),
-            "data-zmd-table-row-index": String(
-              tableRow.cells[0]?.rowIndex ?? 0,
-            ),
-          },
-        }).range(base),
-      );
       let cursor = line.from;
       tableRow.cells.forEach((cell, index) => {
         const widget = new TableCellWidget(
@@ -763,24 +867,12 @@ function buildDecorations(
     }
 
     if (tableDelimiterLines.has(n)) {
-      ranges.push(
-        Decoration.line({
-          class: "zmd-lp-table-delimiter",
-        }).range(base),
-      );
       if (text.length) ranges.push(hideRange(base, line.to));
       continue;
     }
 
     if (codeLineKind) {
-      if (codeLineKind === "content") {
-        ranges.push(
-          Decoration.line({ class: "zmd-lp-code-block" }).range(base),
-        );
-      } else {
-        ranges.push(
-          Decoration.line({ class: "zmd-lp-code-fence" }).range(base),
-        );
+      if (codeLineKind !== "content") {
         if (text.length) {
           ranges.push(
             isActive ? syntaxRange(base, line.to) : hideRange(base, line.to),
@@ -826,9 +918,6 @@ function buildDecorations(
             : syntaxRange(base, base + heading.markEnd),
         );
       }
-      ranges.push(
-        Decoration.line({ class: `zmd-lp-h${heading.level}` }).range(base),
-      );
     } else {
       const list = parsed.list;
       if (list) {
@@ -837,7 +926,6 @@ function buildDecorations(
             ? listMarkerRange(base, base + list.markEnd, list)
             : syntaxRange(base, base + list.markEnd),
         );
-        ranges.push(Decoration.line({ class: "zmd-lp-list" }).range(base));
       } else {
         const quote = parsed.quote;
         if (quote) {
@@ -846,7 +934,6 @@ function buildDecorations(
               ? hideRange(base, base + quote.markEnd)
               : syntaxRange(base, base + quote.markEnd),
           );
-          ranges.push(Decoration.line({ class: "zmd-lp-quote" }).range(base));
         }
       }
     }
@@ -896,6 +983,12 @@ class LivePreviewPlugin {
   }
 
   update(update: ViewUpdate) {
+    // IME `compositionend` can be lost on blur / window teardown; without a
+    // reset the line would stay styled as the active line forever. Reset
+    // when the editor no longer has focus; the next rebuild applies it.
+    if (this.composing && !update.view.hasFocus) {
+      this.composing = false;
+    }
     let effectChanged = false;
     let activeEffectSet = false;
     for (const transaction of update.transactions) {
@@ -920,9 +1013,11 @@ class LivePreviewPlugin {
     if (
       effectChanged ||
       update.docChanged ||
-      update.selectionSet ||
-      update.viewportChanged ||
-      update.geometryChanged
+      update.selectionSet
+      // Deliberately NOT `viewportChanged` / `geometryChanged`: the
+      // decoration set is document-wide and CodeMirror renders it per
+      // viewport itself, so scrolling or resizing must not trigger a full
+      // O(doc) rebuild on every frame.
     ) {
       this.decorations = buildDecorations(
         update.state,
@@ -960,5 +1055,5 @@ const livePreviewViewPlugin = ViewPlugin.fromClass(LivePreviewPlugin, {
 
 /** Live preview decorations (headings, emphasis, list, quote, link, code). */
 export function livePreviewPlugin(): Extension {
-  return livePreviewViewPlugin;
+  return [livePreviewBlockDecorations, livePreviewViewPlugin];
 }

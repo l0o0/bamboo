@@ -1,6 +1,6 @@
 # Architecture
 
-Zotero Markdown is a chrome plugin plus a `chrome://` CodeMirror iframe. The document authority is always the iframe editor; Zotero-side code owns sessions, files, and chrome UI.
+Bamboo is a Zotero chrome plugin with a `chrome://bamboo` CodeMirror iframe. The document authority is always the iframe editor; Zotero-side code owns sessions, files, and chrome UI.
 
 ```
 Main window shell (toolbar / status / preview)

@@ -51,7 +51,8 @@ export interface MarkdownEditorHandle {
   /** Switch Live Preview vs full Source mode inside the iframe. */
   setMode: (mode: EditorMode) => void;
   setReadOnly: (readOnly: boolean) => void;
-  setImageAssets: (assets: ImageAssetMap) => void;
+  /** Push the complete asset map (default) or merge a single new asset. */
+  setImageAssets: (assets: ImageAssetMap, replace?: boolean) => void;
 }
 
 /** Shared dark-mode detection (Zotero follows prefers-color-scheme). */
@@ -100,6 +101,9 @@ type PendingCommand = Extract<
   }
 >;
 
+/** Upper bound for commands queued while the iframe is not ready yet. */
+const MAX_PENDING_COMMANDS = 256;
+
 function editorPageURL(): string {
   const ref = addon.data.config.addonRef;
   return `chrome://${ref}/content/editor/index.html`;
@@ -135,6 +139,11 @@ export function createMarkdownEditor(
     surface?: EditorSurface;
   } = {},
 ): MarkdownEditorHandle {
+  ztoolkit.log("[Bamboo][EditorDebug] create-start", {
+    channel: options.channel,
+    docLength: options.doc?.length ?? 0,
+    surface: options.surface ?? "default",
+  });
   const {
     doc = "",
     readOnly = false,
@@ -182,6 +191,10 @@ export function createMarkdownEditor(
   let iframeLoaded = false;
   iframe.addEventListener("load", () => {
     iframeLoaded = true;
+    ztoolkit.log("[Bamboo][EditorDebug] iframe-load", {
+      channel,
+      src: iframeSrc,
+    });
     if (!iframeReady) {
       ztoolkit.log("Markdown editor iframe loaded but no ready yet", {
         channel,
@@ -211,7 +224,17 @@ export function createMarkdownEditor(
 
   const post = (message: ParentToEditorMessage) => {
     const target = iframe.contentWindow;
-    if (!target) return false;
+    if (!target) {
+      ztoolkit.log("[Bamboo][EditorDebug] post-no-content-window", {
+        channel,
+        type: message.type,
+      });
+      return false;
+    }
+    ztoolkit.log("[Bamboo][EditorDebug] post-to-iframe", {
+      channel,
+      type: message.type,
+    });
     target.postMessage(
       { ...message, channel, v: EDITOR_PROTOCOL_VERSION },
       "*",
@@ -239,6 +262,12 @@ export function createMarkdownEditor(
         for (let i = pending.length - 1; i >= 0; i--) {
           if (pending[i].type === message.type) pending.splice(i, 1);
         }
+      }
+      // Bound the queue: if the iframe never becomes ready, commands must
+      // not accumulate without limit (requestSnapshot messages are not
+      // deduplicated). Drop the oldest entries beyond the cap.
+      if (pending.length >= MAX_PENDING_COMMANDS) {
+        pending.splice(0, pending.length - MAX_PENDING_COMMANDS + 1);
       }
       pending.push(message);
       return;
@@ -275,6 +304,7 @@ export function createMarkdownEditor(
     const data = event.data as EditorToParentMessage;
     switch (data.type) {
       case "ready": {
+        ztoolkit.log("[Bamboo][EditorDebug] iframe-ready", { channel });
         iframeReady = true;
         // Re-resolve at ready time (theme may have changed while loading)
         currentTheme = resolveEditorTheme(ownerWin);
@@ -353,7 +383,10 @@ export function createMarkdownEditor(
         break;
       }
       case "error": {
-        ztoolkit.log("Markdown editor iframe error:", data.payload.message);
+        ztoolkit.log("[Bamboo][EditorDebug] iframe-error", {
+          channel,
+          message: data.payload.message,
+        });
         break;
       }
       default:
@@ -396,14 +429,16 @@ export function createMarkdownEditor(
     // ignore
   }
 
-  // Fallback: if ready never arrives, still resolve after timeout so callers don't hang
+  // Fallback: if ready never arrives, still resolve after the timeout so
+  // callers awaiting `ready` do not hang forever. The editor itself keeps
+  // queueing (bounded) commands and recovers if `ready` arrives late.
   ownerWin?.setTimeout?.(() => {
     if (!iframeReady && !destroyed) {
       ztoolkit.log(
         "Markdown editor iframe ready timeout; commands will queue until ready",
         { channel, src: iframeSrc, loaded: iframeLoaded },
       );
-      // Do not resolve yet — keep waiting; getValue still works via cache
+      resolveReady();
     }
   }, 8000);
 
@@ -523,11 +558,11 @@ export function createMarkdownEditor(
         payload: { readOnly },
       });
     },
-    setImageAssets: (assets: ImageAssetMap) => {
+    setImageAssets: (assets: ImageAssetMap, replace = true) => {
       sendOrQueue({
         source: EDITOR_MESSAGE_SOURCE,
         type: "setImageAssets",
-        payload: { assets },
+        payload: { assets, replace },
       });
     },
     destroy: () => {

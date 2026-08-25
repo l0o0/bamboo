@@ -3,13 +3,10 @@ import assert from "node:assert/strict";
 import {
   parseAtxHeading,
   parseBlockQuotePrefix,
-  fencedCodeLineKinds,
+  fencedCodeLineKindsFromLines,
   parseListPrefix,
 } from "../src/editor/live-preview/structure.ts";
-import {
-  parseInlineL1,
-  parseInlineL2,
-} from "../src/editor/live-preview/inline.ts";
+import { parseInlineL2 } from "../src/editor/live-preview/inline.ts";
 
 describe("parseAtxHeading", () => {
   it("parses h1", () => {
@@ -66,21 +63,15 @@ describe("parseBlockQuotePrefix", () => {
   });
 });
 
-describe("parseInlineL1", () => {
-  it("finds bold markers", () => {
-    const r = parseInlineL1("a **b** c");
-    const marks = r.filter((x) => x.kind === "mark");
-    assert.ok(marks.some((m) => m.from === 2 && m.to === 4));
-    assert.ok(marks.some((m) => m.from === 5 && m.to === 7));
-    assert.ok(r.some((x) => x.kind === "strong" && x.from === 4 && x.to === 5));
-  });
-});
-
 describe("parseInlineL2", () => {
   it("finds inline code", () => {
     const r = parseInlineL2("x `code` y");
     assert.ok(r.some((x) => x.kind === "code"));
     assert.ok(r.some((x) => x.kind === "mark" && x.from === 2));
+  });
+  it("supports multi-backtick code runs", () => {
+    const r = parseInlineL2("``code``");
+    assert.ok(r.some((x) => x.kind === "code" && x.from === 2 && x.to === 6));
   });
   it("finds links", () => {
     const r = parseInlineL2("see [text](https://ex.com) end");
@@ -94,21 +85,85 @@ describe("parseInlineL2", () => {
     );
     assert.equal(r.filter((x) => x.kind === "mark").length, 2);
   });
+  it("ignores escaped bold / strikethrough markers", () => {
+    const r = parseInlineL2("\\*\\*not bold\\*\\* \\~\\~not strike\\~\\~");
+    assert.equal(
+      r.some((x) => x.kind === "strong"),
+      false,
+    );
+    assert.equal(
+      r.some((x) => x.kind === "strike"),
+      false,
+    );
+    assert.equal(
+      r.some((x) => x.kind === "em"),
+      false,
+    );
+  });
+  it("skips escaped closing markers", () => {
+    const r = parseInlineL2("**bold\\** tail");
+    // The `\**` after "bold" is escaped, so no strong range is produced.
+    assert.equal(
+      r.some((x) => x.kind === "strong"),
+      false,
+    );
+  });
 });
 
-describe("fencedCodeLineKinds", () => {
+describe("fencedCodeLineKindsFromLines", () => {
   it("marks paired fence and content lines", () => {
     assert.deepEqual(
-      fencedCodeLineKinds("before\n```ts\nconst value = 1\n```\nafter"),
+      fencedCodeLineKindsFromLines([
+        "before",
+        "```ts",
+        "const value = 1",
+        "```",
+        "after",
+      ]),
       [null, "fence-open", "content", "fence-close", null],
     );
   });
 
   it("does not treat an unclosed fence as a rendered block", () => {
-    assert.deepEqual(fencedCodeLineKinds("before\n```\ncode"), [
+    assert.deepEqual(fencedCodeLineKindsFromLines(["before", "```", "code"]), [
       null,
       null,
       null,
     ]);
+  });
+
+  it("does not close a fence on a line with trailing info (CommonMark)", () => {
+    // ` ```js ` inside a python fence is content, not a closing fence.
+    assert.deepEqual(
+      fencedCodeLineKindsFromLines([
+        "```python",
+        "code",
+        "```js",
+        "more",
+        "```",
+      ]),
+      ["fence-open", "content", "content", "content", "fence-close"],
+    );
+  });
+});
+
+describe("edge-case parses", () => {
+  it("recognizes a bare `#` as an empty heading", () => {
+    const r = parseAtxHeading("#");
+    assert.equal(r?.level, 1);
+    assert.equal(r?.markEnd, 1);
+    assert.equal(parseAtxHeading("#Hello"), null);
+  });
+
+  it("limits ordered-list markers to nine digits (CommonMark)", () => {
+    assert.ok(parseListPrefix("123456789. item"));
+    assert.equal(parseListPrefix("1234567890. item"), null);
+  });
+
+  it("skips long uniform delimiter runs without producing ranges", () => {
+    const r = parseInlineL2("*".repeat(10000));
+    assert.equal(r.length, 0);
+    const t = parseInlineL2("~".repeat(5000));
+    assert.equal(t.length, 0);
   });
 });

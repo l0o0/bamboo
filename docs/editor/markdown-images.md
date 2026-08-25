@@ -10,6 +10,6 @@
 
 ## 关键约束
 
-1. 仅 stored + `text/markdown`  
-2. 写图必须同时保存 md（触发同步）  
-3. 引用用 `assets/...`，禁止绝对路径  
+1. 仅 stored + `text/markdown`
+2. 写图必须同时保存 md（触发同步）
+3. 引用用 `assets/...`，禁止绝对路径

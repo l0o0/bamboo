@@ -55,10 +55,11 @@ test("maps plugin preferences to and from modal settings", () => {
   });
 });
 
-test("provides stable modal titles", () => {
-  assert.equal(modalTitle("document-info"), "文档信息");
-  assert.equal(modalTitle("rename"), "重命名");
-  assert.equal(modalTitle("settings"), "设置");
+test("provides stable modal titles via localized keys", () => {
+  // Without a Zotero window, getString falls back to the prefixed Fluent id.
+  assert.equal(modalTitle("document-info"), "bamboo-more-document-info");
+  assert.equal(modalTitle("rename"), "bamboo-more-rename");
+  assert.equal(modalTitle("settings"), "bamboo-more-settings");
 });
 
 test("defines a centered accessible modal surface", () => {
@@ -102,12 +103,12 @@ test("defines editor and shortcut settings controls", () => {
     new URL("../src/modules/markdown/modal.ts", import.meta.url),
     "utf8",
   );
-  assert.match(source, /button\(doc, "编辑", "shortcut-edit"\)/);
+  assert.match(source, /getString\("settings-shortcut-edit"\)/);
   assert.match(source, /zotero-markdown-settings-workspace/);
   assert.match(source, /zotero-markdown-settings-navigation/);
   assert.match(source, /aria-selected/);
   assert.match(source, /SETTINGS_PAGES/);
-  assert.match(source, /"完成"/);
+  assert.match(source, /getString\("modal-done"\)/);
   assert.match(source, /shortcut-overflow/);
   assert.doesNotMatch(source, /button\(doc, "清除", "clear-shortcut"\)/);
   assert.doesNotMatch(source, /button\(doc, "恢复默认", "restore-shortcut"\)/);

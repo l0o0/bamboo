@@ -1,8 +1,8 @@
 /**
  * Public in-process API for Bamboo.
  *
- * Exposed to other plugins / MCP bridges as the legacy-compatible
- * `Zotero.ZoteroMarkdown.api.markdown` namespace.
+ * Exposed to other plugins / MCP bridges as the
+ * `Zotero.Bamboo.api.markdown` namespace.
  * All methods are async, JSON-friendly, and throw `MarkdownApiError` with a
  * stable `code` on failure.
  *
@@ -10,7 +10,11 @@
  * (`persistMarkdownContent`): file write, image-asset cleanup, item title
  * sync, and Zotero file-sync marking.
  */
-import { getExtension, isMarkdownAttachment } from "./detect";
+import {
+  getExtension,
+  isMarkdownAttachment,
+  isMarkdownFilename,
+} from "./detect";
 import { createMarkdownAttachment } from "./create";
 import { sessionRegistry } from "./session-registry";
 import { applyFrontmatterPatch, parseFrontmatter } from "./frontmatter";
@@ -20,6 +24,11 @@ import {
 } from "./preview";
 import { persistMarkdownContent } from "./persist";
 import { closeMarkdownTab, openMarkdownTab } from "./tab";
+import { closeSidebarSessions, findSidebarSessions } from "./sidebar";
+import { normalizeMarkdownFilename } from "./modal";
+import { editorSnapshotChanged } from "./api-guards";
+import type { MarkdownEditorHandle } from "./editor";
+import type { SaveCoordinator } from "./save-coordinator";
 
 export type MarkdownApiErrorCode =
   | "ITEM_NOT_FOUND"
@@ -109,9 +118,9 @@ export interface UpdateOptions {
   content?: string;
   frontmatter?: FrontmatterPatch;
   /**
-   * Overwrite even when an open editor tab has unsaved changes.
-   * Without `force`, an open dirty tab rejects the write with
-   * `WRITE_CONFLICT`.
+   * Overwrite an already-dirty editor buffer. The API still rejects a buffer
+   * that changes after this call snapshots it, because that would lose new
+   * user input even with `force`.
    */
   force?: boolean;
   /** Remove embedded image assets no longer referenced. */
@@ -194,14 +203,39 @@ function linkModeName(mode: number): MarkdownLinkMode {
   }
 }
 
+/**
+ * All live editor sessions (tabs across windows + sidebar editors) grouped by
+ * item id, keeping the first tab session per item.
+ */
+function liveSessionsByItem(): Map<number, OpenSessionLike> {
+  const byItem = new Map<number, OpenSessionLike>();
+  for (const session of sessionRegistry.all()) {
+    if (!byItem.has(session.itemID)) {
+      byItem.set(session.itemID, {
+        editor: session.editor ?? null,
+        save: session.save,
+        dirty: session.save.dirty,
+      });
+    }
+  }
+  return byItem;
+}
+
+interface OpenSessionLike {
+  editor: MarkdownEditorHandle | null;
+  save: SaveCoordinator;
+  dirty: boolean;
+}
+
 async function attachmentInfo(
   item: Zotero.Item,
   withContent = false,
+  sessionsByItem = liveSessionsByItem(),
 ): Promise<MarkdownAttachmentInfo> {
   const path = (await item.getFilePathAsync()) || null;
   const filename = item.attachmentFilename || "";
   const parent = item.parentItem;
-  const openSession = sessionRegistry.all().find((s) => s.itemID === item.id);
+  const openSession = sessionsByItem.get(item.id);
 
   let size: number | null = null;
   let frontmatterTitle: string | null = null;
@@ -227,13 +261,11 @@ async function attachmentInfo(
     itemID: item.id,
     key: item.key,
     libraryID: item.libraryID,
-    title: String(item.getField("title") || item.getDisplayTitle() || filename),
+    title: await displayTitle(item, filename),
     filename,
     extension: getExtension(filename),
     parentItemID: parent?.id ?? null,
-    parentTitle: parent
-      ? String(parent.getField("title") || parent.getDisplayTitle() || "")
-      : null,
+    parentTitle: parent ? await displayTitle(parent, "") : null,
     linkMode: linkModeName(item.attachmentLinkMode),
     path,
     modified: item.dateModified || null,
@@ -242,6 +274,30 @@ async function attachmentInfo(
     openInTab: !!openSession,
     dirty: openSession?.save.dirty ?? false,
   };
+}
+
+/**
+ * Field title with a safe `getDisplayTitle` fallback: some Zotero builds
+ * return a Promise from `getDisplayTitle`, which `String()` would render as
+ * "[object Promise]".
+ */
+async function displayTitle(
+  item: Zotero.Item,
+  fallback: string,
+): Promise<string> {
+  const field = item.getField("title");
+  if (field) return String(field);
+  const display = item.getDisplayTitle?.();
+  if (
+    display &&
+    typeof (display as unknown as { then?: unknown }).then === "function"
+  ) {
+    const resolved = await (display as unknown as Promise<unknown>);
+    if (resolved) return String(resolved);
+  } else if (display) {
+    return String(display);
+  }
+  return fallback;
 }
 
 /** Read a file as text, coercing the loose `getContentsAsync` typing. */
@@ -258,7 +314,7 @@ async function readContent(item: Zotero.Item): Promise<string> {
   return readFileText(path);
 }
 
-/** Current content, preferring the open editor buffer when present. */
+/** Current content, preferring open editor buffers (tabs, then sidebar). */
 async function currentContent(item: Zotero.Item): Promise<string> {
   const session = sessionRegistry.all().find((s) => s.itemID === item.id);
   if (session?.editor) {
@@ -266,24 +322,65 @@ async function currentContent(item: Zotero.Item): Promise<string> {
       (await session.editor.requestSnapshot()) ?? session.editor.getValue()
     );
   }
+  const sidebar = findSidebarSessions(item.id)[0];
+  if (sidebar) {
+    return (
+      (await sidebar.editor.requestSnapshot()) ?? sidebar.editor.getValue()
+    );
+  }
   return readContent(item);
+}
+
+/** All live editor sessions (tabs across windows + sidebar editors) for an item. */
+function liveEditorSessions(
+  item: Zotero.Item,
+): Array<{ editor: MarkdownEditorHandle; save: SaveCoordinator }> {
+  const sessions: Array<{
+    editor: MarkdownEditorHandle;
+    save: SaveCoordinator;
+  }> = [];
+  for (const tab of sessionRegistry.all()) {
+    if (tab.itemID === item.id && tab.editor) {
+      sessions.push({ editor: tab.editor, save: tab.save });
+    }
+  }
+  for (const sidebar of findSidebarSessions(item.id)) {
+    sessions.push(sidebar);
+  }
+  return sessions;
 }
 
 async function writeContent(
   item: Zotero.Item,
   content: string,
   opts: Pick<UpdateOptions, "force" | "cleanupImages">,
+  observedContent?: string,
 ): Promise<WriteResult> {
-  const session = sessionRegistry.all().find((s) => s.itemID === item.id);
-  if (session?.save.dirty && !opts.force) {
-    throw apiError(
-      "WRITE_CONFLICT",
-      `Markdown item ${item.id} has unsaved editor changes; pass force: true to overwrite`,
-    );
+  const sessions = liveEditorSessions(item);
+  for (const { save, editor } of sessions) {
+    if (
+      observedContent !== undefined &&
+      editorSnapshotChanged(observedContent, editor.getValue())
+    ) {
+      throw apiError(
+        "WRITE_CONFLICT",
+        `Markdown item ${item.id} changed in the editor while the API update was in progress`,
+      );
+    }
+    if (!opts.force) {
+      if (save.dirty) {
+        throw apiError(
+          "WRITE_CONFLICT",
+          `Markdown item ${item.id} has unsaved editor changes; pass force: true to overwrite`,
+        );
+      }
+    }
   }
-  if (session?.editor) {
-    session.editor.setValue(content);
-    await session.save.request({ force: true });
+  if (sessions.length) {
+    for (const { editor, save } of sessions) {
+      editor.setValue(content);
+      await save.request({ force: true, cleanupImages: opts.cleanupImages });
+    }
   } else {
     await persistMarkdownContent(item, content, {
       cleanupImages: opts.cleanupImages,
@@ -291,7 +388,10 @@ async function writeContent(
       syncFile: true,
     });
   }
-  return { savedAt: new Date().toISOString(), openInTab: !!session };
+  return {
+    savedAt: new Date().toISOString(),
+    openInTab: !!sessionRegistry.all().find((s) => s.itemID === item.id),
+  };
 }
 
 /**
@@ -320,9 +420,15 @@ async function list(
 
   const query = (q ?? "").trim().toLowerCase();
   const results: MarkdownAttachmentInfo[] = [];
+  // Resolve session state once instead of scanning the registry per item.
+  const sessionsByItem = liveSessionsByItem();
   for (const item of items) {
     if (!isMarkdownAttachment(item)) continue;
-    const info = await attachmentInfo(item);
+    // zotero-types does not expose isTrashed; the runtime API does.
+    if ((item as unknown as { isTrashed?: () => boolean }).isTrashed?.()) {
+      continue;
+    }
+    const info = await attachmentInfo(item, false, sessionsByItem);
     if (query) {
       const hay =
         `${info.title} ${info.filename} ${info.parentTitle ?? ""}`.toLowerCase();
@@ -378,6 +484,13 @@ async function createLinked(
   if (!path) {
     throw apiError("INVALID_ARGUMENT", "path is required");
   }
+  // Permission boundary: only files with a Markdown extension may be wrapped
+  // as Markdown attachments. Without this check the API would be an
+  // arbitrary file-read primitive — `createLinked` + `read` returns the
+  // wrapped file's full content to any caller (plugins / MCP bridges).
+  if (!isMarkdownFilename(path)) {
+    throw apiError("INVALID_ARGUMENT", `Not a Markdown file: ${path}`);
+  }
   let exists = false;
   try {
     exists = await IOUtils.exists(path);
@@ -417,11 +530,11 @@ async function update(
   if (options.frontmatter) {
     content = applyFrontmatterPatch(content, options.frontmatter);
   }
-  if (content === existing) {
+  if (content === existing && !options.cleanupImages) {
     const session = sessionRegistry.all().find((s) => s.itemID === itemID);
     return { savedAt: new Date().toISOString(), openInTab: !!session };
   }
-  return writeContent(item, content, options);
+  return writeContent(item, content, options, existing);
 }
 
 async function patchFrontmatter(
@@ -431,10 +544,11 @@ async function patchFrontmatter(
   const item = requireMarkdownItem(itemID);
   const existing = await currentContent(item);
   const content = applyFrontmatterPatch(existing, patch);
+  const openInTab = !!sessionRegistry.all().find((s) => s.itemID === itemID);
   if (content === existing) {
-    return { content, savedAt: new Date().toISOString(), openInTab: false };
+    return { content, savedAt: new Date().toISOString(), openInTab };
   }
-  const result = await writeContent(item, content, {});
+  const result = await writeContent(item, content, {}, existing);
   return { ...result, content };
 }
 
@@ -447,7 +561,10 @@ async function rename(
   if (!raw) {
     throw apiError("INVALID_ARGUMENT", "filename is required");
   }
-  const newName = /\.md$/i.test(raw) ? raw : `${raw}.md`;
+  // Same sanitization as the in-app rename dialog: strips path separators and
+  // other unsafe characters, so the API cannot be used to rename files
+  // outside the attachment (e.g. `../evil` for a linked file).
+  const newName = normalizeMarkdownFilename(raw);
   // NOTE: renames the underlying file. For linked attachments this renames
   // the file on disk (e.g. inside an Obsidian vault).
   const result = await item.renameAttachmentFile(newName, false);
@@ -463,11 +580,35 @@ async function rename(
   if (result === -2) {
     throw apiError("WRITE_FAILED", "Failed to rename attachment");
   }
+  // Keep open editor sessions' cached paths in sync so the document-info
+  // modal and reveal-folder show the new location (autosave resolves the
+  // path fresh via getFilePathAsync, so writes are already safe).
+  const newPath = (await item.getFilePathAsync()) || null;
+  for (const session of sessionRegistry.all()) {
+    if (session.itemID === itemID && newPath) {
+      session.path = newPath;
+    }
+  }
   return attachmentInfo(item);
 }
 
 async function trash(itemID: number): Promise<{ trashed: boolean }> {
   requireMarkdownItem(itemID);
+  // Close open editor sessions first: a live session would otherwise keep
+  // autosaving into the trashed attachment's file, "resurrecting" it and
+  // re-marking it for Zotero file sync.
+  const open = sessionRegistry.all().filter((s) => s.itemID === itemID);
+  await Promise.all(
+    open.map((s) =>
+      closeMarkdownTab(s.tabID).catch((error) => {
+        ztoolkit.log(
+          `Failed to close markdown tab ${s.tabID} before trash`,
+          error,
+        );
+      }),
+    ),
+  );
+  await closeSidebarSessions(itemID);
   await Zotero.Items.trash(itemID);
   return { trashed: true };
 }
@@ -503,9 +644,20 @@ function sessions(): SessionSummary[] {
     let title: string | null = null;
     try {
       const item = Zotero.Items.get(s.itemID);
-      title = item
-        ? String(item.getField("title") || item.getDisplayTitle() || "")
-        : null;
+      if (item) {
+        const field = item.getField("title");
+        const display = item.getDisplayTitle?.();
+        // `getDisplayTitle` may return a Promise in some builds; sessions()
+        // is synchronous, so only use already-resolved string values.
+        title = String(
+          field ||
+            (display &&
+            typeof (display as { then?: unknown }).then !== "function"
+              ? display
+              : "") ||
+            "",
+        );
+      }
     } catch {
       // keep null
     }
@@ -526,8 +678,17 @@ async function flush(itemID?: number): Promise<number> {
       ? sessionRegistry.all().filter((s) => s.itemID === itemID)
       : sessionRegistry.all();
   if (targets.length === 0) return 0;
-  await Promise.all(targets.map((s) => s.save.request({ force: true })));
-  return targets.length;
+  // One session failing must not prevent the others from saving.
+  const results = await Promise.allSettled(
+    targets.map((s) => s.save.request({ force: true })),
+  );
+  const failures = results.filter(
+    (r): r is PromiseRejectedResult => r.status === "rejected",
+  );
+  for (const failure of failures) {
+    ztoolkit.log("markdown.flush session failed", failure.reason);
+  }
+  return targets.length - failures.length;
 }
 
 async function toHtml(itemID: number): Promise<string> {

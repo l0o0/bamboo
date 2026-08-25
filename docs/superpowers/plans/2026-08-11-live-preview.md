@@ -24,32 +24,34 @@
 
 ## File map
 
-| Path | Responsibility |
-|------|----------------|
-| `src/modules/markdown/editor-protocol.ts` | Add `EditorMode`, `mode` on init, `setMode` message |
-| `src/editor/live-preview/types.ts` | Shared types for live preview |
-| `src/editor/live-preview/active-lines.ts` | Compute active line numbers + frontmatter line set |
-| `src/editor/live-preview/inline.ts` | Pure ranges for bold/italic/code/link on one line |
-| `src/editor/live-preview/structure.ts` | Pure parse for ATX heading / list / quote prefixes |
-| `src/editor/live-preview/plugin.ts` | CM `ViewPlugin` + decorations |
-| `src/editor/live-preview/index.ts` | Public `livePreview({ enabled })` extension factory |
-| `src/editor/bootstrap.ts` | Mode compartment, lineNumbers compartment, wire plugin |
-| `src/editor/theme.ts` | Live prose styles (heading sizes, etc.) when live |
-| `src/modules/markdown/editor.ts` | `setMode`, init default `live` |
-| `src/modules/markdown/tab.ts` | Toolbar Live \| Source; drop/repurpose Preview later |
-| `src/modules/markdown/styles.ts` | Toolbar mode segment styles |
-| `test/live-preview-active-lines.test.mjs` | Unit tests for pure helpers (Node test runner) |
+| Path                                      | Responsibility                                         |
+| ----------------------------------------- | ------------------------------------------------------ |
+| `src/modules/markdown/editor-protocol.ts` | Add `EditorMode`, `mode` on init, `setMode` message    |
+| `src/editor/live-preview/types.ts`        | Shared types for live preview                          |
+| `src/editor/live-preview/active-lines.ts` | Compute active line numbers + frontmatter line set     |
+| `src/editor/live-preview/inline.ts`       | Pure ranges for bold/italic/code/link on one line      |
+| `src/editor/live-preview/structure.ts`    | Pure parse for ATX heading / list / quote prefixes     |
+| `src/editor/live-preview/plugin.ts`       | CM `ViewPlugin` + decorations                          |
+| `src/editor/live-preview/index.ts`        | Public `livePreview({ enabled })` extension factory    |
+| `src/editor/bootstrap.ts`                 | Mode compartment, lineNumbers compartment, wire plugin |
+| `src/editor/theme.ts`                     | Live prose styles (heading sizes, etc.) when live      |
+| `src/modules/markdown/editor.ts`          | `setMode`, init default `live`                         |
+| `src/modules/markdown/tab.ts`             | Toolbar Live \| Source; drop/repurpose Preview later   |
+| `src/modules/markdown/styles.ts`          | Toolbar mode segment styles                            |
+| `test/live-preview-active-lines.test.mjs` | Unit tests for pure helpers (Node test runner)         |
 
 ---
 
 ### Task 1: Protocol — `EditorMode` + `setMode`
 
 **Files:**
+
 - Modify: `src/modules/markdown/editor-protocol.ts`
 - Modify: `src/modules/markdown/editor.ts` (types only if needed for handle)
 - Test: `pnpm build` (typecheck)
 
 **Interfaces:**
+
 - Produces:
   - `export type EditorMode = "live" | "source"`
   - `EditorInitPayload.mode?: EditorMode` (default interpreted as `"live"` by bootstrap)
@@ -113,12 +115,14 @@ git commit -m "feat(editor): add live/source mode to iframe protocol"
 ### Task 2: Pure helpers — active lines + frontmatter
 
 **Files:**
+
 - Create: `src/editor/live-preview/types.ts`
 - Create: `src/editor/live-preview/active-lines.ts`
 - Create: `test/live-preview-active-lines.test.mjs`
 - Modify: `package.json` (optional script `"test:unit": "node --test test/*.test.mjs"`)
 
 **Interfaces:**
+
 - Produces:
   - `getActiveLineNumbers(doc: TextLike, mainFrom: number, mainTo: number): Set<number>`
   - `getFrontmatterLineNumbers(docText: string): Set<number>` — 1-based or 0-based? **Use 1-based CM line numbers** (`line.number`).
@@ -250,9 +254,7 @@ export function activeLinesFromSelection(
 ): Set<number> {
   const out = new Set<number>();
   if (doc.lines < 1) return out;
-  const start = doc.lineAtOffset
-    ? doc.lineAtOffset(from)
-    : lineAt(doc, from);
+  const start = doc.lineAtOffset ? doc.lineAtOffset(from) : lineAt(doc, from);
   const end = doc.lineAtOffset
     ? doc.lineAtOffset(Math.max(from, to))
     : lineAt(doc, Math.max(from, to));
@@ -321,11 +323,13 @@ git commit -m "feat(live-preview): active line and frontmatter helpers"
 ### Task 3: Pure structure + inline range parsers (L1)
 
 **Files:**
+
 - Create: `src/editor/live-preview/structure.ts`
 - Create: `src/editor/live-preview/inline.ts`
 - Create: `test/live-preview-parse.test.ts`
 
 **Interfaces:**
+
 - Produces:
   - `parseAtxHeading(line: string): { level: 1|2|3|4|5|6; markEnd: number; textStart: number } | null`
   - `parseInlineL1(line: string): Array<{ from: number; to: number; kind: "mark" | "strong" | "em" }>`  
@@ -366,6 +370,7 @@ describe("parseInlineL1", () => {
 `structure.ts` — regex `^(#{1,6})(\s+)(.*)$` on full line (trimEnd ok; require space after hashes per CommonMark ATX).
 
 `inline.ts` — L1 only:
+
 - `**...**` strong (non-greedy, no newline)
 - `*...*` em (not part of `**`; simple scan is OK for L1)
 - Skip content inside incomplete pairs
@@ -385,16 +390,19 @@ git commit -m "feat(live-preview): L1 heading and emphasis parsers"
 ### Task 4: Live Preview ViewPlugin (L1 decorations)
 
 **Files:**
+
 - Create: `src/editor/live-preview/plugin.ts`
 - Create: `src/editor/live-preview/index.ts`
 - Modify: `src/editor/theme.ts` (heading CSS classes)
 - Modify: `src/editor/bootstrap.ts`
 
 **Interfaces:**
+
 - Consumes: parsers + active line helpers
 - Produces: `export function livePreviewExtension(enabled: boolean): Extension`
 
 Decoration rules (L1):
+
 1. For each line where `!shouldSkipLiveLine(...)`:
    - If ATX heading: `Decoration.replace` or `mark` on hash+space prefix with `class: "zmd-lp-hidden"`; line class `zmd-lp-h{level}`
    - Inline: hide mark ranges with `zmd-lp-hidden`; content `zmd-lp-strong` / `zmd-lp-em`
@@ -474,7 +482,11 @@ function extensionsForMode(mode: EditorMode): Extension {
     ];
   }
   return [
-    guttersCompartment.of([lineNumbers(), highlightActiveLineGutter(), foldGutter()]),
+    guttersCompartment.of([
+      lineNumbers(),
+      highlightActiveLineGutter(),
+      foldGutter(),
+    ]),
     livePreviewWhen(false),
     EditorView.editorAttributes.of({ class: "zmd-mode-source" }),
   ];
@@ -520,6 +532,7 @@ Open a `.md` with:
 
 ```md
 # Title
+
 hello **world**
 ```
 
@@ -537,23 +550,26 @@ git commit -m "feat(live-preview): L1 ViewPlugin for headings and emphasis"
 ### Task 5: Parent tab UI — Live | Source mode switch
 
 **Files:**
+
 - Modify: `src/modules/markdown/tab.ts`
 - Modify: `src/modules/markdown/styles.ts`
 
 **Interfaces:**
+
 - Consumes: `editor.setMode("live" | "source")`
 - Session field: `mode: "live" | "source" | "preview"` — **migrate carefully**
 
 Current session uses `mode: "edit" | "preview"`. Plan:
 
-| Old | New |
-|-----|-----|
-| `edit` | split into `live` (default) and `source` |
+| Old       | New                                                                         |
+| --------- | --------------------------------------------------------------------------- |
+| `edit`    | split into `live` (default) and `source`                                    |
 | `preview` | keep optional third state for L1 to reduce risk, OR map Preview button away |
 
 **L1 product decision (locked):** Toolbar shows three or two controls:
 
 Recommended L1:
+
 - Segment: **实时预览** | **源码** | **预览** (preview remains read-only markdown-it)
 - Default active: 实时预览
 
@@ -563,7 +579,7 @@ Session type:
 mode: "live" | "source" | "preview";
 ```
 
-- `live` / `source`: show editorHost; call `setMode`; hide preview host  
+- `live` / `source`: show editorHost; call `setMode`; hide preview host
 - `preview`: existing preview path using `getValue()`
 
 - [ ] **Step 1: Update session + toolbar buttons**
@@ -571,8 +587,9 @@ mode: "live" | "source" | "preview";
 Replace Edit button with Live + Source (labels: `Live` / `Source` or Chinese `实时` / `源码` — use English short labels consistent with current `Edit`/`Preview` unless locale exists; **keep English `Live` / `Source` / `Preview`** for parity with existing toolbar language).
 
 Wire clicks:
+
 - Live → `session.mode = "live"`; `editor.setMode("live")`; show editor
-- Source → `session.mode = "source"`; `editor.setMode("source")`; show editor  
+- Source → `session.mode = "source"`; `editor.setMode("source")`; show editor
 - Preview → existing
 
 - [ ] **Step 2: Styles for active mode buttons** (reuse `.zotero-markdown-btn.active`)
@@ -591,6 +608,7 @@ git commit -m "feat(ui): Live/Source/Preview mode switch for markdown tab"
 ### Task 6: Live canvas typography
 
 **Files:**
+
 - Modify: `src/editor/theme.ts`
 - Modify: `addon/content/editor/index.html` (optional base CSS)
 - Modify: `src/editor/bootstrap.ts` if content padding differs by mode
@@ -598,12 +616,14 @@ git commit -m "feat(ui): Live/Source/Preview mode switch for markdown tab"
 - [ ] **Step 1: Live mode styles**
 
 When `.zmd-mode-live`:
+
 - `font-family`: system-ui / text fonts (not mono)
 - larger line-height (~1.7)
 - content max-width optional via padding
 - gutters already off
 
 When `.zmd-mode-source`:
+
 - keep mono stack from current theme
 
 - [ ] **Step 2: Build + visual check light/dark**
@@ -620,12 +640,14 @@ git commit -m "style(live-preview): prose typography for live mode"
 ### Task 7: L2 parsers + decorations (list, quote, link, inline code)
 
 **Files:**
+
 - Modify: `src/editor/live-preview/structure.ts`
 - Modify: `src/editor/live-preview/inline.ts`
 - Modify: `src/editor/live-preview/plugin.ts`
 - Modify: `test/live-preview-parse.test.ts`
 
 **Interfaces:**
+
 - `parseListPrefix(line): { markEnd: number } | null` — `^(\s*)([-*+]|\d+\.)\s+`
 - `parseBlockQuotePrefix(line): { markEnd: number } | null` — `^(\s*>\s?)+`
 - `parseInlineL2`: add `` `code` `` and `[text](url)` (hide `[]()` marks, style text as link)
@@ -642,9 +664,10 @@ Doc:
 
 ```md
 > quote
+
 - item **x**
-[link](https://example.com)
-`code`
+  [link](https://example.com)
+  `code`
 ```
 
 - [ ] **Step 5: Commit**
@@ -659,6 +682,7 @@ git commit -m "feat(live-preview): L2 list, quote, link, and inline code"
 ### Task 8: IME safety + composition
 
 **Files:**
+
 - Modify: `src/editor/live-preview/plugin.ts`
 
 - [ ] **Step 1: Track composition**
@@ -686,6 +710,7 @@ git commit -am "fix(live-preview): keep source line stable during IME compositio
 ### Task 9: Docs + acceptance checklist
 
 **Files:**
+
 - Modify: `docs/superpowers/specs/2026-08-11-live-preview-design.md` (status: L1/L2 implemented when done)
 - Modify: `docs/editor/codemirror-iframe-plan.md` (link plan progress)
 - Optional: `CHANGELOG.md` entry under Unreleased
@@ -715,18 +740,18 @@ git commit -m "docs: record live preview L1/L2 implementation status"
 
 ## Spec coverage (self-review)
 
-| Spec requirement | Task |
-|------------------|------|
-| Live default + Source mode | 1, 4, 5 |
-| Line-level active source | 2, 4 |
-| Frontmatter always source | 2, 4 |
-| L1 heading + bold/italic | 3, 4 |
-| L2 list/link/code/quote | 7 |
-| CM + decorations, no Milkdown | 4 |
-| No sidebars / images / tables | Global constraints (not in tasks) |
-| IME | 8 |
-| Autosave / theme / toolbar APIs | 1, 5 (preserve existing) |
-| Typography | 6 |
+| Spec requirement                | Task                              |
+| ------------------------------- | --------------------------------- |
+| Live default + Source mode      | 1, 4, 5                           |
+| Line-level active source        | 2, 4                              |
+| Frontmatter always source       | 2, 4                              |
+| L1 heading + bold/italic        | 3, 4                              |
+| L2 list/link/code/quote         | 7                                 |
+| CM + decorations, no Milkdown   | 4                                 |
+| No sidebars / images / tables   | Global constraints (not in tasks) |
+| IME                             | 8                                 |
+| Autosave / theme / toolbar APIs | 1, 5 (preserve existing)          |
+| Typography                      | 6                                 |
 
 ## Placeholder scan
 

@@ -23,6 +23,7 @@ import {
 import { ensureDOMGlobals } from "./utils/dom";
 import { getString, initLocale } from "./utils/locale";
 import { bindMarkdownSettingsPreferencePane } from "./modules/markdown/settings";
+import { disposeMarkdownRenderer } from "./modules/markdown/async-render";
 
 async function onStartup() {
   await Promise.all([
@@ -49,6 +50,7 @@ async function onStartup() {
     openMarkdown: openMarkdownAttachment,
     createMarkdown: createMarkdownAttachment,
     markdown: markdownApi,
+    getString,
   };
   addon.data.initialized = true;
   ztoolkit.log(`${addon.data.config.addonName} initialized`);
@@ -92,12 +94,13 @@ async function onMainWindowUnload(_win: Window): Promise<void> {
   // onCloseWindow callbacks (unInitKeyboardListener for the closing window).
   await flushSessionsForWindow(_win);
   unregisterItemContextMenu(_win);
-  disposeSidebarForWindow(_win);
+  await disposeSidebarForWindow(_win);
 }
 
 async function onShutdown(): Promise<void> {
   await flushAllSessions();
-  unregisterSidebarSection();
+  await unregisterSidebarSection();
+  disposeMarkdownRenderer();
   unregisterFileOpenInterceptor();
   unregisterMenus();
   unregisterShortcuts();

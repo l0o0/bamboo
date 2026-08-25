@@ -36,7 +36,9 @@ test("normalizes only local asset references", () => {
     normalizeAssetReference("zotero-md://asset/a.webp"),
     "assets/a.webp",
   );
+  assert.equal(normalizeAssetReference("./assets/a.png"), "assets/a.png");
   assert.equal(normalizeAssetReference("assets/../secret.png"), null);
+  assert.equal(normalizeAssetReference("../assets/a.png"), null);
   assert.equal(normalizeAssetReference("/assets/a.png"), null);
   assert.equal(normalizeAssetReference("https://example.com/a.png"), null);
   assert.equal(mimeFromAssetPath("assets/a.JPEG"), "image/jpeg");
@@ -65,6 +67,37 @@ test("parses markdown images and deduplicates local assets", () => {
   assert.deepEqual(referencedAssets(source), ["assets/a.png"]);
 });
 
+test("parses angle-bracket destinations and keeps positions in order", () => {
+  const source =
+    '![one](<assets/my image.png>)\n![two](assets/b.png) ![three](<assets/c.png> "title")';
+  const images = parseMarkdownImages(source);
+  assert.deepEqual(
+    images.map(({ alt, source }) => ({ alt, source })),
+    [
+      { alt: "one", source: "assets/my image.png" },
+      { alt: "two", source: "assets/b.png" },
+      { alt: "three", source: "assets/c.png" },
+    ],
+  );
+  // Offsets stay sorted so replaceMarkdownRange can apply last-to-first.
+  assert.ok(images[0].from < images[1].from && images[1].from < images[2].from);
+  assert.deepEqual(referencedAssets(source), [
+    "assets/my image.png",
+    "assets/b.png",
+    "assets/c.png",
+  ]);
+});
+
+test("counts relative and wikilink references as used assets", () => {
+  const source =
+    "![](./assets/rel.png)\n![[Pasted image.png]]\n![a](<assets/space name.png>)";
+  assert.deepEqual(referencedAssets(source), [
+    "assets/rel.png",
+    "assets/space name.png",
+    "assets/Pasted image.png",
+  ]);
+});
+
 test("encodes image bytes as a data URL", () => {
   assert.equal(
     bytesToDataUrl(new Uint8Array([0x66, 0x6f, 0x6f]), "image/png"),
@@ -82,20 +115,41 @@ test("identifies external images without treating local assets as downloads", ()
   );
 });
 
-test("plans unused image cleanup and removes only an empty assets directory", () => {
+test("cleanup only ever removes plugin-generated asset files", () => {
+  const generated = "assets/1723500000000-abc1234.png";
+  const used = "assets/1723500000001-def5678.webp";
+  const userManaged = "assets/my image.png";
+  const userManaged2 = "assets/Pasted image.png";
+  const readme = "assets/readme.txt";
+
+  // Unreferenced generated files are removed; user-managed files survive
+  // even when they look unreferenced (their reference syntax may be
+  // unrecognized by the parser, e.g. wikilinks or spaces).
   assert.deepEqual(
-    planUnusedImageCleanup(
-      ["assets/used.png", "assets/unused.webp"],
-      "![used](assets/used.png)",
-    ),
-    { remove: ["assets/unused.webp"], removeDirectory: false },
+    planUnusedImageCleanup([generated, userManaged, userManaged2], ""),
+    { remove: [generated], removeDirectory: false },
   );
-  assert.deepEqual(planUnusedImageCleanup(["assets/unused.png"], ""), {
-    remove: ["assets/unused.png"],
+  // Non-image files are never removed.
+  assert.deepEqual(planUnusedImageCleanup([readme], ""), {
+    remove: [],
+    removeDirectory: false,
+  });
+  // Referenced generated files are kept.
+  assert.deepEqual(planUnusedImageCleanup([generated, used], `![a](${used})`), {
+    remove: [generated],
+    removeDirectory: false,
+  });
+  // Only generated files present → the empty assets directory is removed.
+  assert.deepEqual(planUnusedImageCleanup([generated], ""), {
+    remove: [generated],
     removeDirectory: true,
   });
+  // Generated files referenced via unusual syntax are still protected.
   assert.deepEqual(
-    planUnusedImageCleanup(["assets/unused.png", "assets/readme.txt"], ""),
-    { remove: ["assets/unused.png"], removeDirectory: false },
+    planUnusedImageCleanup(
+      [generated, used],
+      `![a](<${generated}>) ![[${used.slice("assets/".length)}]]`,
+    ),
+    { remove: [], removeDirectory: false },
   );
 });

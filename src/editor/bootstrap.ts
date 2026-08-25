@@ -68,7 +68,7 @@ import {
   setLiveImageAssets,
   setLiveTableCellEdit,
 } from "./live-preview";
-import { rememberLiveAsset } from "./live-preview/assets";
+import { forgetLiveAsset, rememberLiveAsset } from "./live-preview/assets";
 import { tableKeymap } from "./table";
 import {
   activateTableCellByIndex,
@@ -164,6 +164,15 @@ const runtime: EditorRuntime = {
 
 const editorChannel =
   new URL(window.location.href).searchParams.get("channel") || "";
+
+function editorDebug(event: string, details?: unknown) {
+  const message = `[Bamboo][EditorDebug] ${event}`;
+  try {
+    console.log(message, details ?? "");
+  } catch {
+    // ignore console failures in chrome documents
+  }
+}
 
 function activateImageLine(image: HTMLElement) {
   const editor = runtime.view;
@@ -705,7 +714,10 @@ function modeUiForMode(mode: EditorMode): Extension {
   });
 }
 
-function buildExtensions(init: EditorInitPayload): Extension[] {
+function buildExtensions(
+  init: EditorInitPayload,
+  disableLivePreview = false,
+): Extension[] {
   runtime.theme = init.theme;
   runtime.fontSize = init.fontSize;
   runtime.mode = init.mode === "source" ? "source" : "live";
@@ -803,7 +815,9 @@ function buildExtensions(init: EditorInitPayload): Extension[] {
       ),
       codeSyntaxHighlighting(init.theme),
     ]),
-    liveCompartment.of(livePreviewWhen(runtime.mode === "live")),
+    liveCompartment.of(
+      disableLivePreview ? [] : livePreviewWhen(runtime.mode === "live"),
+    ),
     modeAttrCompartment.of(modeUiForMode(runtime.mode)),
     readOnlyCompartment.of(EditorState.readOnly.of(!!init.readOnly)),
     editorEditableCompartment.of(EditorView.editable.of(!init.readOnly)),
@@ -947,6 +961,12 @@ function prefixLineInView(v: EditorView, prefix: string) {
 }
 
 function createOrResetEditor(init: EditorInitPayload) {
+  editorDebug("init-received", {
+    channel: editorChannel,
+    mode: init.mode,
+    surface: init.surface,
+    docLength: init.doc?.length ?? 0,
+  });
   const host = document.getElementById("editor-root");
   if (!host) {
     postToParent({
@@ -974,15 +994,45 @@ function createOrResetEditor(init: EditorInitPayload) {
 
   runtime.docRev = 0;
   runtime.imageAssets = {};
-  const state = EditorState.create({
-    doc: init.doc ?? "",
-    extensions: buildExtensions(init),
-  });
-
-  runtime.view = new EditorView({
-    state,
-    parent: host,
-  });
+  let state: EditorState;
+  try {
+    editorDebug("state-create-start");
+    state = EditorState.create({
+      doc: init.doc ?? "",
+      extensions: buildExtensions(init),
+    });
+    editorDebug("state-create-complete");
+    runtime.view = new EditorView({ state, parent: host });
+    editorDebug("view-create-complete", {
+      mode: runtime.mode,
+      docLength: runtime.view.state.doc.length,
+    });
+  } catch (error) {
+    editorDebug("live-init-failed", {
+      message: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined,
+    });
+    runtime.view?.destroy();
+    runtime.view = null;
+    postToParent({
+      type: "error",
+      payload: {
+        message: `Live Preview initialization failed; using Source mode: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      },
+    });
+    const fallbackInit = { ...init, mode: "source" as const };
+    runtime.mode = "source";
+    state = EditorState.create({
+      doc: fallbackInit.doc ?? "",
+      extensions: buildExtensions(fallbackInit, true),
+    });
+    runtime.view = new EditorView({ state, parent: host });
+    editorDebug("source-fallback-complete", {
+      docLength: runtime.view.state.doc.length,
+    });
+  }
   runtime.tableContextMenu = createTableContextMenu({
     document,
     parent: runtime.view.dom,
@@ -1022,6 +1072,7 @@ function createOrResetEditor(init: EditorInitPayload) {
 }
 
 function handleParentMessage(data: ParentToEditorMessage) {
+  editorDebug("parent-message", { type: data.type, channel: editorChannel });
   switch (data.type) {
     case "init":
       createOrResetEditor(data.payload);
@@ -1041,7 +1092,19 @@ function handleParentMessage(data: ParentToEditorMessage) {
     }
     case "replaceRange": {
       if (!runtime.view) return;
-      runtime.view.dispatch({ changes: data.payload });
+      // Clamp against the current document: the parent computes these
+      // positions from its echoed mirror, which can lag the live buffer
+      // during fast typing — an out-of-range dispatch would throw inside
+      // CodeMirror and the title sync would fail silently.
+      const docLength = runtime.view.state.doc.length;
+      const from = data.payload.from;
+      const to = data.payload.to;
+      if (!Number.isFinite(from) || !Number.isFinite(to)) return;
+      const safeFrom = Math.max(0, Math.min(Math.trunc(from), docLength));
+      const safeTo = Math.max(safeFrom, Math.min(Math.trunc(to), docLength));
+      runtime.view.dispatch({
+        changes: { from: safeFrom, to: safeTo, insert: data.payload.insert },
+      });
       break;
     }
     case "insertText": {
@@ -1165,7 +1228,12 @@ function handleParentMessage(data: ParentToEditorMessage) {
     }
     case "setImageAssets": {
       if (!runtime.view) return;
-      runtime.imageAssets = { ...runtime.imageAssets, ...data.payload.assets };
+      // Full-set pushes (the parent sends the complete map for the current
+      // document) replace the map so stale data URLs from removed references
+      // do not accumulate; single-asset pushes (`replace: false`) merge.
+      runtime.imageAssets = data.payload.replace
+        ? { ...data.payload.assets }
+        : { ...runtime.imageAssets, ...data.payload.assets };
       for (const reference of Object.keys(data.payload.assets)) {
         rememberLiveAsset(reference);
       }
@@ -1184,6 +1252,11 @@ function handleParentMessage(data: ParentToEditorMessage) {
           error: data.payload.error,
         },
       };
+      if (data.payload.error) {
+        // Failed resolution: allow a later re-request (cooldown-bounded in
+        // assets.ts) so the placeholder recovers once the file appears.
+        forgetLiveAsset(data.payload.reference);
+      }
       runtime.view.dispatch({
         effects: setLiveImageAssets.of(runtime.imageAssets),
       });
@@ -1234,6 +1307,22 @@ const PARENT_TO_EDITOR_TYPES = new Set([
 ]);
 
 function onWindowMessage(event: MessageEvent) {
+  editorDebug("message-received", {
+    sourceIsParent: event.source === window.parent,
+    sourceIsNull: event.source == null,
+    type: (event.data as { type?: unknown } | null)?.type,
+    channel: (event.data as { channel?: unknown } | null)?.channel,
+  });
+  // Only ever accept messages from the embedding parent window. Without this
+  // check, any script running in the parent document context could forge
+  // editor commands (setValue / destroy / ...) for a guessed channel.
+  // In Zotero's privileged chrome iframe, MessageEvent.source can be null or
+  // a wrapper that is not object-identical to window.parent. The channel and
+  // protocol checks below remain mandatory, so accept those two valid cases.
+  if (event.source != null && event.source !== window.parent) {
+    editorDebug("message-rejected-source");
+    return;
+  }
   if (!isEditorProtocolMessage(event.data)) return;
   if (!PARENT_TO_EDITOR_TYPES.has(event.data.type)) return;
   if (event.data.channel !== editorChannel) return;
@@ -1251,6 +1340,11 @@ function onWindowMessage(event: MessageEvent) {
 }
 
 function boot() {
+  editorDebug("boot", {
+    readyState: document.readyState,
+    channel: editorChannel,
+    hasRoot: !!document.getElementById("editor-root"),
+  });
   window.addEventListener("message", onWindowMessage);
   postToParent({ type: "ready" });
 }

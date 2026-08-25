@@ -1,7 +1,7 @@
 # Bamboo 竹子
 
 [![Zotero compatibility](https://img.shields.io/badge/Zotero-9%2F10-green?style=flat-square&logo=zotero&logoColor=CC2936)](https://www.zotero.org)
-[![version](https://img.shields.io/badge/version-0.1.4-blue?style=flat-square)](https://github.com/l0o0/zotero-markdown/releases)
+[![version](https://img.shields.io/badge/version-0.1.4-blue?style=flat-square)](https://github.com/l0o0/bamboo/releases)
 [![license](https://img.shields.io/badge/license-AGPL--3.0-orange?style=flat-square)](./LICENSE)
 
 **Bamboo 竹子 brings native Markdown to Zotero.** Treat `.md` files as first-class attachments — open, edit, preview, and create them inside Zotero.
@@ -42,14 +42,14 @@ Zotero is excellent for collecting and organizing research. In the AI era, **pla
 
 ## Install
 
-Download the latest `.xpi` from [Releases](https://github.com/l0o0/zotero-markdown/releases), then in Zotero: **Tools → Plugins → gear → Install Plugin From File…** and restart if prompted.
+Download the latest `bamboo-v{version}.xpi` from [Releases](https://github.com/l0o0/bamboo/releases), then in Zotero: **Tools → Plugins → gear → Install Plugin From File…** and restart if prompted.
 
 ### Development build
 
 ```bash
 pnpm install
 pnpm run build
-# XPI: .scaffold/build/bamboo-竹子.xpi
+# XPI: .scaffold/build/bamboo-v{version}.xpi
 ```
 
 ---
@@ -118,13 +118,13 @@ China mainland users: project `.npmrc` already uses [npmmirror](https://npmmirro
 
 ## API for other plugins
 
-For compatibility, Bamboo 竹子 exposes its in-process API at `Zotero.ZoteroMarkdown.api.markdown`
+Bamboo 竹子 exposes its in-process API at `Zotero.Bamboo.api.markdown`
 for other plugins / MCP bridges to create and edit `.md` documents inside Zotero.
 All methods are async, JSON-friendly, and reject with `MarkdownApiError`
 (`error.code` is stable).
 
 ```js
-const md = Zotero.ZoteroMarkdown.api.markdown;
+const md = Zotero.Bamboo.api.markdown;
 
 // List markdown attachments in the user library
 const docs = await md.list({ q: "note" });
@@ -166,7 +166,7 @@ Notes:
   changes — pass `force: true` to overwrite.
 - `rename` renames the underlying file; for linked attachments this renames
   the file on disk.
-- API version: `Zotero.ZoteroMarkdown.api.version` (currently `2`). The `ZoteroMarkdown` namespace remains stable for existing integrations.
+- API version: `Zotero.Bamboo.api.version` (currently `2`).
 
 ---
 

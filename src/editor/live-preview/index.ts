@@ -10,9 +10,7 @@ export { livePreviewPlugin };
 export { setLiveImageAssets, setLiveTableCellEdit } from "./plugin";
 export {
   activeLinesFromSelection,
-  frontmatterLineNumbers,
   frontmatterLineNumbersFromLines,
-  shouldSkipLiveLine,
 } from "./active-lines";
 export {
   parseAtxHeading,
@@ -20,4 +18,4 @@ export {
   parseBlockQuotePrefix,
   fencedCodeLineKindsFromLines,
 } from "./structure";
-export { parseInlineL1, parseInlineL2 } from "./inline";
+export { parseInlineL2 } from "./inline";

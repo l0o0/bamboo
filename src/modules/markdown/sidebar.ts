@@ -53,6 +53,36 @@ const controllers = new SidebarControllerRegistry<
   SidebarController
 >();
 
+/**
+ * Sidebar editor sessions currently editing `itemID` (across windows).
+ * Lets the public API treat sidebar edits like tab sessions: reads prefer the
+ * live buffer and writes conflict on unsaved changes instead of silently
+ * clobbering each other (see `api.ts` `currentContent` / `writeContent`).
+ */
+export function findSidebarSessions(
+  itemID: number,
+): Array<{ editor: MarkdownEditorHandle; save: SaveCoordinator }> {
+  const out: Array<{ editor: MarkdownEditorHandle; save: SaveCoordinator }> =
+    [];
+  for (const controller of controllers.all()) {
+    if (controller.currentItemID !== itemID) continue;
+    const session = controller.getSession();
+    if (session) out.push(session);
+  }
+  return out;
+}
+
+/** Save and close every sidebar editor for an attachment before removal. */
+export async function closeSidebarSessions(itemID: number): Promise<number> {
+  const matching = controllers
+    .all()
+    .filter((controller) => controller.currentItemID === itemID);
+  const closed = await Promise.all(
+    matching.map((controller) => controller.closeItemSession(itemID)),
+  );
+  return closed.filter(Boolean).length;
+}
+
 function faviconURL(): string {
   return `chrome://${addon.data.config.addonRef}/content/icons/favicon.png`;
 }
@@ -123,7 +153,7 @@ export function registerSidebarSection(): void {
   }
 }
 
-export function unregisterSidebarSection(): void {
+export async function unregisterSidebarSection(): Promise<void> {
   if (sectionKey) {
     try {
       Zotero.ItemPaneManager?.unregisterSection(sectionKey);
@@ -132,20 +162,20 @@ export function unregisterSidebarSection(): void {
     }
     sectionKey = null;
   }
-  for (const win of Zotero.getMainWindows()) {
-    for (const controller of controllers.releaseWindow(win)) {
-      controller.destroy();
-    }
-  }
+  await Promise.all(
+    Zotero.getMainWindows().flatMap((win) =>
+      controllers.releaseWindow(win).map((controller) => controller.destroy()),
+    ),
+  );
 }
 
-/** Destroy the sidebar editor for a closing window. */
-export function disposeSidebarForWindow(win: Window): void {
-  for (const controller of controllers.releaseWindow(
-    win as _ZoteroTypes.MainWindow,
-  )) {
-    controller.destroy();
-  }
+/** Destroy the sidebar editor for a closing window (awaits the final flush). */
+export async function disposeSidebarForWindow(win: Window): Promise<void> {
+  await Promise.all(
+    controllers
+      .releaseWindow(win as _ZoteroTypes.MainWindow)
+      .map((controller) => controller.destroy()),
+  );
 }
 
 async function readFileText(path: string): Promise<string> {
@@ -179,6 +209,30 @@ class SidebarController {
   private readonly emptyEl: HTMLElement;
   private readonly emptyText: HTMLElement;
   private readonly hintEl: HTMLElement;
+
+  /** Item currently edited by this controller (null when idle). */
+  get currentItemID(): number | null {
+    return this.itemID;
+  }
+
+  /** Live editor + save coordinator when this controller is editing. */
+  getSession(): { editor: MarkdownEditorHandle; save: SaveCoordinator } | null {
+    return this.editor && this.save
+      ? { editor: this.editor, save: this.save }
+      : null;
+  }
+
+  async closeItemSession(itemID: number): Promise<boolean> {
+    if (this.itemID !== itemID) return false;
+    this.renderSeq++;
+    if (this.autosaveTimer != null) {
+      this.win.clearTimeout(this.autosaveTimer);
+      this.autosaveTimer = null;
+    }
+    await this.save?.request({ force: true });
+    if (this.itemID === itemID) this.destroyEditor();
+    return true;
+  }
 
   private editor: MarkdownEditorHandle | null = null;
   private save: SaveCoordinator | null = null;
@@ -240,21 +294,25 @@ class SidebarController {
 
     const openTabButton = toolbarButton(
       "open-tab",
-      "在新标签页打开",
+      getString("sidebar-open-tab"),
       iconOpenInNew(),
     );
     const separator = doc.createElement("span");
     separator.className = "zmd-sidebar-toolbar-separator";
     const formatButtons = [
-      toolbarButton("bold", "粗体", iconBold(), true),
-      toolbarButton("italic", "斜体", iconItalic(), true),
-      toolbarButton("h1", "一级标题", iconH1(), true),
-      toolbarButton("list", "无序列表", iconList(), true),
-      toolbarButton("link", "链接", iconLink(), true),
+      toolbarButton("bold", getString("sidebar-bold"), iconBold(), true),
+      toolbarButton("italic", getString("sidebar-italic"), iconItalic(), true),
+      toolbarButton("h1", getString("sidebar-h1"), iconH1(), true),
+      toolbarButton("list", getString("sidebar-list"), iconList(), true),
+      toolbarButton("link", getString("sidebar-link"), iconLink(), true),
     ];
     const spacer = doc.createElement("span");
     spacer.className = "zmd-sidebar-toolbar-spacer";
-    const moreButton = toolbarButton("more", "更多", iconMoreHorizontal());
+    const moreButton = toolbarButton(
+      "more",
+      getString("sidebar-more"),
+      iconMoreHorizontal(),
+    );
     this.toolbar.append(
       openTabButton,
       separator,
@@ -315,7 +373,10 @@ class SidebarController {
         this.editor?.wrapSelection("[", "](url)");
       } else if (action === "more") {
         new ztoolkit.ProgressWindow(addon.data.config.addonName)
-          .createLine({ text: "更多侧栏功能规划中", type: "default" })
+          .createLine({
+            text: getString("sidebar-more-planned"),
+            type: "default",
+          })
           .show();
       }
       if (action !== "open-tab" && action !== "more") this.editor?.focus();
@@ -450,8 +511,13 @@ class SidebarController {
     if (target) void this.openEditor(target, seq);
   }
 
-  destroy(): void {
-    if (this.destroyed) return;
+  /**
+   * Tear down the controller. Returns a promise that resolves once any
+   * pending editor flush has been written to disk, so window teardown can
+   * `await` it instead of losing unsaved changes.
+   */
+  destroy(): Promise<void> {
+    if (this.destroyed) return Promise.resolve();
     this.destroyed = true;
     this.renderSeq++;
     this.cancelPendingRender();
@@ -463,14 +529,21 @@ class SidebarController {
       this.win.clearTimeout(this.autosaveTimer);
       this.autosaveTimer = null;
     }
-    if (this.editor) {
-      void this.flush().finally(() => {
-        this.editor?.destroy();
-        this.editor = null;
-      });
-    }
+    const editor = this.editor;
+    const save = this.save;
     this.save = null;
     this.root.remove();
+    return (async () => {
+      if (editor && save) {
+        try {
+          await save.request({ force: true });
+        } catch (error) {
+          ztoolkit.log("Sidebar flush on destroy failed", error);
+        } finally {
+          editor.destroy();
+        }
+      }
+    })();
   }
 
   /** Bind the section header summary setter from the pane hooks. */
@@ -561,12 +634,19 @@ class SidebarController {
       if (id === activeItemID) card.classList.add("is-active");
 
       const title = this.win.document.createElement("strong");
+      // `getDisplayTitle` may return a Promise in some builds; only use it
+      // when it is already a string, otherwise fall back to the filename.
+      const fieldTitle = String(item.getField("title") || "");
+      const display = item.getDisplayTitle?.();
+      const displayTitle =
+        display && typeof (display as { then?: unknown }).then !== "function"
+          ? String(display)
+          : "";
       title.textContent =
-        String(
-          item.getField("title") ||
-            item.getDisplayTitle() ||
-            item.attachmentFilename,
-        ) || "Markdown";
+        fieldTitle ||
+        displayTitle ||
+        String(item.attachmentFilename || "") ||
+        "Markdown";
       const meta = this.win.document.createElement("span");
       const date = item.dateModified
         ? new Date(item.dateModified).toLocaleDateString()
@@ -679,8 +759,9 @@ class SidebarController {
         rev: this.save?.currentRev ?? 0,
         value: (await this.editor?.requestSnapshot()) ?? "",
       }),
-      write: async (value) => {
+      write: async (value, request) => {
         await persistMarkdownContent(item, value, {
+          cleanupImages: request.cleanupImages,
           syncTitle: true,
           syncFile: true,
         });
@@ -762,15 +843,24 @@ class SidebarController {
     bytes: Uint8Array,
     mimeType: string,
   ): Promise<void> {
+    const seq = this.renderSeq;
     const itemID = this.itemID;
     if (itemID == null) return;
     try {
       const item = Zotero.Items.get(itemID);
       if (!item) throw new Error(getString("sidebar-attachment-gone"));
       const reference = await writeImageAsset(item, bytes, mimeType);
+      // The user may have switched items while the asset was being written;
+      // never insert into a document that is no longer the one we saved to.
+      if (seq !== this.renderSeq || this.destroyed) return;
       this.editor?.insertText(`![](${reference})`, 2, 2);
       const asset = await resolveImageAssetEntry(item, reference);
-      this.editor?.setImageAssets({ [reference]: asset } as ImageAssetMap);
+      if (seq !== this.renderSeq || this.destroyed) return;
+      // Single-asset push: merge so already-loaded images stay resolved.
+      this.editor?.setImageAssets(
+        { [reference]: asset } as ImageAssetMap,
+        false,
+      );
     } catch (error) {
       ztoolkit.log("Sidebar image insert failed", error);
     }

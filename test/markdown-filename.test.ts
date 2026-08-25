@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   buildTimestampedMarkdownFilename,
+  isMarkdownFilename,
   markdownAttachmentTitle,
   markdownDocumentTitle,
 } from "../src/modules/markdown/detect";
@@ -33,4 +34,30 @@ test("uses the timestamped filename stem as the document title", () => {
 test("keeps the Markdown suffix on attachment titles without duplicating it", () => {
   assert.equal(markdownAttachmentTitle("Meeting notes"), "Meeting notes.md");
   assert.equal(markdownAttachmentTitle("Meeting notes.md"), "Meeting notes.md");
+});
+
+test("recognizes Markdown filenames and paths only", () => {
+  for (const ok of [
+    "note.md",
+    "note.markdown",
+    "note.mdown",
+    "note.mkd",
+    "note.mkdn",
+    "Note.MD",
+    "/vault/sub/note.md",
+    "C:\\vault\\note.md",
+  ]) {
+    assert.equal(isMarkdownFilename(ok), true, ok);
+  }
+  for (const bad of [
+    "",
+    "note",
+    "note.txt",
+    "note.md.txt",
+    "/etc/passwd",
+    "assets/image.png",
+    "note.md/",
+  ]) {
+    assert.equal(isMarkdownFilename(bad), false, bad);
+  }
 });

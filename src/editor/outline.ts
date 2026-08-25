@@ -1,5 +1,5 @@
 import type { EditorState } from "@codemirror/state";
-import { syntaxTree } from "@codemirror/language";
+import { ensureSyntaxTree, syntaxTree } from "@codemirror/language";
 import type {
   EditorHeadingLevel,
   EditorOutlineItem,
@@ -39,7 +39,10 @@ export function extractEditorOutline(state: EditorState): EditorOutlineItem[] {
   const source = state.doc.toString();
   const ignoredUntil = frontmatterEnd(source);
   const items: EditorOutlineItem[] = [];
-  const cursor = syntaxTree(state).cursor();
+  // The tree can be partially parsed right after init (or under load);
+  // make sure the whole document is covered before iterating.
+  const tree = ensureSyntaxTree(state, state.doc.length) ?? syntaxTree(state);
+  const cursor = tree.cursor();
 
   do {
     const level = HEADING_LEVELS[cursor.name];

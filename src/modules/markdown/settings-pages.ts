@@ -1,17 +1,28 @@
+import { getString } from "../../utils/locale";
+import type { FluentMessageId } from "../../../typings/i10n";
+
 export type SettingsPageID = "general" | "editor" | "shortcuts" | "about";
 
 export interface SettingsPage {
   id: SettingsPageID;
-  label: string;
   icon: "settings" | "type" | "keyboard" | "info";
 }
 
 export const SETTINGS_PAGES: readonly SettingsPage[] = [
-  { id: "general", label: "常规", icon: "settings" },
-  { id: "editor", label: "编辑器", icon: "type" },
-  { id: "shortcuts", label: "快捷键", icon: "keyboard" },
-  { id: "about", label: "关于", icon: "info" },
+  { id: "general", icon: "settings" },
+  { id: "editor", icon: "type" },
+  { id: "shortcuts", icon: "keyboard" },
+  { id: "about", icon: "info" },
 ];
+
+/** Fluent key for a settings page label. */
+export function settingsPageLabelKey(id: SettingsPageID): FluentMessageId {
+  return `settings-page-${id}` as FluentMessageId;
+}
+
+export function settingsPageLabel(id: SettingsPageID): string {
+  return getString(settingsPageLabelKey(id));
+}
 
 export function nextSettingsPage(
   current: SettingsPageID,

@@ -1,7 +1,7 @@
 # Bamboo 竹子
 
 [![Zotero compatibility](https://img.shields.io/badge/Zotero-9%2F10-green?style=flat-square&logo=zotero&logoColor=CC2936)](https://www.zotero.org)
-[![version](https://img.shields.io/badge/version-0.1.4-blue?style=flat-square)](https://github.com/l0o0/zotero-markdown/releases)
+[![version](https://img.shields.io/badge/version-0.1.4-blue?style=flat-square)](https://github.com/l0o0/bamboo/releases)
 [![license](https://img.shields.io/badge/license-AGPL--3.0-orange?style=flat-square)](../LICENSE)
 
 **Bamboo 竹子让 Zotero 原生支持 Markdown。** 把 `.md` 文件当作一等公民附件——在 Zotero 内打开、编辑、预览、创建。
@@ -42,14 +42,14 @@ Zotero 擅长文献收集与组织。在 AI 时代，**纯 Markdown 文件**才�
 
 ## 安装
 
-从 [Releases](https://github.com/l0o0/zotero-markdown/releases) 下载最新 `.xpi`，在 Zotero 中：**工具 → 插件 → 齿轮 → 从文件安装插件…**，如有提示重启 Zotero。
+从 [Releases](https://github.com/l0o0/bamboo/releases) 下载最新的 `bamboo-v{version}.xpi`，在 Zotero 中：**工具 → 插件 → 齿轮 → 从文件安装插件…**，如有提示重启 Zotero。
 
 ### 本地构建
 
 ```bash
 pnpm install
 pnpm run build
-# 产物：.scaffold/build/bamboo-竹子.xpi
+# 产物：.scaffold/build/bamboo-v{version}.xpi
 ```
 
 ---
@@ -116,10 +116,10 @@ pnpm start          # 构建并启动 Zotero，支持热重载
 
 ## 供其他插件调用的 API
 
-Bamboo 竹子在 `Zotero.ZoteroMarkdown.api.markdown` 暴露进程内 API，供其他插件 / MCP 桥接层在 Zotero 内创建与编辑 `.md` 文档。为兼容已有集成，`ZoteroMarkdown` 命名空间保持不变。所有方法均为异步、JSON 友好，失败时抛出 `MarkdownApiError`（`error.code` 稳定不变）。
+Bamboo 竹子在 `Zotero.Bamboo.api.markdown` 暴露进程内 API，供其他插件 / MCP 桥接层在 Zotero 内创建与编辑 `.md` 文档。所有方法均为异步、JSON 友好，失败时抛出 `MarkdownApiError`（`error.code` 稳定不变）。
 
 ```js
-const md = Zotero.ZoteroMarkdown.api.markdown;
+const md = Zotero.Bamboo.api.markdown;
 
 // 列出用户文库中的 markdown 附件
 const docs = await md.list({ q: "note" });
@@ -158,7 +158,7 @@ await md.closeTab(tabID);
 - 所有写入都走与编辑器相同的持久化路径（写文件、图片资源清理、标题同步、Zotero 文件同步标记）。
 - `update` 在编辑器 Tab 存在未保存修改时返回 `WRITE_CONFLICT`——传 `force: true` 可覆盖。
 - `rename` 会重命名底层文件；对 linked 附件会直接重命名磁盘上的文件。
-- API 版本号：`Zotero.ZoteroMarkdown.api.version`（当前 `2`）。
+- API 版本号：`Zotero.Bamboo.api.version`（当前 `2`）。
 
 ---
 

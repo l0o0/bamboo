@@ -7,14 +7,24 @@ export { initLocale, getString, getLocaleID };
  * Initialize locale data
  */
 function initLocale() {
-  const l10n = new (
+  const LocalizationCtor =
     typeof Localization === "undefined"
       ? ztoolkit.getGlobal("Localization")
-      : Localization
-  )([`${config.addonRef}-addon.ftl`], true);
+      : Localization;
+  const l10n = new LocalizationCtor([`${config.addonRef}-addon.ftl`], true);
   addon.data.locale = {
     current: l10n,
   };
+  try {
+    ztoolkit.log("[Bamboo][LocaleDebug] initialized", {
+      resource: `${config.addonRef}-addon.ftl`,
+      sample: l10n.formatMessagesSync([
+        { id: `${config.addonRef}-more-document-info` },
+      ])[0],
+    });
+  } catch (error) {
+    ztoolkit.log("[Bamboo][LocaleDebug] probe-failed", error);
+  }
 }
 
 /**
@@ -74,9 +84,32 @@ function _getString(
 ): string {
   const localStringWithPrefix = `${config.addonRef}-${localeString}`;
   const { branch, args } = options;
-  const pattern = addon.data.locale?.current.formatMessagesSync([
+  // `addon` may be absent (unit tests, or a call before onStartup): fall
+  // back to the prefixed id instead of throwing.
+  const addonRef =
+    ((globalThis as { addon?: unknown }).addon as unknown) ||
+    (typeof Zotero !== "undefined"
+      ? (Zotero as unknown as Record<string, unknown>)[config.addonInstance]
+      : undefined);
+  const localeAddon = addonRef as
+    | {
+        data?: {
+          locale?: {
+            current?: {
+              formatMessagesSync?: (
+                messages: Array<{
+                  id: string;
+                  args?: Record<string, unknown>;
+                }>,
+              ) => Array<Pattern | undefined>;
+            };
+          };
+        };
+      }
+    | undefined;
+  const pattern = localeAddon?.data?.locale?.current?.formatMessagesSync?.([
     { id: localStringWithPrefix, args },
-  ])[0] as Pattern;
+  ])?.[0];
 
   if (!pattern) {
     return localStringWithPrefix;

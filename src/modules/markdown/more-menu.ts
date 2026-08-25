@@ -1,3 +1,6 @@
+import { getString } from "../../utils/locale";
+import type { FluentMessageId } from "../../../typings/i10n";
+
 export type MoreMenuAction =
   | "document-info"
   | "rename"
@@ -14,36 +17,57 @@ export type MoreMenuAction =
 
 export interface MoreMenuItem {
   action: MoreMenuAction;
-  label: string;
   shortcut?: string;
   submenu?: boolean;
 }
 
 export const EDITOR_MODE_OPTIONS = [
-  { mode: "live", label: "Live" },
-  { mode: "source", label: "源码" },
-  { mode: "preview", label: "只读预览" },
+  { mode: "live" },
+  { mode: "source" },
+  { mode: "preview" },
 ] as const;
+
+export function findShortcutLabel(platform?: string): string {
+  const value = platform ?? globalThis.navigator?.platform ?? "";
+  return /Mac|iPhone|iPad|iPod/i.test(value) ? "⌘F" : "Ctrl+F";
+}
 
 export const MORE_MENU_SECTIONS: readonly (readonly MoreMenuItem[])[] = [
   [
-    { action: "document-info", label: "文档信息" },
-    { action: "rename", label: "重命名" },
-    { action: "show-in-folder", label: "在文件夹中显示" },
+    { action: "document-info" },
+    { action: "rename" },
+    { action: "show-in-folder" },
   ],
   [
-    { action: "find", label: "查找与替换", shortcut: "⌘F" },
-    { action: "source", label: "Markdown 源码", shortcut: "↗" },
-    { action: "mode", label: "模式", submenu: true },
+    { action: "find", shortcut: findShortcutLabel() },
+    { action: "source" },
+    { action: "mode", submenu: true },
   ],
+  [{ action: "export-pdf" }, { action: "export-html" }],
   [
-    { action: "export-pdf", label: "导出为 PDF" },
-    { action: "export-html", label: "导出为 HTML" },
-  ],
-  [
-    { action: "import-external-images", label: "导入外链图片" },
-    { action: "cleanup-images", label: "清理未引用图片" },
-    { action: "shortcuts", label: "快捷键" },
-    { action: "settings", label: "设置" },
+    { action: "import-external-images" },
+    { action: "cleanup-images" },
+    { action: "shortcuts" },
+    { action: "settings" },
   ],
 ];
+
+/** Fluent key for a kebab-menu action label. */
+export function moreMenuLabelKey(action: MoreMenuAction): FluentMessageId {
+  return `more-${action}` as FluentMessageId;
+}
+
+export function moreMenuLabel(action: MoreMenuAction): string {
+  return getString(moreMenuLabelKey(action));
+}
+
+/** Fluent key for an editor mode label. */
+export function modeLabelKey(
+  mode: "live" | "source" | "preview",
+): FluentMessageId {
+  return `tab-mode-${mode}` as FluentMessageId;
+}
+
+export function modeLabel(mode: "live" | "source" | "preview"): string {
+  return getString(modeLabelKey(mode));
+}

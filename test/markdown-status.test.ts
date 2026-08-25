@@ -6,19 +6,21 @@ import {
 } from "../src/modules/markdown/status.ts";
 
 describe("formatStats", () => {
-  it("shows words and lines only", () => {
+  it("interpolates words and lines into the localized pattern", () => {
+    // Without a Zotero window, getString falls back to the prefixed id with
+    // the args unresolved; the important part is that the FTL key is used.
     assert.equal(
       formatStats({ chars: 42, words: 7, lines: 3 }),
-      "7 words · 3 lines",
+      "bamboo-status-stats",
     );
   });
 });
 
 describe("formatSavedStatus", () => {
-  it("shows the saved time and autosave information", () => {
+  it("interpolates the saved time into the localized pattern", () => {
     assert.equal(
       formatSavedStatus(new Date(2026, 7, 13, 16, 45)),
-      "已保存 16:45 · 自动保存已开启",
+      "bamboo-status-saved-at",
     );
   });
 });

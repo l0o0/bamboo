@@ -1,13 +1,9 @@
 import type { InlineRange } from "./types";
 
 /**
- * L1/L2 inline ranges for a single line (offsets relative to the line string).
+ * L2 inline ranges for a single line (offsets relative to the line string).
  * `mark` ranges are syntax to hide; content kinds style the inner text.
  */
-export function parseInlineL1(line: string): InlineRange[] {
-  return parseInline(line, { code: false, link: false });
-}
-
 export function parseInlineL2(line: string): InlineRange[] {
   return parseInline(line, { code: true, link: true });
 }
@@ -19,14 +15,33 @@ function parseInline(
   const out: InlineRange[] = [];
   let i = 0;
   while (i < line.length) {
-    // Inline code first (highest priority for backtick)
+    // Skip long uniform delimiter runs in O(1): a pasted line of thousands
+    // of `*`/`~`/`` ` `` must not trigger a full-line indexOf scan per
+    // character (O(n²)). Runs of 4+ are degenerate markdown anyway.
+    const ch = line[i];
+    if (
+      (ch === "*" || ch === "~" || ch === "`") &&
+      line[i + 1] === ch &&
+      line[i + 2] === ch &&
+      line[i + 3] === ch
+    ) {
+      let run = 4;
+      while (line[i + run] === ch) run++;
+      i += run;
+      continue;
+    }
+
+    // Inline code first (highest priority for backtick), supporting runs of
+    // backticks (`` `code` `` / `` ``code`` ``).
     if (opts.code && line[i] === "`") {
-      const close = line.indexOf("`", i + 1);
-      if (close > i + 1) {
-        out.push({ from: i, to: i + 1, kind: "mark" });
-        out.push({ from: i + 1, to: close, kind: "code" });
-        out.push({ from: close, to: close + 1, kind: "mark" });
-        i = close + 1;
+      let run = 0;
+      while (line[i + run] === "`") run++;
+      const close = line.indexOf("`".repeat(run), i + run);
+      if (close > i + run) {
+        out.push({ from: i, to: i + run, kind: "mark" });
+        out.push({ from: i + run, to: close, kind: "code" });
+        out.push({ from: close, to: close + run, kind: "mark" });
+        i = close + run;
         continue;
       }
     }
@@ -48,9 +63,14 @@ function parseInline(
       }
     }
 
+    const isEscaped = i > 0 && line[i - 1] === "\\";
+
     // Strong **...**
-    if (line[i] === "*" && line[i + 1] === "*") {
-      const close = line.indexOf("**", i + 2);
+    if (!isEscaped && line[i] === "*" && line[i + 1] === "*") {
+      let close = line.indexOf("**", i + 2);
+      while (close !== -1 && line[close - 1] === "\\") {
+        close = line.indexOf("**", close + 1);
+      }
       if (close !== -1 && close > i + 2) {
         out.push({ from: i, to: i + 2, kind: "mark" });
         out.push({ from: i + 2, to: close, kind: "strong" });
@@ -61,8 +81,11 @@ function parseInline(
     }
 
     // Strikethrough ~~...~~
-    if (line[i] === "~" && line[i + 1] === "~") {
-      const close = line.indexOf("~~", i + 2);
+    if (!isEscaped && line[i] === "~" && line[i + 1] === "~") {
+      let close = line.indexOf("~~", i + 2);
+      while (close !== -1 && line[close - 1] === "\\") {
+        close = line.indexOf("~~", close + 1);
+      }
       if (close !== -1 && close > i + 2) {
         out.push({ from: i, to: i + 2, kind: "mark" });
         out.push({ from: i + 2, to: close, kind: "strike" });
@@ -73,10 +96,19 @@ function parseInline(
     }
 
     // Emphasis *...* (single asterisk, not part of **)
-    if (line[i] === "*" && line[i + 1] !== "*") {
+    if (!isEscaped && line[i] === "*" && line[i + 1] !== "*") {
       let j = i + 1;
       while (j < line.length) {
-        if (line[j] === "*" && line[j - 1] !== "\\") break;
+        const escapedCloser =
+          line[j - 1] === "\\" || (line[j - 1] === "*" && line[j - 2] === "\\");
+        if (line[j] === "*" && !escapedCloser) {
+          // A `**` run is never an emphasis closer — skip the whole run.
+          if (line[j + 1] === "*") {
+            j += 2;
+            continue;
+          }
+          break;
+        }
         j++;
       }
       if (j < line.length && j > i + 1) {

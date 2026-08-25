@@ -1,3 +1,14 @@
+import { getString } from "../../../utils/locale";
+import { config } from "../../../../package.json";
+
+function imageErrorMessage(
+  key: Parameters<typeof getString>[0],
+  fallback: string,
+) {
+  const message = getString(key);
+  return message === `${config.addonRef}-${key}` ? fallback : message;
+}
+
 export const MAX_IMAGE_BYTES = 15 * 1024 * 1024;
 
 const MIME_EXTENSIONS = {
@@ -27,13 +38,20 @@ export interface MarkdownImageReference {
 export function validateImageInput(mimeType: string, size: number): string {
   const extension = MIME_EXTENSIONS[mimeType as SupportedImageMime];
   if (!extension) {
-    throw new Error("仅支持 PNG、JPEG、GIF 和 WebP 图片");
+    throw new Error(
+      imageErrorMessage(
+        "error-image-format",
+        "仅支持 PNG、JPEG、GIF 和 WebP 图片",
+      ),
+    );
   }
   if (!Number.isFinite(size) || size <= 0) {
-    throw new Error("图片内容为空");
+    throw new Error(imageErrorMessage("error-image-empty", "图片内容为空"));
   }
   if (size > MAX_IMAGE_BYTES) {
-    throw new Error("图片不能超过 15 MB");
+    throw new Error(
+      imageErrorMessage("error-image-too-large", "图片不能超过 15 MB"),
+    );
   }
   return extension;
 }
@@ -56,6 +74,9 @@ export function normalizeAssetReference(source: string): string | null {
     value = `assets/${value.slice("zotero-md://asset/".length)}`;
   }
   value = value.replace(/\\/g, "/");
+  // Tolerate a leading `./` (Obsidian-style relative paths). `../` and other
+  // traversal prefixes are deliberately rejected below by the `assets/` check.
+  if (value.startsWith("./")) value = value.slice(2);
   if (!value.startsWith("assets/")) return null;
   const name = value.slice("assets/".length);
   if (!name || name.includes("/") || name === "." || name === "..") {
@@ -74,12 +95,19 @@ export function mimeFromAssetPath(path: string): SupportedImageMime | null {
 
 export function parseMarkdownImages(source: string): MarkdownImageReference[] {
   const images: MarkdownImageReference[] = [];
-  const pattern = /!\[([^\]\n]*)\]\(([^\s)]+)(?:\s+["'][^"']*["'])?\)/g;
+  // CommonMark image references. The angle-bracket form `![alt](<dest>)`
+  // allows spaces in the destination and must be tried first so the plain
+  // form does not swallow the `<...>` as part of the source.
+  const pattern =
+    /!\[([^\]\n]*)\]\(\s*<([^>\n]*)>\s*(?:\s+["'][^"']*["'])?\s*\)|!\[([^\]\n]*)\]\(([^\s)]+)(?:\s+["'][^"']*["'])?\)/g;
   for (const match of source.matchAll(pattern)) {
     if (match.index === undefined) continue;
+    const alt = match[1] ?? match[3];
+    const src = match[2] ?? match[4];
+    if (src === undefined) continue;
     images.push({
-      alt: match[1],
-      source: match[2],
+      alt: alt ?? "",
+      source: src,
       from: match.index,
       to: match.index + match[0].length,
     });
@@ -88,13 +116,35 @@ export function parseMarkdownImages(source: string): MarkdownImageReference[] {
 }
 
 export function referencedAssets(source: string): string[] {
-  return [
-    ...new Set(
-      parseMarkdownImages(source)
-        .map((image) => normalizeAssetReference(image.source))
-        .filter((path): path is string => !!path),
-    ),
-  ];
+  const refs = parseMarkdownImages(source).map((image) =>
+    normalizeAssetReference(image.source),
+  );
+  // Obsidian-style wikilinks `![[name.ext]]` refer to a sibling of the note
+  // (here: the attachment's `assets/` folder). Counting them as references
+  // keeps cleanup from deleting files that wikilink syntax points at.
+  const wikilink = /!\[\[([^\]\n]+)\]\]/g;
+  for (const match of source.matchAll(wikilink)) {
+    refs.push(normalizeAssetReference(`assets/${match[1].trim()}`));
+  }
+  return [...new Set(refs.filter((path): path is string => path !== null))];
+}
+
+/**
+ * Filename pattern of plugin-generated image assets (`buildAssetFilename`):
+ * `<millisecond timestamp>-<7-char base36 token>.<ext>`.
+ *
+ * Cleanup may only ever delete files matching this pattern. User-managed
+ * files (custom names, Obsidian-style spaces, wikilink targets, or references
+ * the parser cannot see) must never be removed, even when they look
+ * unreferenced.
+ */
+export const GENERATED_ASSET_RE = /^\d{10,}-\w{7}\.(png|jpe?g|gif|webp)$/i;
+
+export function isGeneratedAsset(path: string): boolean {
+  // `cleanupUnusedImageAssets` passes `assets/<name>` entries; strip the
+  // prefix (and tolerate a bare name) before matching the basename.
+  const name = path.replace(/^assets\//, "");
+  return GENERATED_ASSET_RE.test(name);
 }
 
 export function planUnusedImageCleanup(
@@ -103,7 +153,10 @@ export function planUnusedImageCleanup(
 ): { remove: string[]; removeDirectory: boolean } {
   const referenced = new Set(referencedAssets(markdown));
   const remove = children.filter(
-    (path) => mimeFromAssetPath(path) && !referenced.has(path),
+    (path) =>
+      isGeneratedAsset(path) &&
+      mimeFromAssetPath(path) &&
+      !referenced.has(path),
   );
   return {
     remove,

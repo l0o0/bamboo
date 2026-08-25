@@ -24,6 +24,8 @@ import { tableInsertTemplate } from "./insert-template";
 import {
   EDITOR_MODE_OPTIONS,
   MORE_MENU_SECTIONS,
+  modeLabel,
+  moreMenuLabel,
   type MoreMenuAction,
 } from "./more-menu";
 import {
@@ -31,6 +33,12 @@ import {
   mountPreviewHtml,
   scrollPreviewToOutline,
 } from "./preview";
+import {
+  disposeMarkdownRenderer,
+  AsyncRenderError,
+  renderMarkdownAsync,
+} from "./async-render";
+import { isCurrentPreviewGeneration } from "./preview-render-state";
 import {
   buildExportHtml,
   exportBasename,
@@ -78,13 +86,13 @@ export function modeToggleState(mode: "live" | "source" | "preview") {
     return {
       target: "live" as const,
       icon: iconLive(),
-      label: "切换到 Live 模式",
+      label: getString("tab-mode-toggle-live"),
     };
   }
   return {
     target: "source" as const,
     icon: iconSource(),
-    label: "切换到 Source Code 模式",
+    label: getString("tab-mode-toggle-source"),
   };
 }
 
@@ -137,7 +145,14 @@ export async function openMarkdownTab(
 
   let content: string;
   try {
-    content = (await Zotero.File.getContentsAsync(path)) as string;
+    const raw = await Zotero.File.getContentsAsync(path);
+    content = typeof raw === "string" ? raw : String(raw ?? "");
+    ztoolkit.log("[Bamboo][EditorDebug] file-read", {
+      itemID: item.id,
+      path,
+      rawType: typeof raw,
+      contentLength: content.length,
+    });
   } catch (e) {
     ztoolkit.log("Failed to read markdown file", e);
     new ztoolkit.ProgressWindow(addon.data.config.addonName)
@@ -176,6 +191,7 @@ export async function openMarkdownTab(
     itemID: item.id,
     path,
     mode: "live",
+    previewRenderGeneration: 0,
     outlineItems: [],
     outlineActiveID: null,
     outlineExpanded: true,
@@ -306,6 +322,11 @@ function mountEditorUI(
   content: string,
   item: Zotero.Item,
 ) {
+  ztoolkit.log("[Bamboo][EditorDebug] tab-mount-start", {
+    tabID: session.tabID,
+    itemID: session.itemID,
+    docLength: content.length,
+  });
   ensureDOMGlobals(win);
   const doc = getDOMDocument(win);
   const dark = resolveEditorTheme(win) === "dark";
@@ -371,8 +392,8 @@ function mountEditorUI(
                 },
                 attributes: {
                   "data-action": "save",
-                  title: "Save (Ctrl/Cmd+S)",
-                  "aria-label": "Save",
+                  title: getString("tab-save-title"),
+                  "aria-label": getString("tab-save"),
                 },
               },
               {
@@ -381,8 +402,18 @@ function mountEditorUI(
                 classList: ["zotero-markdown-sep"],
               },
               ...[
-                ["undo", iconUndo(), "Undo", "Undo (Ctrl/Cmd+Z)"],
-                ["redo", iconRedo(), "Redo", "Redo (Ctrl/Cmd+Shift+Z)"],
+                [
+                  "undo",
+                  iconUndo(),
+                  getString("tab-undo"),
+                  getString("tab-undo-title"),
+                ],
+                [
+                  "redo",
+                  iconRedo(),
+                  getString("tab-redo"),
+                  getString("tab-redo-title"),
+                ],
               ].map(([action, icon, label, title]) => ({
                 tag: "button",
                 namespace: "html",
@@ -417,8 +448,8 @@ function mountEditorUI(
                     },
                     attributes: {
                       "data-action": "bold",
-                      title: "Bold (Ctrl/Cmd+B)",
-                      "aria-label": "Bold",
+                      title: getString("tab-bold-title"),
+                      "aria-label": getString("tab-bold"),
                     },
                   },
                   {
@@ -431,8 +462,8 @@ function mountEditorUI(
                     },
                     attributes: {
                       "data-action": "italic",
-                      title: "Italic (Ctrl/Cmd+I)",
-                      "aria-label": "Italic",
+                      title: getString("tab-italic-title"),
+                      "aria-label": getString("tab-italic"),
                     },
                   },
                   {
@@ -445,8 +476,8 @@ function mountEditorUI(
                     },
                     attributes: {
                       "data-action": "h1",
-                      title: "Heading 1 (Ctrl/Cmd+1)",
-                      "aria-label": "Heading 1",
+                      title: getString("tab-h1-title"),
+                      "aria-label": getString("tab-h1"),
                     },
                   },
                   {
@@ -459,8 +490,8 @@ function mountEditorUI(
                     },
                     attributes: {
                       "data-action": "h2",
-                      title: "Heading 2 (Ctrl/Cmd+2)",
-                      "aria-label": "Heading 2",
+                      title: getString("tab-h2-title"),
+                      "aria-label": getString("tab-h2"),
                     },
                   },
                   {
@@ -473,8 +504,8 @@ function mountEditorUI(
                     },
                     attributes: {
                       "data-action": "h3",
-                      title: "Heading 3",
-                      "aria-label": "Heading 3",
+                      title: getString("tab-h3"),
+                      "aria-label": getString("tab-h3"),
                     },
                   },
                   {
@@ -487,8 +518,8 @@ function mountEditorUI(
                     },
                     attributes: {
                       "data-action": "list",
-                      title: "Bullet list",
-                      "aria-label": "Bullet list",
+                      title: getString("tab-list"),
+                      "aria-label": getString("tab-list"),
                     },
                   },
                   {
@@ -501,8 +532,8 @@ function mountEditorUI(
                     },
                     attributes: {
                       "data-action": "link",
-                      title: "Link (Ctrl/Cmd+K)",
-                      "aria-label": "Link",
+                      title: getString("tab-link-title"),
+                      "aria-label": getString("tab-link"),
                     },
                   },
                   {
@@ -515,8 +546,8 @@ function mountEditorUI(
                     },
                     attributes: {
                       "data-action": "image",
-                      title: "Insert image",
-                      "aria-label": "Insert image",
+                      title: getString("tab-image"),
+                      "aria-label": getString("tab-image"),
                     },
                   },
                   {
@@ -534,8 +565,8 @@ function mountEditorUI(
                         },
                         attributes: {
                           "data-action": "table",
-                          title: "Insert table",
-                          "aria-label": "Insert table",
+                          title: getString("tab-table"),
+                          "aria-label": getString("tab-table"),
                           "aria-haspopup": "true",
                           "aria-expanded": "false",
                         },
@@ -586,8 +617,8 @@ function mountEditorUI(
                     },
                     attributes: {
                       "data-action": "task",
-                      title: "Task list",
-                      "aria-label": "Task list",
+                      title: getString("tab-task"),
+                      "aria-label": getString("tab-task"),
                     },
                   },
                   {
@@ -600,8 +631,8 @@ function mountEditorUI(
                     },
                     attributes: {
                       "data-action": "code",
-                      title: "Inline code",
-                      "aria-label": "Inline code",
+                      title: getString("tab-code"),
+                      "aria-label": getString("tab-code"),
                     },
                   },
                 ],
@@ -624,8 +655,8 @@ function mountEditorUI(
                 },
                 attributes: {
                   "data-action": "mode-toggle",
-                  title: "切换到 Source Code 模式",
-                  "aria-label": "切换到 Source Code 模式",
+                  title: getString("tab-mode-toggle-source"),
+                  "aria-label": getString("tab-mode-toggle-source"),
                   "aria-pressed": "false",
                 },
               },
@@ -639,8 +670,8 @@ function mountEditorUI(
                 },
                 attributes: {
                   "data-action": "more",
-                  title: "More actions",
-                  "aria-label": "More actions",
+                  title: getString("tab-more"),
+                  "aria-label": getString("tab-more"),
                 },
               },
               {
@@ -719,6 +750,21 @@ function mountEditorUI(
     container.removeChild(container.firstChild);
   }
   container.appendChild(root);
+  const toolbar = root.querySelector(".zotero-markdown-toolbar");
+  const ownerWindow = root.ownerDocument.defaultView;
+  const toolbarInner = root.querySelector(".zotero-markdown-toolbar-inner");
+  ztoolkit.log("[Bamboo][EditorDebug] tab-root-mounted", {
+    tabID: session.tabID,
+    hasEditorHost: !!root.querySelector(".zotero-markdown-editor-host"),
+    hasToolbar: !!root.querySelector(".zotero-markdown-toolbar"),
+    toolbarButtonCount: toolbar?.querySelectorAll("button").length ?? 0,
+    toolbarInnerChildCount: toolbarInner?.children.length ?? 0,
+    childCount: root.children.length,
+    toolbarDisplay:
+      toolbar && ownerWindow
+        ? ownerWindow.getComputedStyle?.(toolbar)?.display || "unknown"
+        : "missing",
+  });
 
   root.addEventListener("click", (ev) => {
     const t = ev.target as HTMLElement | null;
@@ -741,6 +787,7 @@ function mountEditorUI(
     if (!btn || !root.contains(btn)) return;
     const action = btn.getAttribute("data-action");
     if (action === "preview-back") setMode(session, "live");
+    else if (action === "preview-retry") void showReadOnlyPreview(session);
     else if (action === "save")
       void requestSave(session, { force: true, cleanupImages: true });
     else if (action === "undo" || action === "redo") {
@@ -847,7 +894,7 @@ function mountEditorUI(
       const appliedTitleSync = !!session.applyingTitleSync;
       session.applyingTitleSync = false;
       session.save.markChanged();
-      setStatus(session, "Unsaved…");
+      setStatus(session, "dirty", getString("status-unsaved"));
       updateMeta(session);
       scheduleImageAssetRefresh(session);
       const headingTitle = extractFirstHeadingTitle(value);
@@ -884,9 +931,13 @@ function mountEditorUI(
     },
     onResolveAsset: (reference) => {
       const item = Zotero.Items.get(session.itemID);
-      if (!item) return Promise.resolve({ error: "Markdown 附件已不存在" });
+      if (!item)
+        return Promise.resolve({ error: getString("error-attachment-gone") });
       return resolveImageAssetEntry(item, reference);
     },
+  });
+  ztoolkit.log("[Bamboo][EditorDebug] tab-editor-created", {
+    tabID: session.tabID,
   });
   // Default iframe mode is live (init.mode)
   session.editor.setMode("live");
@@ -965,7 +1016,7 @@ function mountMoreMenu(session: OpenSession) {
       button.type = "button";
       button.className = "zotero-markdown-more-menu-item";
       button.dataset.menuAction = item.action;
-      button.append(item.label);
+      button.append(moreMenuLabel(item.action));
       if (item.shortcut) {
         const shortcut = menu.ownerDocument.createElement("span");
         shortcut.className = "zotero-markdown-more-menu-shortcut";
@@ -1118,7 +1169,7 @@ function createModeSubmenu(doc: Document) {
     mark.className = "zotero-markdown-mode-check";
     mark.setAttribute("aria-hidden", "true");
     const label = doc.createElement("span");
-    label.textContent = option.label;
+    label.textContent = modeLabel(option.mode);
     button.append(mark, label);
     submenu.appendChild(button);
   }
@@ -1243,18 +1294,14 @@ function toggleTablePicker(session: OpenSession) {
 }
 
 function showUnavailableAction(action: MoreMenuAction) {
-  const labels: Partial<Record<MoreMenuAction, string>> = {
-    "document-info": "文档信息",
-    rename: "重命名",
-    "show-in-folder": "在文件夹中显示",
-    "export-pdf": "导出为 PDF",
-    "export-html": "导出为 HTML",
-    shortcuts: "快捷键",
-    settings: "设置",
-  };
-  const label = labels[action] || "此功能";
+  // Some menu actions are still planned; show a localized placeholder.
   new ztoolkit.ProgressWindow(addon.data.config.addonName)
-    .createLine({ text: `${label}功能规划中`, type: "default" })
+    .createLine({
+      text: getString("more-unavailable", {
+        args: { label: moreMenuLabel(action) },
+      }),
+      type: "default",
+    })
     .show();
 }
 
@@ -1263,7 +1310,7 @@ async function buildDocumentModalData(
 ): Promise<DocumentModalData> {
   const item = Zotero.Items.get(session.itemID);
   const source = session.editor?.getValue() || "";
-  if (!item) throw new Error("Markdown 附件已不存在");
+  if (!item) throw new Error(getString("error-attachment-gone"));
   const size = await IOUtils.stat(session.path)
     .then((info) => info.size ?? null)
     .catch(() => null);
@@ -1298,12 +1345,12 @@ async function openRenameModal(session: OpenSession) {
 
 async function renameSessionAttachment(session: OpenSession, filename: string) {
   const item = Zotero.Items.get(session.itemID);
-  if (!item) throw new Error("Markdown 附件已不存在");
+  if (!item) throw new Error(getString("error-attachment-gone"));
   const newName = normalizeMarkdownFilename(filename);
   const result = await item.renameAttachmentFile(newName, false);
-  if (result === false) throw new Error("附件文件不存在");
-  if (result === -1) throw new Error("目标文件已存在");
-  if (result === -2) throw new Error("重命名附件失败");
+  if (result === false) throw new Error(getString("error-rename-missing"));
+  if (result === -1) throw new Error(getString("error-rename-exists"));
+  if (result === -2) throw new Error(getString("error-rename-failed"));
   session.path = (await item.getFilePathAsync()) || session.path;
   ensureTabTitle(session.win, session.tabID, session.itemID);
 }
@@ -1314,7 +1361,7 @@ async function revealSessionFolder(session: OpenSession) {
     return;
   }
   const parent = PathUtils.parent(session.path);
-  if (!parent) throw new Error("无法定位附件目录");
+  if (!parent) throw new Error(getString("error-attachment-directory"));
   Zotero.launchURL(`file://${encodeURI(parent)}`);
 }
 
@@ -1335,7 +1382,7 @@ async function importExternalImagesInSession(session: OpenSession) {
   try {
     const item = Zotero.Items.get(session.itemID);
     const source = session.editor?.getValue() || "";
-    if (!item) throw new Error("Markdown 附件已不存在");
+    if (!item) throw new Error(getString("error-attachment-gone"));
     const result = await importExternalImages(item, source);
     if (!result.imported) {
       showImageError(new Error("没有可导入的外链图片，或下载失败"));
@@ -1348,7 +1395,11 @@ async function importExternalImagesInSession(session: OpenSession) {
     session.pendingImageSave = false;
     scheduleAutosave(session);
     await requestSave(session);
-    setStatus(session, `已导入 ${result.imported} 张外链图片`);
+    setStatus(
+      session,
+      "saved",
+      getString("status-imported-images", { args: { count: result.imported } }),
+    );
   } catch (error) {
     showImageError(error);
   }
@@ -1357,7 +1408,7 @@ async function importExternalImagesInSession(session: OpenSession) {
 async function cleanupImagesInSession(session: OpenSession) {
   try {
     const item = Zotero.Items.get(session.itemID);
-    if (!item) throw new Error("Markdown 附件已不存在");
+    if (!item) throw new Error(getString("error-attachment-gone"));
     const removed = await cleanupUnusedImageAssets(
       item,
       session.editor?.getValue() || "",
@@ -1369,7 +1420,10 @@ async function cleanupImagesInSession(session: OpenSession) {
     }
     setStatus(
       session,
-      removed ? `已清理 ${removed} 张未引用图片` : "没有未引用图片",
+      "saved",
+      removed
+        ? getString("status-cleaned-images", { args: { count: removed } })
+        : getString("status-no-unused-images"),
     );
   } catch (error) {
     showImageError(error);
@@ -1393,6 +1447,7 @@ function setMode(session: OpenSession, mode: "live" | "source" | "preview") {
     void showReadOnlyPreview(session);
     return;
   }
+  session.previewRenderGeneration = (session.previewRenderGeneration ?? 0) + 1;
   session.mode = mode;
   applyModeVisibility(session, mode);
   updateModeToggle(session);
@@ -1400,7 +1455,13 @@ function setMode(session: OpenSession, mode: "live" | "source" | "preview") {
   if (mode === "live") {
     void refreshImageAssets(session);
   }
-  setStatus(session, session.save.dirty ? "Unsaved…" : "Ready");
+  setStatus(
+    session,
+    session.save.dirty ? "dirty" : "saved",
+    session.save.dirty
+      ? getString("status-unsaved")
+      : getString("status-ready"),
+  );
   updateMeta(session);
   session.win.requestAnimationFrame(() => {
     session.editor?.focus();
@@ -1409,6 +1470,8 @@ function setMode(session: OpenSession, mode: "live" | "source" | "preview") {
 }
 
 async function showReadOnlyPreview(session: OpenSession) {
+  const generation = (session.previewRenderGeneration ?? 0) + 1;
+  session.previewRenderGeneration = generation;
   session.mode = "preview";
   applyModeVisibility(session, "preview");
   updateModeToggle(session);
@@ -1418,19 +1481,59 @@ async function showReadOnlyPreview(session: OpenSession) {
     "";
   if (!session.view?.previewEl) return;
   try {
+    const rendered = await renderMarkdownAsync({ source });
+    if (
+      !isCurrentPreviewGeneration(
+        generation,
+        session.previewRenderGeneration ?? 0,
+      ) ||
+      session.mode !== "preview" ||
+      !session.view.previewEl.isConnected
+    ) {
+      return;
+    }
     mountPreviewHtml(
       session.view.previewEl,
-      source,
+      rendered,
       session.outlineItems || [],
     );
     void hydrateSessionPreviewImages(session, source);
-    setStatus(session, "只读预览");
+    setStatus(session, "saved", getString("status-preview"));
   } catch (e) {
     ztoolkit.log("Preview render error", e);
-    session.view.previewEl.textContent = source;
-    setStatus(session, "Preview (plain)");
+    if (session.mode === "preview") {
+      const host = session.view.previewEl;
+      host.replaceChildren();
+      const errorBox = host.ownerDocument.createElement("div");
+      errorBox.className = "zotero-markdown-preview-error-state";
+      const message = host.ownerDocument.createElement("p");
+      message.textContent = previewRenderErrorMessage(e);
+      const retry = host.ownerDocument.createElement("button");
+      retry.type = "button";
+      retry.dataset.action = "preview-retry";
+      retry.textContent = getString("preview-retry");
+      errorBox.append(message, retry);
+      host.appendChild(errorBox);
+      setStatus(session, "saved", getString("status-preview"));
+    }
   }
   updateMeta(session);
+}
+
+function previewRenderErrorMessage(error: unknown): string {
+  if (error instanceof AsyncRenderError) {
+    if (error.code === "DOCUMENT_TOO_LARGE") {
+      return getString("error-preview-too-large");
+    }
+    if (error.code === "WORKER_RENDER_TIMEOUT") {
+      return getString("error-preview-timeout");
+    }
+    if (error.code === "WORKER_UNAVAILABLE") {
+      return getString("error-preview-worker-unavailable");
+    }
+    return getString("error-preview-worker-failed");
+  }
+  return getString("error-preview-worker-failed");
 }
 
 async function renderedExportHtml(session: OpenSession) {
@@ -1454,7 +1557,7 @@ async function exportSessionHtml(session: OpenSession) {
   try {
     const { source, html } = await renderedExportHtml(session);
     const path = await saveHtmlFile(session.win, html, exportBasename(source));
-    if (path) setStatus(session, "已导出 HTML");
+    if (path) setStatus(session, "saved", getString("status-exported-html"));
   } catch (error) {
     showImageError(error);
   }
@@ -1464,9 +1567,9 @@ async function exportSessionPdf(session: OpenSession) {
   try {
     const { html } = await renderedExportHtml(session);
     if (!openPrintableDocument(session.win, html)) {
-      throw new Error("无法打开打印窗口，请检查弹窗拦截");
+      throw new Error(getString("error-print-window"));
     }
-    setStatus(session, "请在打印对话框中选择保存为 PDF");
+    setStatus(session, "info", getString("status-print-pdf"));
   } catch (error) {
     showImageError(error);
   }
@@ -1483,7 +1586,7 @@ function showImageError(error: unknown) {
 async function chooseAndInsertImage(session: OpenSession) {
   const item = Zotero.Items.get(session.itemID);
   if (!item || !item.isStoredFileAttachment?.()) {
-    showImageError(new Error("仅存储在 Zotero 中的 Markdown 附件支持插入图片"));
+    showImageError(new Error(getString("error-stored-image-only")));
     return;
   }
   const doc = session.view?.root?.ownerDocument;
@@ -1519,12 +1622,13 @@ async function insertImageBytes(
 ) {
   try {
     const item = Zotero.Items.get(session.itemID);
-    if (!item) throw new Error("Markdown 附件已不存在");
+    if (!item) throw new Error(getString("error-attachment-gone"));
     const reference = await writeImageAsset(item, bytes, mimeType);
     session.pendingImageSave = true;
     session.editor?.insertText(`![](${reference})`, 2, 2);
     const asset = await resolveImageAssetEntry(item, reference);
-    session.editor?.setImageAssets({ [reference]: asset });
+    // Single-asset push: merge so already-loaded images stay resolved.
+    session.editor?.setImageAssets({ [reference]: asset }, false);
   } catch (error) {
     session.pendingImageSave = false;
     showImageError(error);
@@ -1582,7 +1686,7 @@ async function refreshImageAssets(session: OpenSession) {
     }
   } catch (error) {
     Zotero.debug(`[Bamboo][ImageDebug] asset-refresh-error ${String(error)}`);
-    throw error;
+    ztoolkit.log("Failed to refresh markdown image assets", error);
   }
 }
 
@@ -1612,9 +1716,9 @@ function scheduleAutosave(session: OpenSession) {
         ? frontmatterTitleChange(value, headingTitle)
         : null;
     if (value && change) {
-      session.editor?.setValue(
-        value.slice(0, change.from) + change.insert + value.slice(change.to),
-      );
+      // Targeted replace (same as applyTitleSync) instead of a full
+      // setValue, which would wipe the CodeMirror undo history.
+      session.editor?.replaceRange(change.from, change.to, change.insert);
     }
   }
   session.autosaveTimer = session.win.setTimeout(() => {
@@ -1683,7 +1787,7 @@ function requestSave(
 ) {
   return session.save.request(opts).catch((error) => {
     ztoolkit.log("Failed to save markdown", error);
-    setStatus(session, "Save failed");
+    setStatus(session, "error", getString("status-save-failed"));
     new ztoolkit.ProgressWindow(addon.data.config.addonName)
       .createLine({
         text: `Save failed: ${error instanceof Error ? error.message : String(error)}`,
@@ -1709,30 +1813,31 @@ async function persistSession(
     ensureTabTitle(session.win, session.tabID, session.itemID);
   }
   session.savedAt = new Date();
-  setStatus(session, opts.force ? "Saved" : "Auto-saved");
+  setStatus(
+    session,
+    "saved",
+    opts.force ? getString("status-saved") : getString("status-auto-saved"),
+  );
   updateMeta(session);
 }
 
-function setStatus(session: OpenSession, text: string) {
+export type SaveStatusKind = "saved" | "dirty" | "error" | "info";
+
+/**
+ * Set the status-bar text with an explicit state kind. The kind drives the
+ * CSS state classes — never string-matching the (possibly localized) text,
+ * which would break as soon as translations are wired in.
+ */
+function setStatus(session: OpenSession, kind: SaveStatusKind, text: string) {
   const statusEl = session.view?.saveStatusEl;
   if (!statusEl) return;
   statusEl.textContent = text;
   statusEl.classList.remove("is-dirty", "is-saved", "is-error");
-  const t = text.toLowerCase();
-  if (t.includes("fail") || t.includes("error")) {
+  if (kind === "error") {
     statusEl.classList.add("is-error");
-  } else if (
-    t.includes("unsaved") ||
-    t.includes("saving") ||
-    t.includes("未保存")
-  ) {
+  } else if (kind === "dirty") {
     statusEl.classList.add("is-dirty");
-  } else if (
-    t.includes("saved") ||
-    t.includes("ready") ||
-    t.includes("preview") ||
-    t.includes("保存")
-  ) {
+  } else {
     statusEl.classList.add("is-saved");
   }
 }
@@ -1753,19 +1858,19 @@ function updateSaveStatus(session: OpenSession) {
 
   statusEl.classList.remove("is-dirty", "is-saved", "is-error");
   if (session.save.writing) {
-    statusEl.textContent = "正在保存…";
+    statusEl.textContent = getString("status-saving");
     statusEl.classList.add("is-dirty");
   } else if (session.save.lastError) {
-    statusEl.textContent = "保存失败";
+    statusEl.textContent = getString("status-save-failed");
     statusEl.classList.add("is-error");
   } else if (session.save.dirty) {
-    statusEl.textContent = "有未保存的更改";
+    statusEl.textContent = getString("status-unsaved-changes");
     statusEl.classList.add("is-dirty");
   } else if (session.savedAt) {
     statusEl.textContent = formatSavedStatus(session.savedAt);
     statusEl.classList.add("is-saved");
   } else {
-    statusEl.textContent = "自动保存已开启";
+    statusEl.textContent = getString("status-autosave-on");
     statusEl.classList.add("is-saved");
   }
 }

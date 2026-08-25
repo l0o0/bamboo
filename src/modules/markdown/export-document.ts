@@ -1,5 +1,7 @@
 import type { ImageAssetMap } from "./editor-protocol";
-import { buildStandaloneDocument, documentTitle } from "./preview";
+import { buildStandaloneDocumentFromRendered, documentTitle } from "./preview";
+import { renderMarkdownAsync } from "./async-render";
+import { getString } from "../../utils/locale";
 
 export function exportBasename(source: string): string {
   return (
@@ -17,7 +19,15 @@ export async function buildExportHtml(options: {
   theme?: "light" | "dark";
   title?: string;
 }): Promise<string> {
-  return buildStandaloneDocument(options).standaloneHtml;
+  const rendered = await renderMarkdownAsync({
+    source: options.source,
+    title: options.title,
+  });
+  return buildStandaloneDocumentFromRendered({
+    ...rendered,
+    assets: options.assets,
+    theme: options.theme,
+  }).standaloneHtml;
 }
 
 export async function saveHtmlFile(
@@ -26,7 +36,7 @@ export async function saveHtmlFile(
   suggestedName: string,
 ): Promise<string | null> {
   const path = await new ztoolkit.FilePicker(
-    "导出 HTML",
+    getString("export-html-title"),
     "save",
     [["HTML", "*.html"]],
     `${suggestedName}.html`,
@@ -45,9 +55,19 @@ export function openPrintableDocument(win: Window, html: string): boolean {
     "chrome,centerscreen,resizable,width=920,height=760",
   );
   if (!printWin) return false;
-  printWin.document.open();
-  printWin.document.write(html);
-  printWin.document.close();
+  try {
+    printWin.document.open();
+    printWin.document.write(html);
+    printWin.document.close();
+  } catch (error) {
+    ztoolkit.log("Failed to open print document", error);
+    try {
+      printWin.close();
+    } catch {
+      // ignore
+    }
+    return false;
+  }
   printWin.focus();
   printWin.setTimeout(() => {
     try {

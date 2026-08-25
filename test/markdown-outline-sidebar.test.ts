@@ -42,5 +42,5 @@ test("uses the leading toolbar panel button as the only outline control", () => 
   assert.doesNotMatch(source, /zotero-markdown-outline-header/);
   assert.doesNotMatch(source, /outlineCollapseEl/);
   assert.doesNotMatch(source, /iconPanelLeftClose/);
-  assert.match(iconPanelLeft(), /<svg/);
+  assert.match(iconPanelLeft(), /chrome:\/\/bamboo\/content\/icons\/markdown/);
 });

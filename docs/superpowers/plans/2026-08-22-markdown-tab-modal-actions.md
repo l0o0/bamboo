@@ -19,11 +19,13 @@
 ### Task 1: Modal view models and pure helpers
 
 **Files:**
+
 - Create: `src/modules/markdown/modal.ts`
 - Create: `test/markdown-modal.test.ts`
 - Modify: `package.json`
 
 **Interfaces:**
+
 - Produce `ModalKind`, `DocumentModalData`, `SettingsModalData`, `normalizeMarkdownFilename`, `formatModalBytes`, `formatModalDate`, and `settingsFromPrefs`/`prefsFromSettings`.
 - Produce `createMarkdownModalController(document, options)` with `open(kind, payload)`, `close()`, and `destroy()`.
 
@@ -36,11 +38,13 @@
 ### Task 2: Modal presentation and settings form
 
 **Files:**
+
 - Modify: `src/modules/markdown/modal.ts`
 - Modify: `src/modules/markdown/styles.ts`
 - Modify: `test/markdown-modal.test.ts`
 
 **Interfaces:**
+
 - Modal controller renders document info rows, rename input/form, reveal action, and settings controls.
 - Settings submit returns the four existing preference values through a callback; native preferences action is a separate callback.
 
@@ -53,6 +57,7 @@
 ### Task 3: Session actions and menu integration
 
 **Files:**
+
 - Modify: `src/modules/markdown/tab.ts`
 - Modify: `src/modules/markdown/session-registry.ts`
 - Modify: `src/hooks.ts`
@@ -60,6 +65,7 @@
 - Modify: `test/markdown-modal.test.ts`
 
 **Interfaces:**
+
 - `tab.ts` builds document metadata from the current attachment and source, handles rename/reveal/settings callbacks, and opens the modal for `document-info`, `rename`, and `settings`.
 - Reveal prefers Zotero file helpers and uses the directory URL fallback.
 - Native preference registration exposes the same settings entry point without duplicating the settings UI.
@@ -73,6 +79,7 @@
 ### Task 4: Full verification and documentation
 
 **Files:**
+
 - Modify: `README.md`
 - Modify: `doc/README-zhCN.md`
 

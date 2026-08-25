@@ -14,12 +14,12 @@
 
 ### 问题
 
-| 问题 | 影响 |
-|------|------|
-| 无语法高亮 | 阅读 Markdown 结构成本高 |
-| 无撤销栈增强 / 多选 / 搜索 | 编辑体验弱于现代编辑器 |
-| 大文件滚动与选区能力有限 | 长笔记体验下降 |
-| 扩展能力差 | 后续难以加 lint、补全、折叠等 |
+| 问题                       | 影响                          |
+| -------------------------- | ----------------------------- |
+| 无语法高亮                 | 阅读 Markdown 结构成本高      |
+| 无撤销栈增强 / 多选 / 搜索 | 编辑体验弱于现代编辑器        |
+| 大文件滚动与选区能力有限   | 长笔记体验下降                |
+| 扩展能力差                 | 后续难以加 lint、补全、折叠等 |
 
 ### 目标
 
@@ -44,7 +44,7 @@
 ┌─ Zotero Tab（现有 HTML shell，父文档）─────────────────────┐
 │  toolbar / status / preview（继续在父文档）                  │
 │  ┌─ iframe ─────────────────────────────────────────────┐  │
-│  │  chrome://zoteromarkdown/content/editor/index.html   │  │
+│  │  chrome://bamboo/content/editor/index.html           │  │
 │  │  + editor.js（CodeMirror 6 在 iframe 内完整运行）      │  │
 │  └──────────────────────────────────────────────────────┘  │
 └────────────────────────────────────────────────────────────┘
@@ -52,13 +52,13 @@
 
 ### 3.2 原则（硬约束）
 
-| 原则 | 说明 |
-|------|------|
-| CM 必须在 iframe 内执行 | 禁止父脚本 `new EditorView` 后挂 iframe 节点 |
-| 行号在 iframe 内 | 使用 CM 官方 `lineNumbers()`，禁止父页面外置 gutter 同步滚动 |
-| 值缓存在父侧 | `getValue()` 同步读缓存，保证 autosave / 关 tab 不 await iframe |
-| 命令可排队 | iframe 未 ready 时 `wrapSelection` 等入队，ready 后 flush |
-| 样式增量修改 | 不整文件覆盖 `styles.ts` |
+| 原则                    | 说明                                                            |
+| ----------------------- | --------------------------------------------------------------- |
+| CM 必须在 iframe 内执行 | 禁止父脚本 `new EditorView` 后挂 iframe 节点                    |
+| 行号在 iframe 内        | 使用 CM 官方 `lineNumbers()`，禁止父页面外置 gutter 同步滚动    |
+| 值缓存在父侧            | `getValue()` 同步读缓存，保证 autosave / 关 tab 不 await iframe |
+| 命令可排队              | iframe 未 ready 时 `wrapSelection` 等入队，ready 后 flush       |
+| 样式增量修改            | 不整文件覆盖 `styles.ts`                                        |
 
 ### 3.3 参考实现
 
@@ -72,26 +72,26 @@
 
 ### 4.1 父 → 子
 
-| type | payload | 说明 |
-|------|---------|------|
-| `init` | `{ doc, readOnly, fontSize, theme }` | 初始化或重置文档 |
-| `setValue` | `{ value }` | 整文替换 |
-| `wrapSelection` | `{ before, after? }` | 包裹选区 |
-| `prefixLine` | `{ prefix }` | 当前行加前缀（标题等） |
-| `focus` | — | 聚焦编辑器 |
-| `requestMeasure` | — | 布局变化后重新测量 |
-| `getStats` | `{ requestId }` | 请求统计（可选，父侧也可本地算） |
-| `destroy` | — | 销毁 CM 实例 |
+| type             | payload                              | 说明                             |
+| ---------------- | ------------------------------------ | -------------------------------- |
+| `init`           | `{ doc, readOnly, fontSize, theme }` | 初始化或重置文档                 |
+| `setValue`       | `{ value }`                          | 整文替换                         |
+| `wrapSelection`  | `{ before, after? }`                 | 包裹选区                         |
+| `prefixLine`     | `{ prefix }`                         | 当前行加前缀（标题等）           |
+| `focus`          | —                                    | 聚焦编辑器                       |
+| `requestMeasure` | —                                    | 布局变化后重新测量               |
+| `getStats`       | `{ requestId }`                      | 请求统计（可选，父侧也可本地算） |
+| `destroy`        | —                                    | 销毁 CM 实例                     |
 
 ### 4.2 子 → 父
 
-| type | payload | 说明 |
-|------|---------|------|
-| `ready` | — | iframe + CM 就绪，可收 init 之后的命令 |
-| `change` | `{ value, stats }` | 文档变更 |
-| `save` | — | Cmd/Ctrl+S |
-| `focus` / `blur` | — | 焦点变化（可选） |
-| `error` | `{ message }` | 初始化失败 |
+| type             | payload            | 说明                                   |
+| ---------------- | ------------------ | -------------------------------------- |
+| `ready`          | —                  | iframe + CM 就绪，可收 init 之后的命令 |
+| `change`         | `{ value, stats }` | 文档变更                               |
+| `save`           | —                  | Cmd/Ctrl+S                             |
+| `focus` / `blur` | —                  | 焦点变化（可选）                       |
+| `error`          | `{ message }`      | 初始化失败                             |
 
 ### 4.3 父侧 `MarkdownEditorHandle`
 
@@ -125,7 +125,7 @@ export interface MarkdownEditorHandle {
 ### 5.1 双入口 esbuild
 
 ```
-src/index.ts                 → content/scripts/zoteromarkdown.js   （插件主脚本）
+src/index.ts                 → content/scripts/bamboo.js           （插件主脚本）
 src/editor/bootstrap.ts      → content/editor/editor.js            （iframe 内 CM）
 addon/content/editor/index.html                                    （iframe 页面）
 ```
@@ -174,7 +174,7 @@ src/
 
 1. 在 `editorHost` 内创建 `iframe`（建议 HTML namespace，与现有 UI 一致）
 2. 设置样式：`width/height 100%`、`border: none`、`flex: 1`、`min-height: 0`
-3. `src = chrome://zoteromarkdown/content/editor/index.html`
+3. `src = chrome://bamboo/content/editor/index.html`
 4. 监听 `load` → 等待子页 `ready` 消息（或 load 后直接 `init`，子页幂等处理）
 5. `postMessage(init, ...)`
 6. flush 命令队列
@@ -186,14 +186,14 @@ Garden 使用 XUL `iframe` + `type="content"`。
 
 ### 6.3 生命周期
 
-| 事件 | 行为 |
-|------|------|
-| 打开 tab | 创建 iframe + init |
-| 编辑 | change → dirty + autosave |
-| 工具栏 B/I/H/Link | wrapSelection / prefixLine |
-| Preview | 父侧读 getValue 渲染；iframe 可 `display:none`，切回 edit 时 requestMeasure |
-| 关闭 tab | destroy + flush save（现有逻辑） |
-| 多窗口 | session 带 `win`，iframe 必须挂在对应 window 的 document |
+| 事件              | 行为                                                                        |
+| ----------------- | --------------------------------------------------------------------------- |
+| 打开 tab          | 创建 iframe + init                                                          |
+| 编辑              | change → dirty + autosave                                                   |
+| 工具栏 B/I/H/Link | wrapSelection / prefixLine                                                  |
+| Preview           | 父侧读 getValue 渲染；iframe 可 `display:none`，切回 edit 时 requestMeasure |
+| 关闭 tab          | destroy + flush save（现有逻辑）                                            |
+| 多窗口            | session 带 `win`，iframe 必须挂在对应 window 的 document                    |
 
 ## 7. CodeMirror 配置（iframe 内）
 
@@ -210,13 +210,13 @@ Garden 使用 XUL `iframe` + `type="content"`。
 
 ## 8. 分阶段实施
 
-| 阶段 | 内容 | 验收 |
-|------|------|------|
-| **P0** | 设计文档、双入口、空 editor 页、iframe 能加载 | 打开 md 可见 iframe 内容 |
-| **P1** | iframe 内 CM 可编辑；change → dirty / autosave | 保存与现网一致 |
-| **P2** | 工具栏 / 快捷键桥接；stats；readOnly | B/I/H/Link 正常 |
-| **P3** | 主题跟随、fontSize pref、中文 IME、大文件 | 中文输入不丢字 |
-| **P4** | 删除 textarea 残留 CSS / 选择器 | 无回归 |
+| 阶段   | 内容                                           | 验收                     |
+| ------ | ---------------------------------------------- | ------------------------ |
+| **P0** | 设计文档、双入口、空 editor 页、iframe 能加载  | 打开 md 可见 iframe 内容 |
+| **P1** | iframe 内 CM 可编辑；change → dirty / autosave | 保存与现网一致           |
+| **P2** | 工具栏 / 快捷键桥接；stats；readOnly           | B/I/H/Link 正常          |
+| **P3** | 主题跟随、fontSize pref、中文 IME、大文件      | 中文输入不丢字           |
+| **P4** | 删除 textarea 残留 CSS / 选择器                | 无回归                   |
 
 ## 9. 否决的错误做法
 
@@ -242,24 +242,24 @@ Garden 使用 XUL `iframe` + `type="content"`。
 
 ## 11. 实施记录
 
-| 日期 | 内容 |
-|------|------|
-| 2026-08-11 | 方案定稿；开始 P0/P1：双入口 + iframe 桥 + CM6 |
+| 日期       | 内容                                                                                                                                                                                                          |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 2026-08-11 | 方案定稿；开始 P0/P1：双入口 + iframe 桥 + CM6                                                                                                                                                                |
 | 2026-08-11 | **已落地 P0–P2 骨架**：`editor-protocol`、父侧 `editor.ts` 桥、iframe `bootstrap.ts`+主题、`addon/content/editor/index.html`、双 esbuild 入口、styles/tabHooks；`pnpm build` 通过（editor.js ≈ 541KB minify） |
-| 2026-08-11 | **主题热切换**：监听 `prefers-color-scheme` change + `documentElement` MutationObserver；已打开 tab 同步 shell（`theme-dark`/`theme-light`）与 iframe `setTheme` |
-| 2026-08-11 | **下一阶段**：行级 Live Preview（Obsidian 式）设计已确认 → `docs/superpowers/specs/2026-08-11-live-preview-design.md` |
+| 2026-08-11 | **主题热切换**：监听 `prefers-color-scheme` change + `documentElement` MutationObserver；已打开 tab 同步 shell（`theme-dark`/`theme-light`）与 iframe `setTheme`                                              |
+| 2026-08-11 | **下一阶段**：行级 Live Preview（Obsidian 式）设计已确认 → `docs/superpowers/specs/2026-08-11-live-preview-design.md`                                                                                         |
 
 ### 当前文件映射
 
-| 文件 | 角色 |
-|------|------|
-| `docs/editor/codemirror-iframe-plan.md` | 本方案 |
+| 文件                                      | 角色             |
+| ----------------------------------------- | ---------------- |
+| `docs/editor/codemirror-iframe-plan.md`   | 本方案           |
 | `src/modules/markdown/editor-protocol.ts` | 消息协议 + stats |
-| `src/modules/markdown/editor.ts` | 父侧 iframe 桥 |
-| `src/editor/bootstrap.ts` | iframe 内 CM6 |
-| `src/editor/theme.ts` | 明暗主题 |
-| `addon/content/editor/index.html` | iframe 页面 |
-| `zotero-plugin.config.ts` | 双入口打包 |
+| `src/modules/markdown/editor.ts`          | 父侧 iframe 桥   |
+| `src/editor/bootstrap.ts`                 | iframe 内 CM6    |
+| `src/editor/theme.ts`                     | 明暗主题         |
+| `addon/content/editor/index.html`         | iframe 页面      |
+| `zotero-plugin.config.ts`                 | 双入口打包       |
 
 ### 待实机验证（P3）
 

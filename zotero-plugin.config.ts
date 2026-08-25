@@ -17,6 +17,7 @@ export default defineConfig({
   name: pkg.config.addonName,
   id: pkg.config.addonID,
   namespace: pkg.config.addonRef,
+  xpiName: `bamboo-v${pkg.version}`,
   updateURL: `https://github.com/{{owner}}/{{repo}}/releases/download/release/${
     pkg.version.includes("-") ? "update-beta.json" : "update.json"
   }`,
@@ -55,6 +56,13 @@ export default defineConfig({
         minify: true,
         target: "firefox115",
         outfile: `.scaffold/build/addon/content/editor/editor.js`,
+      },
+      {
+        entryPoints: ["src/workers/preview-worker.ts"],
+        bundle: true,
+        minify: true,
+        target: "firefox115",
+        outfile: `.scaffold/build/addon/content/workers/preview-worker.js`,
       },
     ],
   },

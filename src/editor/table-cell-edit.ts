@@ -29,7 +29,10 @@ export function sanitizeCellValue(value: string): string {
 
 /** Resolve an event target that may be a Text node inside a cell widget. */
 export function eventTargetElement(event: Event): Element | null {
-  const raw = event.target as { closest?: unknown; parentElement?: Element | null } | null;
+  const raw = event.target as {
+    closest?: unknown;
+    parentElement?: Element | null;
+  } | null;
   if (raw && typeof raw.closest === "function") return raw as Element;
   if (raw?.parentElement) return raw.parentElement;
   if (typeof event.composedPath === "function") {
@@ -91,7 +94,10 @@ export function interpretCellKey(
     return { kind: "caret", caretOffset: Math.max(0, caretOffset - 1) };
   }
   if (key === "ArrowRight") {
-    return { kind: "caret", caretOffset: Math.min(value.length, caretOffset + 1) };
+    return {
+      kind: "caret",
+      caretOffset: Math.min(value.length, caretOffset + 1),
+    };
   }
   if (key === "Home") return { kind: "caret", caretOffset: 0 };
   if (key === "End") return { kind: "caret", caretOffset: value.length };

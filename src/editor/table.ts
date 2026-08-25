@@ -1,4 +1,4 @@
-import { syntaxTree } from "@codemirror/language";
+import { ensureSyntaxTree, syntaxTree } from "@codemirror/language";
 import type { EditorState } from "@codemirror/state";
 import type { KeyBinding } from "@codemirror/view";
 
@@ -79,7 +79,17 @@ function rowCells(state: EditorState, node: SyntaxNode) {
   const cells: TableCellRange[] = [];
   let cursor = node.from;
   for (const pipe of pipes) {
-    if (pipe.from > cursor) cells.push(trimCell(state, cursor, pipe.from));
+    if (pipe.from > cursor) {
+      cells.push(trimCell(state, cursor, pipe.from));
+    } else if (pipe.from > node.from) {
+      // Empty cell between adjacent pipes (`a||b`) — keep the column.
+      cells.push({
+        from: cursor,
+        to: cursor,
+        outerFrom: cursor,
+        outerTo: cursor,
+      });
+    }
     cursor = pipe.to;
   }
   if (cursor < node.to) cells.push(trimCell(state, cursor, node.to));
@@ -113,10 +123,13 @@ export function tableLayoutAt(
   state: EditorState,
   position: number,
 ): TableLayout | null {
-  const resolved = syntaxTree(state).resolveInner(
-    Math.max(0, Math.min(position, state.doc.length)),
-    -1,
-  );
+  const safePosition = Math.max(0, Math.min(position, state.doc.length));
+  // Ensure the tree covers the queried position (it can be partially
+  // parsed right after init or under load).
+  const tree =
+    ensureSyntaxTree(state, Math.min(state.doc.length, safePosition + 1)) ??
+    syntaxTree(state);
+  const resolved = tree.resolveInner(safePosition, -1);
   const table = ancestor(resolved, "Table");
   if (!table) return null;
 
@@ -201,7 +214,9 @@ export function cellWidgetRange(cell: TableCellRange): {
 
 export function liveTableRows(state: EditorState): LiveTableRow[] {
   const positions: number[] = [];
-  const cursor = syntaxTree(state).cursor();
+  // Full-tree iteration needs the whole document parsed.
+  const tree = ensureSyntaxTree(state, state.doc.length) ?? syntaxTree(state);
+  const cursor = tree.cursor();
   do {
     if (cursor.name === "Table") positions.push(cursor.from);
   } while (cursor.next());

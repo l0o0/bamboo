@@ -1,4 +1,5 @@
 import { parseMarkdownImages } from "../../modules/markdown/images/model";
+import type { MarkdownImageReference } from "../../modules/markdown/images/model";
 
 export interface LiveImageDecorationPlan {
   kind: "replace" | "inline";
@@ -11,8 +12,9 @@ export interface LiveImageDecorationPlan {
 export function planLiveImageDecorations(
   line: string,
   active: boolean,
+  images: MarkdownImageReference[] = parseMarkdownImages(line),
 ): LiveImageDecorationPlan[] {
-  return parseMarkdownImages(line).map((image) => ({
+  return images.map((image) => ({
     kind: active ? "inline" : "replace",
     from: active ? line.length : image.from,
     to: active ? line.length : image.to,

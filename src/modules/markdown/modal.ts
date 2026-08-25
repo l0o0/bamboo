@@ -4,6 +4,7 @@ import {
   shortcutFromKeyboardEvent,
   shortcutKeycaps,
 } from "./shortcut";
+import { getString } from "../../utils/locale";
 import {
   iconInfo,
   iconKeyboard,
@@ -14,6 +15,7 @@ import {
 import {
   nextSettingsPage,
   SETTINGS_PAGES,
+  settingsPageLabel,
   type SettingsPageID,
 } from "./settings-pages";
 
@@ -61,14 +63,15 @@ export interface MarkdownModalController {
   destroy: () => void;
 }
 
-const MODAL_TITLES: Record<ModalKind, string> = {
-  "document-info": "文档信息",
-  rename: "重命名",
-  settings: "设置",
-};
-
 export function modalTitle(kind: ModalKind): string {
-  return MODAL_TITLES[kind];
+  switch (kind) {
+    case "document-info":
+      return getString("more-document-info");
+    case "rename":
+      return getString("more-rename");
+    case "settings":
+      return getString("more-settings");
+  }
 }
 
 export function normalizeMarkdownFilename(value: string): string {
@@ -161,7 +164,7 @@ export function createMarkdownModalController(
   const title = textElement(doc, "h2", "", "zotero-markdown-modal-title");
   const close = button(doc, "×", "close");
   close.classList.add("is-close");
-  close.setAttribute("aria-label", "关闭");
+  close.setAttribute("aria-label", getString("modal-close"));
   const header = doc.createElement("header");
   header.className = "zotero-markdown-modal-header";
   header.append(title, close);
@@ -191,13 +194,13 @@ export function createMarkdownModalController(
 
   const renderDocumentInfo = (data: DocumentModalData) => {
     const rows: [string, string][] = [
-      ["文件名", data.title || "—"],
-      ["文件路径", data.path || "—"],
-      ["文件大小", formatModalBytes(data.size)],
-      ["图片数量", String(data.imageCount)],
-      ["创建时间", formatModalDate(data.created)],
-      ["修改时间", formatModalDate(data.modified)],
-      ["存储类型", data.storageLabel || "—"],
+      [getString("modal-filename"), data.title || "—"],
+      [getString("modal-path"), data.path || "—"],
+      [getString("modal-size"), formatModalBytes(data.size)],
+      [getString("modal-image-count"), String(data.imageCount)],
+      [getString("modal-created"), formatModalDate(data.created)],
+      [getString("modal-modified"), formatModalDate(data.modified)],
+      [getString("modal-storage-type"), data.storageLabel || "—"],
     ];
     const list = doc.createElement("dl");
     list.className = "zotero-markdown-modal-info";
@@ -207,7 +210,7 @@ export function createMarkdownModalController(
     body.appendChild(list);
     const footer = doc.createElement("footer");
     footer.className = "zotero-markdown-modal-footer";
-    footer.append(button(doc, "在文件夹中显示", "reveal"));
+    footer.append(button(doc, getString("more-show-in-folder"), "reveal"));
     body.appendChild(footer);
   };
 
@@ -215,7 +218,7 @@ export function createMarkdownModalController(
     const label = textElement(
       doc,
       "label",
-      "文件名",
+      getString("modal-filename"),
       "zotero-markdown-modal-label",
     );
     const input = doc.createElement("input");
@@ -231,8 +234,8 @@ export function createMarkdownModalController(
     const footer = doc.createElement("footer");
     footer.className = "zotero-markdown-modal-footer";
     footer.append(
-      button(doc, "取消", "close"),
-      button(doc, "重命名", "rename", true),
+      button(doc, getString("modal-cancel"), "close"),
+      button(doc, getString("more-rename"), "rename", true),
     );
     body.appendChild(footer);
     input.focus();
@@ -255,7 +258,7 @@ export function createMarkdownModalController(
     const navigation = doc.createElement("nav");
     navigation.className = "zotero-markdown-settings-navigation";
     navigation.setAttribute("role", "tablist");
-    navigation.setAttribute("aria-label", "设置分类");
+    navigation.setAttribute("aria-label", getString("settings-tablist-label"));
     const main = doc.createElement("main");
     main.className = "zotero-markdown-settings-main";
     const pageContent = doc.createElement("div");
@@ -263,7 +266,7 @@ export function createMarkdownModalController(
     const footer = doc.createElement("footer");
     footer.className =
       "zotero-markdown-modal-footer zotero-markdown-settings-footer";
-    footer.append(button(doc, "完成", "save-settings", true));
+    footer.append(button(doc, getString("modal-done"), "save-settings", true));
     const error = textElement(doc, "p", "", "zotero-markdown-modal-error");
     error.hidden = true;
     main.append(pageContent, error, footer);
@@ -290,7 +293,7 @@ export function createMarkdownModalController(
     };
 
     const renderGeneral = () => {
-      const heading = renderHeading("常规");
+      const heading = renderHeading(getString("settings-page-general"));
       const checkbox = (name: "enable" | "frontmatter", labelText: string) => {
         const label = doc.createElement("label");
         label.className = "zotero-markdown-settings-check-row";
@@ -304,16 +307,18 @@ export function createMarkdownModalController(
         label.append(input, textElement(doc, "span", labelText));
         pageContent.appendChild(label);
       };
-      checkbox("enable", "使用 Markdown 编辑器打开 .md 附件");
-      checkbox("frontmatter", "新建笔记时写入 YAML frontmatter");
+      checkbox("enable", getString("settings-enable-editor"));
+      checkbox("frontmatter", getString("settings-frontmatter"));
       return heading;
     };
 
     const renderEditor = () => {
-      const heading = renderHeading("编辑器");
+      const heading = renderHeading(getString("settings-page-editor"));
       const row = doc.createElement("label");
       row.className = "zotero-markdown-settings-row";
-      row.appendChild(textElement(doc, "span", "编辑器字号"));
+      row.appendChild(
+        textElement(doc, "span", getString("settings-font-size")),
+      );
       const size = doc.createElement("input");
       size.type = "number";
       size.name = "fontSize";
@@ -335,24 +340,29 @@ export function createMarkdownModalController(
     };
 
     const renderShortcuts = () => {
-      const heading = renderHeading("快捷键");
+      const heading = renderHeading(getString("settings-page-shortcuts"));
       pageContent.appendChild(
         textElement(
           doc,
           "p",
-          "点击快捷键可进行修改，按下完成后立即生效",
+          getString("settings-shortcut-hint"),
           "zotero-markdown-settings-description",
         ),
       );
       const row = doc.createElement("div");
       row.className = "zotero-markdown-settings-shortcut-row";
-      row.appendChild(textElement(doc, "span", "新建独立 Markdown 笔记"));
+      row.appendChild(
+        textElement(doc, "span", getString("settings-shortcut-new-standalone")),
+      );
       const controls = doc.createElement("div");
       controls.className = "zotero-markdown-settings-shortcut-controls";
       const shortcutControl = doc.createElement("button");
       shortcutControl.type = "button";
       shortcutControl.className = "zotero-markdown-modal-shortcut-control";
-      shortcutControl.setAttribute("aria-label", "编辑快捷键");
+      shortcutControl.setAttribute(
+        "aria-label",
+        getString("settings-shortcut-edit-aria"),
+      );
       const shortcutValue = doc.createElement("span");
       shortcutValue.className = "zotero-markdown-modal-shortcut-value";
       const renderShortcut = () => {
@@ -361,25 +371,38 @@ export function createMarkdownModalController(
           pendingSettings?.shortcutNewStandaloneMd || "",
           doc.defaultView?.navigator?.platform,
         );
-        if (!keycaps.length) shortcutValue.textContent = "未设置";
+        if (!keycaps.length)
+          shortcutValue.textContent = getString("settings-shortcut-unset");
         else
           for (const keycap of keycaps)
             shortcutValue.appendChild(textElement(doc, "kbd", keycap));
       };
       renderShortcut();
       shortcutControl.appendChild(shortcutValue);
-      const edit = button(doc, "编辑", "shortcut-edit");
+      const edit = button(
+        doc,
+        getString("settings-shortcut-edit"),
+        "shortcut-edit",
+      );
       const overflow = doc.createElement("button");
       overflow.type = "button";
       overflow.className = "zotero-markdown-shortcut-overflow";
-      overflow.setAttribute("aria-label", "更多快捷键操作");
+      overflow.setAttribute("aria-label", getString("settings-shortcut-more"));
       overflow.setAttribute("aria-expanded", "false");
       overflow.innerHTML = iconMoreHorizontal();
       const overflowMenu = doc.createElement("div");
       overflowMenu.className = "zotero-markdown-shortcut-overflow-menu";
       overflowMenu.hidden = true;
-      const clear = button(doc, "清除", "shortcut-clear");
-      const restore = button(doc, "恢复默认", "shortcut-restore");
+      const clear = button(
+        doc,
+        getString("settings-shortcut-clear"),
+        "shortcut-clear",
+      );
+      const restore = button(
+        doc,
+        getString("settings-shortcut-restore"),
+        "shortcut-restore",
+      );
       overflowMenu.append(clear, restore);
 
       let recordingPrevious = pendingSettings?.shortcutNewStandaloneMd || "";
@@ -387,7 +410,7 @@ export function createMarkdownModalController(
         recordingPrevious = pendingSettings?.shortcutNewStandaloneMd || "";
         shortcutControl.classList.add("is-recording");
         shortcutControl.setAttribute("aria-live", "polite");
-        shortcutValue.textContent = "请按下新的快捷键";
+        shortcutValue.textContent = getString("settings-shortcut-recording");
         shortcutControl.focus();
       };
       shortcutControl.addEventListener("click", beginRecording);
@@ -438,7 +461,7 @@ export function createMarkdownModalController(
     };
 
     const renderAbout = () => {
-      const heading = renderHeading("关于");
+      const heading = renderHeading(getString("settings-page-about"));
       const about = options.about || {
         name: "Bamboo 竹子",
         version: "—",
@@ -447,9 +470,9 @@ export function createMarkdownModalController(
       const details = doc.createElement("dl");
       details.className = "zotero-markdown-settings-about";
       for (const [label, value] of [
-        ["插件", about.name],
-        ["版本", about.version],
-        ["构建时间", about.buildTime],
+        [getString("settings-about-name"), about.name],
+        [getString("settings-about-version"), about.version],
+        [getString("settings-about-build-time"), about.buildTime],
       ]) {
         details.append(
           textElement(doc, "dt", label),
@@ -491,7 +514,7 @@ export function createMarkdownModalController(
       const icon = doc.createElement("span");
       icon.className = "zotero-markdown-settings-nav-icon";
       icon.innerHTML = iconForPage(page.id);
-      item.append(icon, textElement(doc, "span", page.label));
+      item.append(icon, textElement(doc, "span", settingsPageLabel(page.id)));
       item.addEventListener("click", () => selectPage(page.id, true));
       item.addEventListener("keydown", (event) => {
         const direction =

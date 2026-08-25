@@ -94,7 +94,7 @@ export function sidebarEditorGeometryCSS(): string {
 .zmd-sidebar-focus-section > collapsible-section > [data-type="body"] {
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  overflow: visible;
   margin: 0;
   padding: 0 !important;
 }
@@ -336,7 +336,7 @@ export function markdownModalCSS(): string {
   min-block-size: 0;
   padding: 0;
   gap: 0;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .zotero-markdown-settings-workspace {
@@ -1185,6 +1185,40 @@ ${toolbarWidthAlignmentCSS()}
 }
 
 .zotero-markdown-preview-back:hover {
+  background: var(--zmd-surface-2);
+}
+
+.zotero-markdown-preview-error-state {
+  display: grid;
+  justify-items: center;
+  gap: 12px;
+  max-width: 46em;
+  margin: 48px auto;
+  padding: 24px;
+  border: 1px solid var(--zmd-border);
+  border-radius: 8px;
+  color: var(--zmd-text-muted);
+  text-align: center;
+}
+
+.zotero-markdown-preview-error-state p {
+  margin: 0;
+}
+
+.zotero-markdown-preview-error-state button {
+  appearance: none;
+  border: 1px solid var(--zmd-border);
+  background: var(--zmd-surface);
+  color: var(--zmd-text);
+  border-radius: 7px;
+  min-height: 32px;
+  padding: 0 12px;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.zotero-markdown-preview-error-state button:hover {
   background: var(--zmd-surface-2);
 }
 

@@ -1,29 +1,8 @@
-import MarkdownIt from "markdown-it";
-import {
-  extractFirstHeadingTitle,
-  parseFrontmatter,
-  stripFrontmatter,
-} from "./frontmatter";
 import { normalizeAssetReference } from "./images/model";
+import { getString } from "../../utils/locale";
 import type { EditorOutlineItem, ImageAssetMap } from "./editor-protocol";
 import { THEME_TOKENS, themeTokenCss } from "./theme-tokens";
-import { highlightFencedCode } from "./code-highlight";
-
-// esbuild / CJS interop: some builds expose the ctor on .default
-const MarkdownItCtor: typeof MarkdownIt =
-  typeof MarkdownIt === "function"
-    ? MarkdownIt
-    : (MarkdownIt as unknown as { default: typeof MarkdownIt }).default;
-
-const md = new MarkdownItCtor({
-  html: false,
-  linkify: true,
-  typographer: true,
-  breaks: true,
-  highlight(source, info) {
-    return highlightFencedCode(source, info) || "";
-  },
-});
+import { documentTitleCore, renderMarkdownCore } from "./preview-render-core";
 
 export interface ReadOnlyDocument {
   title: string;
@@ -46,26 +25,11 @@ export function previewOutlineAnchors(
  * YAML frontmatter is stripped so it does not pollute the preview.
  */
 export function renderMarkdown(source: string): string {
-  try {
-    const { body } = stripFrontmatter(source || "");
-    const html = md.render(body);
-    if (!html || !html.trim()) {
-      return `<p class="zotero-markdown-preview-empty"><em>(empty)</em></p>`;
-    }
-    return html;
-  } catch (e) {
-    return `<pre class="zotero-markdown-preview-error">${escapeHtml(
-      String(e),
-    )}\n\n${escapeHtml(source)}</pre>`;
-  }
+  return renderMarkdownCore(source);
 }
 
 export function documentTitle(source: string, fallback = "Markdown"): string {
-  const { data } = parseFrontmatter(source || "");
-  if (typeof data.title === "string" && data.title.trim()) {
-    return data.title.trim();
-  }
-  return extractFirstHeadingTitle(source || "") || fallback;
+  return documentTitleCore(source, fallback);
 }
 
 export function applyAssetsToHtml(html: string, assets: ImageAssetMap): string {
@@ -248,10 +212,22 @@ export function buildStandaloneDocument(options: {
   theme?: "light" | "dark";
 }): ReadOnlyDocument {
   const title = options.title || documentTitle(options.source);
-  const bodyHtml = applyAssetsToHtml(
-    renderMarkdown(options.source),
-    options.assets || {},
-  );
+  return buildStandaloneDocumentFromRendered({
+    title,
+    bodyHtml: renderMarkdown(options.source),
+    assets: options.assets,
+    theme: options.theme,
+  });
+}
+
+export function buildStandaloneDocumentFromRendered(options: {
+  title: string;
+  bodyHtml: string;
+  assets?: ImageAssetMap;
+  theme?: "light" | "dark";
+}): ReadOnlyDocument {
+  const title = options.title || "Markdown";
+  const bodyHtml = applyAssetsToHtml(options.bodyHtml, options.assets || {});
   const tokens =
     options.theme === "dark" ? THEME_TOKENS.dark : THEME_TOKENS.light;
   const standaloneHtml = `<!DOCTYPE html>
@@ -280,11 +256,10 @@ body { padding: 28px 32px 48px; }
  */
 export function mountPreviewHtml(
   host: HTMLElement,
-  source: string,
+  rendered: { title: string; bodyHtml: string },
   outlineItems: readonly EditorOutlineItem[] = [],
 ): void {
   const doc = host.ownerDocument || (globalThis as any).document;
-  const rendered = buildStandaloneDocument({ source });
   host.replaceChildren();
   host.setAttribute("aria-readonly", "true");
   host.setAttribute("role", "document");
@@ -298,15 +273,15 @@ export function mountPreviewHtml(
   const label = doc.createElement("div");
   label.className = "zotero-markdown-preview-bar-copy";
   const title = doc.createElement("strong");
-  title.textContent = "只读预览";
+  title.textContent = getString("preview-title");
   const hint = doc.createElement("span");
-  hint.textContent = "此页用于阅读，并作为 HTML / PDF 导出原稿";
+  hint.textContent = getString("preview-hint");
   label.append(title, hint);
   const back = doc.createElement("button");
   back.type = "button";
   back.className = "zotero-markdown-preview-back";
   back.dataset.action = "preview-back";
-  back.textContent = "返回编辑";
+  back.textContent = getString("preview-back");
   bar.append(label, back);
 
   const article = doc.createElement("article");
@@ -371,11 +346,12 @@ export function hydratePreviewImages(
     }
     const placeholder = host.ownerDocument.createElement("span");
     placeholder.className = "zotero-markdown-image-missing";
-    placeholder.textContent = resolved?.error || "图片缺失或尚未同步";
+    placeholder.textContent =
+      resolved?.error || getString("preview-image-missing");
     placeholder.setAttribute("role", "img");
     placeholder.setAttribute(
       "aria-label",
-      image.getAttribute("alt") || "图片缺失",
+      image.getAttribute("alt") || getString("preview-image-missing"),
     );
     image.replaceWith(placeholder);
   }

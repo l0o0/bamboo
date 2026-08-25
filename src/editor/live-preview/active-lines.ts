@@ -21,29 +21,21 @@ export function activeLinesFromSelection(
 
 /**
  * 1-based line numbers of a leading YAML frontmatter block (`---` … `---`).
- * Returns empty set when the document does not start with a fence.
+ * Returns an empty set when the document does not start with a fence, and
+ * also when the fence is never closed (a lone `---` is more likely a
+ * horizontal rule; treating the whole document as frontmatter would disable
+ * live styling for everything).
  */
 export function frontmatterLineNumbersFromLines(
   lines: readonly string[],
 ): Set<number> {
+  if (lines.length === 0 || lines[0].trim() !== "---") return new Set();
   const set = new Set<number>();
-  if (lines.length === 0 || lines[0].trim() !== "---") return set;
   set.add(1);
   for (let i = 1; i < lines.length; i++) {
+    const trimmed = lines[i].trim();
+    if (trimmed === "---" || trimmed === "...") return set;
     set.add(i + 1);
-    if (lines[i].trim() === "---") break;
   }
-  return set;
-}
-
-export function frontmatterLineNumbers(text: string): Set<number> {
-  return frontmatterLineNumbersFromLines(text.split("\n"));
-}
-
-export function shouldSkipLiveLine(
-  lineNumber: number,
-  active: Set<number>,
-  frontmatter: Set<number>,
-): boolean {
-  return active.has(lineNumber) || frontmatter.has(lineNumber);
+  return new Set<number>();
 }

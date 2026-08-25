@@ -54,6 +54,10 @@ jobs:
           node-version: 22
           cache: pnpm
 
+      - name: Resolve package version
+        id: package
+        run: echo "version=$(node -p \"require('./package.json').version\")" >> "$GITHUB_OUTPUT"
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
@@ -63,8 +67,8 @@ jobs:
       - name: Upload build result
         uses: actions/upload-artifact@v7
         with:
-          name: build-result
-          path: .scaffold/build
+          name: bamboo-v${{ steps.package.outputs.version }}.xpi
+          path: .scaffold/build/bamboo-v${{ steps.package.outputs.version }}.xpi
           if-no-files-found: error
 
   # Plugin integration tests need a Zotero binary in CI — skip until wired.

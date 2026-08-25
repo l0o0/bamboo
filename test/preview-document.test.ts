@@ -7,6 +7,18 @@ import {
   previewOutlineAnchors,
   renderMarkdown,
 } from "../src/modules/markdown/preview.ts";
+import {
+  documentTitleCore,
+  renderMarkdownCore,
+} from "../src/modules/markdown/preview-render-core.ts";
+
+test("the worker-safe render core preserves preview behavior", () => {
+  const source = "---\ntitle: Worker title\n---\n\n```ts\nconst n = 1;\n```";
+  assert.equal(documentTitleCore(source), "Worker title");
+  assert.equal(renderMarkdownCore(source), renderMarkdown(source));
+  assert.match(renderMarkdownCore(source), /hljs-keyword/);
+  assert.doesNotMatch(renderMarkdownCore("[x](javascript:alert(1))"), /<a /);
+});
 
 test("strips frontmatter and renders a read-only document body", () => {
   const html = renderMarkdown(
@@ -42,6 +54,36 @@ test("rewrites local image sources to cached data URLs", () => {
     "assets/a.png": { dataUrl: "data:image/png;base64,abc" },
   });
   assert.match(html, /src="data:image\/png;base64,abc"/);
+});
+
+test("rejects unsafe link schemes, including obfuscated ones", () => {
+  // Plain javascript:/data:/vbscript: stay blocked (markdown-it default).
+  assert.doesNotMatch(renderMarkdown("[c](javascript:alert(1))"), /<a /);
+  assert.doesNotMatch(renderMarkdown("[c](data:text/html,<x>)"), /<a /);
+  assert.doesNotMatch(renderMarkdown("[c](vbscript:msgbox)"), /<a /);
+  // Percent-encoded scheme obfuscation is now rejected too.
+  assert.doesNotMatch(renderMarkdown("[c](%6aavascript:alert(1))"), /<a /);
+  // http(s) / mailto links still render.
+  assert.match(
+    renderMarkdown("[c](https://example.com)"),
+    /<a href="https:\/\/example\.com"/,
+  );
+  assert.match(
+    renderMarkdown("[c](mailto:a@b.co)"),
+    /<a href="mailto:a@b\.co"/,
+  );
+});
+
+test("hardens rendered links and remote images", () => {
+  const html = renderMarkdown(
+    "[x](https://example.com) ![img](https://example.com/a.png)",
+  );
+  assert.match(html, /rel="noopener noreferrer"/);
+  assert.match(html, /referrerpolicy="no-referrer"/);
+  // Local asset references survive for data-URL hydration.
+  const local = renderMarkdown("![a](assets/a.png)");
+  assert.match(local, /src="assets\/a\.png"/);
+  assert.match(local, /referrerpolicy="no-referrer"/);
 });
 
 test("highlights supported fenced code in preview and export", () => {

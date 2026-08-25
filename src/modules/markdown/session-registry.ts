@@ -26,6 +26,7 @@ export interface OpenSession {
   save: SaveCoordinator;
   storageLabel: string;
   mode: SessionMode;
+  previewRenderGeneration?: number;
   view?: SessionView;
   editor?: MarkdownEditorHandle;
   outlineItems?: EditorOutlineItem[];

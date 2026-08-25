@@ -5,10 +5,13 @@ import type {
   PrefixParse,
 } from "./types";
 
-const ATX_RE = /^(#{1,6})(\s+)(.*)$/;
-const LIST_RE = /^(\s*)([-*+]|\d+\.)(\s+)/;
+const ATX_RE = /^(#{1,6})(?:[ \t]+(.*)$|$)/;
+const LIST_RE = /^(\s*)([-*+]|\d{1,9}\.)(\s+)/;
 const QUOTE_RE = /^((?:\s*>\s?)+)/;
-const FENCE_RE = /^\s*(`{3,}|~{3,})(?:\s*[^`]*)?$/;
+// Opening fences may carry an info string (` ```js `); closing fences may
+// only be followed by whitespace (CommonMark).
+const FENCE_OPEN_RE = /^\s*(`{3,}|~{3,})(?:\s*[^`]*)?$/;
+const FENCE_CLOSE_RE = /^\s*(`{3,}|~{3,})\s*$/;
 
 export type FencedCodeLineKind =
   "fence-open" | "content" | "fence-close" | null;
@@ -20,16 +23,19 @@ export function fencedCodeLineKindsFromLines(
   let open: { index: number; marker: string } | null = null;
 
   for (let index = 0; index < lines.length; index++) {
-    const match = FENCE_RE.exec(lines[index]);
+    const match = FENCE_OPEN_RE.exec(lines[index]);
     if (!open) {
       if (match) open = { index, marker: match[1] };
       continue;
     }
-    if (
+    // CommonMark: a line like ` ```js ` inside a fence is *content*, not a
+    // closing fence — only a fence followed by whitespace may close.
+    const canClose =
       match &&
       match[1][0] === open.marker[0] &&
-      match[1].length >= open.marker.length
-    ) {
+      match[1].length >= open.marker.length &&
+      FENCE_CLOSE_RE.test(lines[index]);
+    if (canClose) {
       kinds[open.index] = "fence-open";
       for (let content = open.index + 1; content < index; content++) {
         kinds[content] = "content";
@@ -41,15 +47,12 @@ export function fencedCodeLineKindsFromLines(
   return kinds;
 }
 
-export function fencedCodeLineKinds(source: string): FencedCodeLineKind[] {
-  return fencedCodeLineKindsFromLines(source.split("\n"));
-}
-
 export function parseAtxHeading(line: string): AtxHeadingParse | null {
   const m = ATX_RE.exec(line);
   if (!m) return null;
   const level = m[1].length as HeadingLevel;
-  const markEnd = m[1].length + m[2].length;
+  // `#` alone (empty heading) is valid CommonMark: no trailing space.
+  const markEnd = m[0].length - (m[2]?.length ?? 0);
   return { level, markEnd, textStart: markEnd };
 }
 

@@ -16,17 +16,17 @@ published.
 
 The canonical project identifiers are:
 
-| Purpose | Value |
-| --- | --- |
-| Package name | `bamboo` |
-| Display name | `Bamboo 竹子` |
-| Add-on ID | `bamboo@l0o0.github.io` |
-| Add-on reference / chrome namespace | `bamboo` |
-| Zotero runtime instance | `Bamboo` |
-| Preference prefix | `extensions.zotero.bamboo` |
-| Public API root | `Zotero.Bamboo` |
-| GitHub repository | `https://github.com/l0o0/bamboo` |
-| XPI filename | `bamboo-v{version}.xpi` |
+| Purpose                             | Value                            |
+| ----------------------------------- | -------------------------------- |
+| Package name                        | `bamboo`                         |
+| Display name                        | `Bamboo 竹子`                    |
+| Add-on ID                           | `bamboo@l0o0.github.io`          |
+| Add-on reference / chrome namespace | `bamboo`                         |
+| Zotero runtime instance             | `Bamboo`                         |
+| Preference prefix                   | `extensions.zotero.bamboo`       |
+| Public API root                     | `Zotero.Bamboo`                  |
+| GitHub repository                   | `https://github.com/l0o0/bamboo` |
+| XPI filename                        | `bamboo-v{version}.xpi`          |
 
 `Zotero.ZoteroMarkdown` will not remain as an alias. Existing preferences under
 `extensions.zotero.zoteromarkdown` will not be migrated.

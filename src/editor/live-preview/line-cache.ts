@@ -12,6 +12,7 @@ import type {
   ListPrefixParse,
   PrefixParse,
 } from "./types";
+import type { MarkdownImageReference } from "../../modules/markdown/images/model";
 
 export interface CachedLineParse {
   heading: AtxHeadingParse | null;
@@ -19,6 +20,8 @@ export interface CachedLineParse {
   quote: PrefixParse | null;
   inlines: InlineRange[];
   imagePlans: ReturnType<typeof planLiveImageDecorations>;
+  /** Raw image references of the line (shared by both active/inactive). */
+  images: MarkdownImageReference[];
 }
 
 const cache = new Map<
@@ -28,12 +31,14 @@ const cache = new Map<
 const CACHE_LIMIT = 2500;
 
 function parseLine(text: string, active: boolean): CachedLineParse {
+  const images = parseMarkdownImages(text);
   return {
     heading: parseAtxHeading(text),
     list: parseListPrefix(text),
     quote: parseBlockQuotePrefix(text),
     inlines: parseInlineL2(text),
-    imagePlans: planLiveImageDecorations(text, active),
+    imagePlans: planLiveImageDecorations(text, active, images),
+    images,
   };
 }
 
@@ -52,10 +57,13 @@ export function cachedLineParse(
       inactive: parseLine(text, false),
     };
     cache.set(text, entry);
+  } else {
+    // LRU recency refresh: full-document rebuilds insert lines in document
+    // order, so insertion-order eviction alone would thrash the cache on
+    // documents larger than CACHE_LIMIT. Touching the key on every hit keeps
+    // the working set hot.
+    cache.delete(text);
+    cache.set(text, entry);
   }
   return active ? entry.active : entry.inactive;
-}
-
-export function lineImageRanges(text: string) {
-  return parseMarkdownImages(text);
 }

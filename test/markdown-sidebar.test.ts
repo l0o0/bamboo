@@ -84,7 +84,7 @@ describe("Markdown sidebar state", () => {
   });
 
   it("releases focus for other sidenav panes and restores it for Markdown", () => {
-    const markdownPaneID = "zotero-markdown@l0o0.github.io-zmd-markdown";
+    const markdownPaneID = "bamboo@l0o0.github.io-zmd-markdown";
     assert.equal(sidebarFocusAction("info", markdownPaneID), "release");
     assert.equal(sidebarFocusAction("attachments", markdownPaneID), "release");
     assert.equal(sidebarFocusAction(markdownPaneID, markdownPaneID), "focus");
@@ -109,6 +109,73 @@ describe("Markdown sidebar state", () => {
     assert.equal(registry.release(win, oldBody), oldController);
     assert.equal(registry.get(currentBody), currentController);
     assert.deepEqual(registry.releaseWindow(win), [currentController]);
+  });
+
+  it("enumerates all live controllers across windows and releases them", () => {
+    const registry = new SidebarControllerRegistry<
+      object,
+      object,
+      { id: string }
+    >();
+    const winA = {};
+    const winB = {};
+    const bodyA = {};
+    const bodyB = {};
+    const bodyB2 = {};
+    const controllerA = { id: "a" };
+    const controllerB = { id: "b" };
+    const controllerB2 = { id: "b2" };
+
+    registry.bind(winA, bodyA, controllerA);
+    registry.bind(winB, bodyB, controllerB);
+    registry.bind(winB, bodyB2, controllerB2);
+
+    assert.deepEqual(
+      registry
+        .all()
+        .map((c) => c.id)
+        .sort(),
+      ["a", "b", "b2"],
+    );
+    // Replacing a body drops the old controller from the enumeration.
+    registry.bind(winB, bodyB2, { id: "b3" });
+    assert.deepEqual(
+      registry
+        .all()
+        .map((c) => c.id)
+        .sort(),
+      ["a", "b", "b3"],
+    );
+    // Window release removes all of its controllers.
+    assert.deepEqual(
+      registry
+        .releaseWindow(winB)
+        .map((c) => c.id)
+        .sort(),
+      ["b", "b3"],
+    );
+    assert.deepEqual(
+      registry.all().map((c) => c.id),
+      ["a"],
+    );
+  });
+
+  it("supports closing a sidebar session before its attachment is trashed", () => {
+    const source = readFileSync(
+      new URL("../src/modules/markdown/sidebar.ts", import.meta.url),
+      "utf8",
+    );
+    assert.match(source, /export async function closeSidebarSessions/);
+    assert.match(source, /closeItemSession\(itemID: number\)/);
+  });
+
+  it("forwards image cleanup requests through sidebar saves", () => {
+    const source = readFileSync(
+      new URL("../src/modules/markdown/sidebar.ts", import.meta.url),
+      "utf8",
+    );
+    assert.match(source, /write:\s*async \(value, request\)/);
+    assert.match(source, /cleanupImages:\s*request\.cleanupImages/);
   });
 
   it("lets the focused item-pane editor fill the available height", () => {

@@ -28,6 +28,48 @@ function stateAt(needle: string, offset = 0) {
 }
 
 describe("GFM table editing", () => {
+  it("keeps delimiter columns and alignment across valid pipe styles", () => {
+    for (const [doc, expected] of [
+      [
+        "| A | B | C |\n| :--- | :---: | ---: |\n| 1 | 2 | 3 |",
+        ["left", "center", "right"],
+      ],
+      [
+        "A | B | C\n:--- | :---: | ---:\n1 | 2 | 3",
+        ["left", "center", "right"],
+      ],
+      ["|A|B|C|\n|---|---|---|\n|1|2|3|", [null, null, null]],
+      [
+        "| A | B | C |\n| --- |  ---  | --- |\n| 1 | 2 | 3 |",
+        [null, null, null],
+      ],
+    ]) {
+      const state = EditorState.create({
+        doc,
+        extensions: [markdown({ extensions: GFM })],
+      });
+      const table = tableLayoutAt(state, doc.indexOf("B"));
+      assert.ok(table, doc);
+      assert.equal(table.columnCount, 3, doc);
+      assert.deepEqual(table.alignments, expected, doc);
+    }
+  });
+
+  it("keeps table width when a body row is shorter", () => {
+    const doc = "| A | B | C |\n| --- | --- | --- |\n| 1 | 2 |";
+    const state = EditorState.create({
+      doc,
+      extensions: [markdown({ extensions: GFM })],
+    });
+    const table = tableLayoutAt(state, doc.indexOf("B"));
+    assert.ok(table);
+    assert.equal(table.columnCount, 3);
+    assert.equal(
+      table.rows.find((row) => row.kind === "body")?.cells.length,
+      2,
+    );
+  });
+
   it("derives rows, cells, and alignment from the syntax tree", () => {
     const state = stateAt("Name", 1);
     const table = tableLayoutAt(state, state.selection.main.head);
@@ -179,6 +221,38 @@ describe("GFM table editing", () => {
         columnIndex: 2,
       }),
       false,
+    );
+  });
+});
+
+describe("GFM table empty cells", () => {
+  const tableSource =
+    "| Name | Value | Extra |\n" +
+    "| --- | --- | --- |\n" +
+    "| A | | C |\n" +
+    "| D || F |\n";
+
+  it("keeps empty and adjacent-pipe cells as columns", () => {
+    const anchor = tableSource.indexOf("| A |");
+    const state = EditorState.create({
+      doc: tableSource,
+      selection: { anchor },
+      extensions: [markdown({ extensions: GFM })],
+    });
+    const table = tableLayoutAt(state, anchor);
+    assert.ok(table);
+    assert.equal(table.columnCount, 3);
+    const body = table.rows.filter((row) => row.kind === "body");
+    assert.equal(body.length, 2);
+    // Row `| A | | C |` → cells A, "", C (empty cell preserved).
+    assert.deepEqual(
+      body[0].cells.map((cell) => state.doc.sliceString(cell.from, cell.to)),
+      ["A", "", "C"],
+    );
+    // Row `| D || F |` → cells D, "", F (adjacent pipes keep the column).
+    assert.deepEqual(
+      body[1].cells.map((cell) => state.doc.sliceString(cell.from, cell.to)),
+      ["D", "", "F"],
     );
   });
 });

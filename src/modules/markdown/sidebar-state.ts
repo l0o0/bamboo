@@ -10,6 +10,7 @@ export class SidebarControllerRegistry<
   private readonly bodyByController = new WeakMap<TController, TBody>();
   private readonly windowByController = new WeakMap<TController, TWindow>();
   private readonly byWindow = new WeakMap<TWindow, Set<TController>>();
+  private readonly allControllers = new Set<TController>();
 
   bind(win: TWindow, body: TBody, controller: TController): void {
     const existing = this.byBody.get(body);
@@ -20,6 +21,7 @@ export class SidebarControllerRegistry<
       }
       this.bodyByController.delete(existing);
       this.windowByController.delete(existing);
+      this.allControllers.delete(existing);
     }
 
     this.byBody.set(body, controller);
@@ -31,6 +33,7 @@ export class SidebarControllerRegistry<
       this.byWindow.set(win, windowControllers);
     }
     windowControllers.add(controller);
+    this.allControllers.add(controller);
   }
 
   get(body: TBody): TController | undefined {
@@ -47,6 +50,7 @@ export class SidebarControllerRegistry<
     this.bodyByController.delete(controller);
     this.windowByController.delete(controller);
     this.byWindow.get(win)?.delete(controller);
+    this.allControllers.delete(controller);
     return controller;
   }
 
@@ -58,8 +62,13 @@ export class SidebarControllerRegistry<
       if (body) this.byBody.delete(body);
       this.bodyByController.delete(controller);
       this.windowByController.delete(controller);
+      this.allControllers.delete(controller);
     }
     return controllers;
+  }
+
+  all(): TController[] {
+    return [...this.allControllers];
   }
 }
 

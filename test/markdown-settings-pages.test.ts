@@ -3,18 +3,25 @@ import test from "node:test";
 import {
   nextSettingsPage,
   SETTINGS_PAGES,
+  settingsPageLabelKey,
 } from "../src/modules/markdown/settings-pages.ts";
 
 test("defines the four settings pages in a stable order", () => {
   assert.deepEqual(
-    SETTINGS_PAGES.map(({ id, label }) => [id, label]),
+    SETTINGS_PAGES.map(({ id, icon }) => [id, icon]),
     [
-      ["general", "常规"],
-      ["editor", "编辑器"],
-      ["shortcuts", "快捷键"],
-      ["about", "关于"],
+      ["general", "settings"],
+      ["editor", "type"],
+      ["shortcuts", "keyboard"],
+      ["about", "info"],
     ],
   );
+});
+
+test("maps every settings page to a localized label key", () => {
+  for (const { id } of SETTINGS_PAGES) {
+    assert.equal(settingsPageLabelKey(id), `settings-page-${id}`);
+  }
 });
 
 test("wraps keyboard navigation across settings pages", () => {

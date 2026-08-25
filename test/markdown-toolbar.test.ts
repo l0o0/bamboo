@@ -53,9 +53,7 @@ describe("toolbar insert templates", () => {
 
   it("renders heading 3 with distinct upper and lower strokes", () => {
     const icon = iconH3();
-    assert.match(icon, /M17\.5 10\.5/);
-    assert.match(icon, /M17 17\.5/);
-    assert.doesNotMatch(icon, /M21 12c0-1\.5/);
+    assert.match(icon, /content\/icons\/markdown\/h3\.svg/);
   });
 
   it("defines compact, comfortable, and large responsive toolbar sizes", () => {
@@ -80,13 +78,15 @@ describe("toolbar insert templates", () => {
   it("switches the toolbar icon and target with the current editor mode", () => {
     const live = modeToggleState("live");
     assert.equal(live.target, "source");
-    assert.match(live.icon, /M15 2H6a2 2 0 0 0-2 2v16/);
-    assert.match(live.label, /Source Code/);
+    assert.match(live.icon, /content\/icons\/markdown\/source\.svg/);
+    // Localized labels resolve at runtime; without a Zotero window the
+    // prefixed Fluent id is returned.
+    assert.equal(live.label, "bamboo-tab-mode-toggle-source");
 
     const source = modeToggleState("source");
     assert.equal(source.target, "live");
-    assert.match(source.icon, /M12 20h9/);
-    assert.match(source.label, /Live/);
+    assert.match(source.icon, /content\/icons\/markdown\/live\.svg/);
+    assert.equal(source.label, "bamboo-tab-mode-toggle-live");
 
     const preview = modeToggleState("preview");
     assert.equal(preview.target, "live");

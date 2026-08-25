@@ -123,7 +123,16 @@ export type ParentToEditorMessage = (
   | {
       source: typeof EDITOR_MESSAGE_SOURCE;
       type: "setImageAssets";
-      payload: { assets: ImageAssetMap };
+      payload: {
+        assets: ImageAssetMap;
+        /**
+         * `true` (default) replaces the iframe's whole asset map — the
+         * parent sends the complete set for the current document. `false`
+         * merges a single newly resolved asset so a partial push (e.g. right
+         * after an image insert) does not drop already-loaded images.
+         */
+        replace?: boolean;
+      };
     }
   | {
       source: typeof EDITOR_MESSAGE_SOURCE;

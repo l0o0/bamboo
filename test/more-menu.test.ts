@@ -2,6 +2,7 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
   EDITOR_MODE_OPTIONS,
+  findShortcutLabel,
   MORE_MENU_SECTIONS,
 } from "../src/modules/markdown/more-menu.ts";
 
@@ -32,5 +33,10 @@ describe("more menu", () => {
     );
     assert.ok(settings);
     assert.notEqual(settings.submenu, true);
+  });
+
+  it("uses the native find shortcut label for each platform", () => {
+    assert.equal(findShortcutLabel("MacIntel"), "⌘F");
+    assert.equal(findShortcutLabel("Win32"), "Ctrl+F");
   });
 });
