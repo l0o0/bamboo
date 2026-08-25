@@ -745,6 +745,7 @@ function bindTableCellEditing(host: HTMLElement) {
     });
   };
   const onPointerDown = (event: PointerEvent) => {
+    if (event.button === 2) return;
     if (isInsideSelector(event, "[data-zmd-table-drag]")) return;
     if (isInsideSelector(event, ".zmd-lp-table-edge-action")) return;
     if (isInsideSelector(event, ".zmd-table-context-menu")) return;
