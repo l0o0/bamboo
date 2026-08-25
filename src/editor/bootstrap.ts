@@ -67,6 +67,7 @@ import {
   livePreviewWhen,
   setLiveImageAssets,
   setLiveTableCellEdit,
+  setLiveTableSelection,
 } from "./live-preview";
 import { forgetLiveAsset, rememberLiveAsset } from "./live-preview/assets";
 import { tableKeymap } from "./table";
@@ -87,6 +88,12 @@ import {
   type TableCellNavigateDetail,
 } from "./table-cell-edit";
 import {
+  isTableHandleClick,
+  remapTableSelection,
+  sameTableSelection,
+  type TableSelection,
+} from "./table-selection";
+import {
   planTableEdgeAction,
   TABLE_EDGE_ACTION_EVENT,
   type TableEdgeActionDetail,
@@ -95,13 +102,16 @@ import {
   planTableMoveColumnTo,
   planTableMoveRowTo,
   planTableOperation,
+  planTableSelectionOperation,
   tableTargetAt,
   type TableAction,
+  type TableSelectionAction,
 } from "./table-operations";
 import {
   createTableContextMenu,
   tableMenuItems,
   type TableContextMenu,
+  type TableMenuAction,
 } from "./table-menu";
 
 const themeCompartment = new Compartment();
@@ -122,6 +132,9 @@ interface TableDragSession {
   targetIndex: number;
   pointerId: number;
   handle: HTMLElement;
+  startX: number;
+  startY: number;
+  moved: boolean;
 }
 
 interface EditorRuntime {
@@ -136,8 +149,10 @@ interface EditorRuntime {
   removeTableCellListeners: (() => void) | null;
   tableContextMenu: TableContextMenu | null;
   tableContextPosition: number | null;
+  tableContextSelection: TableSelection;
   activeTableCell: TableCellEditTarget | null;
   tableDragSession: TableDragSession | null;
+  tableSelection: TableSelection;
   outlineItems: EditorOutlineItem[];
   outlineTimer: number | null;
   activeOutlineID: string | null;
@@ -155,8 +170,10 @@ const runtime: EditorRuntime = {
   removeTableCellListeners: null,
   tableContextMenu: null,
   tableContextPosition: null,
+  tableContextSelection: null,
   activeTableCell: null,
   tableDragSession: null,
+  tableSelection: null,
   outlineItems: [],
   outlineTimer: null,
   activeOutlineID: null,
@@ -250,6 +267,54 @@ function dispatchActiveTableCell(target: TableCellEditTarget | null) {
   });
 }
 
+function setTableSelection(selection: TableSelection) {
+  if (sameTableSelection(runtime.tableSelection, selection)) return;
+  runtime.tableSelection = selection;
+  runtime.tableContextSelection = null;
+  runtime.tableContextMenu?.close();
+  runtime.activeTableCell = null;
+  runtime.view?.dispatch({
+    effects: [
+      setLiveTableSelection.of(selection),
+      setLiveTableCellEdit.of(null),
+      editorEditableEffect(),
+    ],
+  });
+}
+
+function selectionContainsTableTarget(
+  selection: TableSelection,
+  target: {
+    tableFrom: number;
+    rowIndex: number;
+    columnIndex: number;
+  },
+) {
+  if (!selection || selection.tableFrom !== target.tableFrom) return false;
+  return selection.kind === "row"
+    ? selection.rowIndex === target.rowIndex
+    : selection.columnIndex === target.columnIndex;
+}
+
+function supportsClipboardCommand(command: "copy" | "cut" | "paste"): boolean {
+  try {
+    return document.queryCommandSupported?.(command) !== false;
+  } catch {
+    return true;
+  }
+}
+
+function runTableClipboardCommand(command: "copy" | "cut" | "paste") {
+  const view = runtime.view;
+  if (!view) return false;
+  view.focus();
+  try {
+    return document.execCommand(command);
+  } catch {
+    return false;
+  }
+}
+
 function syncEditingCellDom(value: string, caretOffset: number) {
   const cell = runtime.view?.dom.querySelector(
     ".zmd-lp-table-cell-editing",
@@ -320,6 +385,33 @@ function applyActiveCellKey(event: KeyboardEvent): boolean {
     effects: setLiveTableCellEdit.of(plan.active),
   });
   syncEditingCellDom(plan.active.value, plan.active.caretOffset);
+  return true;
+}
+
+function applyTableSelectionDelete(): boolean {
+  const view = runtime.view;
+  const selection = runtime.tableSelection;
+  if (!view || !selection) return false;
+  if (view.state.readOnly) return true;
+  const plan = planTableSelectionOperation(
+    view.state,
+    selection,
+    "delete-selection",
+  );
+  if (!plan) return true;
+  runtime.tableSelection = plan.nextTableSelection;
+  runtime.tableContextSelection = null;
+  runtime.activeTableCell = null;
+  view.dispatch({
+    changes: plan.changes,
+    selection: plan.selection,
+    effects: [
+      setLiveTableSelection.of(plan.nextTableSelection),
+      setLiveTableCellEdit.of(null),
+      editorEditableEffect(),
+    ],
+    scrollIntoView: true,
+  });
   return true;
 }
 
@@ -420,6 +512,20 @@ function applyTableDragHighlight(session: TableDragSession) {
 function onTableDragMove(event: PointerEvent) {
   const session = runtime.tableDragSession;
   if (!session || event.pointerId !== session.pointerId) return;
+  if (!session.moved) {
+    if (
+      isTableHandleClick(
+        session.startX,
+        session.startY,
+        event.clientX,
+        event.clientY,
+      )
+    ) {
+      return;
+    }
+    session.moved = true;
+    applyTableDragHighlight(session);
+  }
   const targetIndex = tableDragTargetAtPoint(
     event.clientX,
     event.clientY,
@@ -445,12 +551,44 @@ function onTableDragEnd(event: PointerEvent) {
   clearTableDragHighlight();
 
   if (event.type === "pointercancel" || !runtime.view) return;
+  if (!session.moved) {
+    setTableSelection(
+      session.kind === "row"
+        ? {
+            kind: "row",
+            tableFrom: session.tableFrom,
+            rowIndex: session.fromIndex,
+          }
+        : {
+            kind: "column",
+            tableFrom: session.tableFrom,
+            columnIndex: session.fromIndex,
+          },
+    );
+    return;
+  }
   const targetIndex = tableDragTargetAtPoint(
     event.clientX,
     event.clientY,
     session,
   );
-  if (targetIndex == null || targetIndex === session.fromIndex) return;
+  if (targetIndex == null) return;
+  if (targetIndex === session.fromIndex) {
+    setTableSelection(
+      session.kind === "row"
+        ? {
+            kind: "row",
+            tableFrom: session.tableFrom,
+            rowIndex: session.fromIndex,
+          }
+        : {
+            kind: "column",
+            tableFrom: session.tableFrom,
+            columnIndex: session.fromIndex,
+          },
+    );
+    return;
+  }
   const plan =
     session.kind === "row"
       ? planTableMoveRowTo(
@@ -466,10 +604,28 @@ function onTableDragEnd(event: PointerEvent) {
           targetIndex,
         );
   if (!plan) return;
+  const selection: TableSelection =
+    session.kind === "row"
+      ? {
+          kind: "row",
+          tableFrom: session.tableFrom,
+          rowIndex: targetIndex,
+        }
+      : {
+          kind: "column",
+          tableFrom: session.tableFrom,
+          columnIndex: targetIndex,
+        };
+  runtime.tableSelection = selection;
+  runtime.activeTableCell = null;
   runtime.view.dispatch({
     changes: plan.changes,
     selection: plan.selection,
-    effects: setLiveTableCellEdit.of(null),
+    effects: [
+      setLiveTableCellEdit.of(null),
+      setLiveTableSelection.of(selection),
+      editorEditableEffect(),
+    ],
     scrollIntoView: true,
   });
 }
@@ -506,6 +662,9 @@ function startTableDrag(event: PointerEvent): boolean {
     targetIndex: fromIndex,
     pointerId: event.pointerId,
     handle,
+    startX: event.clientX,
+    startY: event.clientY,
+    moved: false,
   };
   runtime.tableDragSession = session;
   try {
@@ -516,7 +675,6 @@ function startTableDrag(event: PointerEvent): boolean {
   document.addEventListener("pointermove", onTableDragMove);
   document.addEventListener("pointerup", onTableDragEnd);
   document.addEventListener("pointercancel", onTableDragEnd);
-  applyTableDragHighlight(session);
   event.preventDefault();
   return true;
 }
@@ -587,9 +745,13 @@ function bindTableCellEditing(host: HTMLElement) {
     });
   };
   const onPointerDown = (event: PointerEvent) => {
-    if (!runtime.activeTableCell) return;
-    if (isInsideSelector(event, ".zmd-lp-table-cell")) return;
+    if (isInsideSelector(event, "[data-zmd-table-drag]")) return;
     if (isInsideSelector(event, ".zmd-lp-table-edge-action")) return;
+    if (isInsideSelector(event, ".zmd-table-context-menu")) return;
+    const insideCell = isInsideSelector(event, ".zmd-lp-table-cell");
+    if (runtime.tableSelection) setTableSelection(null);
+    if (insideCell) return;
+    if (!runtime.activeTableCell) return;
     dispatchActiveTableCell(null);
   };
   const onDragHandlePointerDown = (event: PointerEvent) => {
@@ -740,6 +902,12 @@ function buildExtensions(
       keymap.of([
         {
           any(_view, event) {
+            if (
+              runtime.tableSelection &&
+              (event.key === "Delete" || event.key === "Backspace")
+            ) {
+              return applyTableSelectionDelete();
+            }
             if (!runtime.activeTableCell) return false;
             if (isInsideSelector(event, ".zmd-lp-table-cell-editing")) {
               return false;
@@ -822,6 +990,34 @@ function buildExtensions(
     readOnlyCompartment.of(EditorState.readOnly.of(!!init.readOnly)),
     editorEditableCompartment.of(EditorView.editable.of(!init.readOnly)),
     EditorView.updateListener.of((update) => {
+      if (update.docChanged && runtime.tableSelection) {
+        const hasSelectionEffect = update.transactions.some((transaction) =>
+          transaction.effects.some((effect) =>
+            effect.is(setLiveTableSelection),
+          ),
+        );
+        if (!hasSelectionEffect) {
+          const nextSelection = remapTableSelection(
+            update.state,
+            runtime.tableSelection,
+            update.changes,
+          );
+          if (!sameTableSelection(runtime.tableSelection, nextSelection)) {
+            runtime.tableSelection = nextSelection;
+            const view = update.view;
+            queueMicrotask(() => {
+              if (
+                runtime.view === view &&
+                sameTableSelection(runtime.tableSelection, nextSelection)
+              ) {
+                view.dispatch({
+                  effects: setLiveTableSelection.of(nextSelection),
+                });
+              }
+            });
+          }
+        }
+      }
       if (update.docChanged && runtime.activeTableCell) {
         const hasActiveEffect = update.transactions.some((transaction) =>
           transaction.effects.some((effect) => effect.is(setLiveTableCellEdit)),
@@ -870,11 +1066,29 @@ function buildExtensions(
         if (position == null) return false;
         const tableTarget = tableTargetAt(editorView.state, position);
         if (!tableTarget || !runtime.tableContextMenu) return false;
+        const selectedTarget = selectionContainsTableTarget(
+          runtime.tableSelection,
+          tableTarget,
+        );
+        if (runtime.tableSelection && !selectedTarget) {
+          setTableSelection(null);
+        }
+        const contextSelection = selectedTarget ? runtime.tableSelection : null;
         runtime.tableContextPosition = position;
+        runtime.tableContextSelection = contextSelection;
         runtime.tableContextMenu.open(
           event.clientX,
           event.clientY,
-          tableMenuItems(tableTarget, editorView.state.readOnly),
+          tableMenuItems(
+            tableTarget,
+            editorView.state.readOnly,
+            contextSelection,
+            {
+              copy: supportsClipboardCommand("copy"),
+              cut: supportsClipboardCommand("cut"),
+              paste: supportsClipboardCommand("paste"),
+            },
+          ),
         );
         event.preventDefault();
         return true;
@@ -960,6 +1174,43 @@ function prefixLineInView(v: EditorView, prefix: string) {
   v.focus();
 }
 
+function isTableSelectionAction(
+  action: TableMenuAction,
+): action is TableSelectionAction {
+  return (
+    action === "clear-selection" ||
+    action === "delete-selection" ||
+    action === "align-selection-default" ||
+    action === "align-selection-left" ||
+    action === "align-selection-center" ||
+    action === "align-selection-right"
+  );
+}
+
+function dispatchTableSelectionAction(
+  selection: TableSelection,
+  action: TableSelectionAction,
+) {
+  const view = runtime.view;
+  if (!view || !selection || view.state.readOnly) return;
+  const plan = planTableSelectionOperation(view.state, selection, action);
+  if (!plan) return;
+  runtime.tableSelection = plan.nextTableSelection;
+  runtime.tableContextSelection = null;
+  runtime.activeTableCell = null;
+  view.dispatch({
+    changes: plan.changes,
+    selection: plan.selection,
+    effects: [
+      setLiveTableSelection.of(plan.nextTableSelection),
+      setLiveTableCellEdit.of(null),
+      editorEditableEffect(),
+    ],
+    scrollIntoView: true,
+  });
+  view.focus();
+}
+
 function createOrResetEditor(init: EditorInitPayload) {
   editorDebug("init-received", {
     channel: editorChannel,
@@ -985,6 +1236,8 @@ function createOrResetEditor(init: EditorInitPayload) {
     runtime.removeTableCellListeners?.();
     cancelTableDrag();
     runtime.activeTableCell = null;
+    runtime.tableSelection = null;
+    runtime.tableContextSelection = null;
     runtime.tableContextMenu?.destroy();
     runtime.tableContextMenu = null;
     runtime.tableContextPosition = null;
@@ -994,6 +1247,8 @@ function createOrResetEditor(init: EditorInitPayload) {
 
   runtime.docRev = 0;
   runtime.imageAssets = {};
+  runtime.tableSelection = null;
+  runtime.tableContextSelection = null;
   let state: EditorState;
   try {
     editorDebug("state-create-start");
@@ -1036,19 +1291,28 @@ function createOrResetEditor(init: EditorInitPayload) {
   runtime.tableContextMenu = createTableContextMenu({
     document,
     parent: runtime.view.dom,
-    onAction: (action: TableAction) => {
-      if (
-        !runtime.view ||
-        runtime.tableContextPosition == null ||
-        runtime.view.state.readOnly
-      )
+    onAction: (action: TableMenuAction) => {
+      if (!runtime.view) return;
+      if (action === "copy" || action === "cut" || action === "paste") {
+        runTableClipboardCommand(action);
+        return;
+      }
+      if (isTableSelectionAction(action)) {
+        dispatchTableSelectionAction(runtime.tableContextSelection, action);
+        return;
+      }
+      if (runtime.tableContextPosition == null || runtime.view.state.readOnly)
         return;
       const target = tableTargetAt(
         runtime.view.state,
         runtime.tableContextPosition,
       );
       if (!target) return;
-      const plan = planTableOperation(runtime.view.state, target, action);
+      const plan = planTableOperation(
+        runtime.view.state,
+        target,
+        action as TableAction,
+      );
       if (!plan) return;
       const nextState = runtime.view.state.update({
         changes: plan.changes,
@@ -1222,6 +1486,7 @@ function handleParentMessage(data: ParentToEditorMessage) {
       break;
     }
     case "setMode": {
+      setTableSelection(null);
       dispatchActiveTableCell(null);
       applyMode(data.payload.mode === "source" ? "source" : "live");
       break;
@@ -1273,6 +1538,8 @@ function handleParentMessage(data: ParentToEditorMessage) {
       runtime.removeTableCellListeners?.();
       cancelTableDrag();
       runtime.activeTableCell = null;
+      runtime.tableSelection = null;
+      runtime.tableContextSelection = null;
       runtime.tableContextMenu?.destroy();
       runtime.tableContextMenu = null;
       runtime.tableContextPosition = null;

@@ -1,5 +1,6 @@
 import type { TableAction, TableTarget } from "./table-operations";
-import type { TableSelectionAction, TableSelection } from "./table-operations";
+import type { TableSelectionAction } from "./table-operations";
+import type { TableSelection } from "./table-selection";
 
 export type TableMenuAction =
   TableAction | TableSelectionAction | "copy" | "cut" | "paste";
