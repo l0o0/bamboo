@@ -70,6 +70,14 @@ test("defines a centered accessible modal surface", () => {
   assert.match(css, /\.zotero-markdown-modal-button\.is-primary/);
 });
 
+test("allows document information to be selected and copied", () => {
+  const css = markdownModalCSS();
+  assert.match(
+    css,
+    /\.zotero-markdown-modal-info\s*\{[^}]*user-select:\s*text/s,
+  );
+});
+
 test("defines a responsive settings workspace without changing compact dialogs", () => {
   const css = markdownModalCSS();
   assert.match(css, /\.zotero-markdown-modal\.is-settings/);

@@ -598,6 +598,9 @@ export function markdownModalCSS(): string {
   gap: 10px 14px;
   margin: 0;
   font-size: 12px;
+  user-select: text;
+  -moz-user-select: text;
+  cursor: text;
 }
 
 .zotero-markdown-modal-info dt {
