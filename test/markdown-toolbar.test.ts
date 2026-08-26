@@ -5,7 +5,7 @@ import {
   imageInsertTemplate,
   tableInsertTemplate,
 } from "../src/modules/markdown/insert-template.ts";
-import { iconH3 } from "../src/modules/markdown/icons.ts";
+import { iconH2, iconH3 } from "../src/modules/markdown/icons.ts";
 import { modeToggleState } from "../src/modules/markdown/tab.ts";
 import {
   responsiveToolbarSizingCSS,
@@ -48,6 +48,20 @@ describe("toolbar insert templates", () => {
   it("renders heading 3 with distinct upper and lower strokes", () => {
     const icon = iconH3();
     assert.match(icon, /content\/icons\/markdown\/h3\.svg/);
+  });
+
+  it("draws heading 2 with a clear lower horizontal stroke", () => {
+    const icon = iconH2();
+    const source = readFileSync(
+      new URL("../addon/content/icons/markdown/h2.svg", import.meta.url),
+      "utf8",
+    );
+
+    assert.match(icon, /content\/icons\/markdown\/h2\.svg/);
+    assert.match(
+      source,
+      /M17 10\.5c\.4-1\.2 1\.3-2 2\.5-2 1\.4 0 2\.5\.9 2\.5 2\.2 0 1-\.5 1\.8-1\.5 2\.7L17 18h5/,
+    );
   });
 
   it("defines compact, comfortable, and large responsive toolbar sizes", () => {

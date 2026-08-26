@@ -15,3 +15,18 @@ test("release download uses the configured versioned XPI name", async () => {
   assert.match(config, /xpiName:\s*`bamboo-v\$\{pkg\.version\}`/);
   assert.match(config, /\{\{xpiName\}\}\.xpi/);
 });
+
+test("GitHub workflows resolve package versions with valid bash quoting", async () => {
+  const workflows = await Promise.all([
+    readFile(".github/workflows/ci.yml", "utf8"),
+    readFile(".github/workflows/release.yml", "utf8"),
+  ]);
+
+  for (const workflow of workflows) {
+    assert.match(
+      workflow,
+      /VERSION="\$\(node -p "require\('\.\/package\.json'\)\.version"\)"/,
+    );
+    assert.doesNotMatch(workflow, /node -p \\"require/);
+  }
+});

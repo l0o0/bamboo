@@ -77,6 +77,7 @@ import { ensureDOMGlobals, getDOMDocument } from "../../utils/dom";
 import { getString } from "../../utils/locale";
 import type { EditorOutlineItem, EditorTheme } from "./editor-protocol";
 import { mountOutlineSidebar } from "./outline-sidebar";
+import { documentSyncRegistry } from "./document-sync";
 
 const AUTOSAVE_MS = 800;
 const TITLE_SYNC_MS = 1000;
@@ -129,6 +130,7 @@ export async function openMarkdownTab(
         ensureTabTitle(win, existing.tabID, item.id);
         win.Zotero_Tabs.select(existing.tabID);
       }
+      void refreshSessionOnFocus(existing);
       existing.editor?.focus();
       return existing.tabID;
     }
@@ -313,6 +315,98 @@ function bindSessionTheme(win: _ZoteroTypes.MainWindow, session: OpenSession) {
       // ignore
     }
   };
+}
+
+function bindSessionDocumentSync(session: OpenSession) {
+  session.unbindDocumentSync?.();
+  const editor = session.editor;
+  if (!editor) return;
+
+  const sourceID = `tab:${session.tabID}`;
+  session.documentSyncSourceID = sourceID;
+  const unregister = documentSyncRegistry.register({
+    sourceID,
+    itemID: session.itemID,
+    hasLocalWork: () => session.save.dirty || session.save.writing,
+    flush: async () => {
+      await requestSave(session, { force: true });
+    },
+    getCurrentValue: () => editor.getValue(),
+    readPersisted: async () => {
+      const raw = await Zotero.File.getContentsAsync(session.path);
+      return typeof raw === "string" ? raw : String(raw ?? "");
+    },
+    applyPersisted: (value) => applyPersistedToSession(session, value),
+  });
+
+  const editorHost = session.view?.editorHost;
+  const onEditorFocus = () => {
+    void refreshSessionOnFocus(session);
+  };
+  const onWindowFocus = () => {
+    void refreshSessionOnFocus(session);
+  };
+  editorHost?.addEventListener("focusin", onEditorFocus);
+  session.win.addEventListener("focus", onWindowFocus);
+
+  session.unbindDocumentSync = () => {
+    editorHost?.removeEventListener("focusin", onEditorFocus);
+    session.win.removeEventListener("focus", onWindowFocus);
+    unregister();
+    if (session.documentSyncSourceID === sourceID) {
+      session.documentSyncSourceID = undefined;
+    }
+  };
+}
+
+function refreshSessionOnFocus(session: OpenSession): Promise<void> {
+  if (
+    session.closing ||
+    !session.editor ||
+    !session.documentSyncSourceID ||
+    session.win.Zotero_Tabs.selectedID !== session.tabID
+  ) {
+    return Promise.resolve();
+  }
+  if (session.documentSyncRefresh) return session.documentSyncRefresh;
+
+  const refresh = documentSyncRegistry
+    .refreshOnFocus(session.documentSyncSourceID)
+    .then((result) => {
+      if (result === "blocked-peer-dirty") {
+        ztoolkit.log("Markdown focus refresh blocked by unsaved peer", {
+          itemID: session.itemID,
+          sourceID: session.documentSyncSourceID,
+        });
+      }
+    })
+    .catch((error) => {
+      ztoolkit.log("Markdown focus refresh failed", error);
+    })
+    .finally(() => {
+      if (session.documentSyncRefresh === refresh) {
+        session.documentSyncRefresh = undefined;
+      }
+    });
+  session.documentSyncRefresh = refresh;
+  return refresh;
+}
+
+function applyPersistedToSession(session: OpenSession, value: string) {
+  const editor = session.editor;
+  if (!editor || session.save.dirty || session.save.writing) return;
+  if (editor.getValue() === value) return;
+
+  editor.setValue(value);
+  session.save.adoptPersistedSnapshot();
+  updateMeta(session);
+  updateSaveStatus(session);
+  ensureTabTitle(session.win, session.tabID, session.itemID);
+  if (session.mode === "preview") {
+    void showReadOnlyPreview(session);
+  } else {
+    void refreshImageAssets(session);
+  }
 }
 
 function mountEditorUI(
@@ -894,6 +988,9 @@ function mountEditorUI(
       const appliedTitleSync = !!session.applyingTitleSync;
       session.applyingTitleSync = false;
       session.save.markChanged();
+      if (session.documentSyncSourceID) {
+        documentSyncRegistry.markEdited(session.documentSyncSourceID);
+      }
       setStatus(session, "dirty", getString("status-unsaved"));
       updateMeta(session);
       scheduleImageAssetRefresh(session);
@@ -941,6 +1038,7 @@ function mountEditorUI(
   });
   // Default iframe mode is live (init.mode)
   session.editor.setMode("live");
+  bindSessionDocumentSync(session);
   void refreshImageAssets(session);
 
   bindSessionTheme(win, session);
@@ -1808,6 +1906,9 @@ async function persistSession(
     cleanupImages: opts.cleanupImages,
     syncTitle: true,
   });
+  if (session.documentSyncSourceID) {
+    documentSyncRegistry.markSaved(session.documentSyncSourceID);
+  }
   session.path = path;
   if (titleChanged) {
     ensureTabTitle(session.win, session.tabID, session.itemID);
@@ -1900,6 +2001,11 @@ async function closeSession(tabID: string, opts: { flush?: boolean } = {}) {
 
     try {
       session.unbindTheme?.();
+    } catch {
+      // ignore
+    }
+    try {
+      session.unbindDocumentSync?.();
     } catch {
       // ignore
     }

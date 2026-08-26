@@ -47,6 +47,14 @@ export class SaveCoordinator {
     this.options.onStateChange?.();
   }
 
+  /** Mark content loaded from the persisted file as the current clean state. */
+  adoptPersistedSnapshot() {
+    this.currentRev += 1;
+    this.savedRev = this.currentRev;
+    this.lastError = null;
+    this.options.onStateChange?.();
+  }
+
   request(request: SaveRequest = {}): Promise<void> {
     this.enqueue(request);
     return this.idle();

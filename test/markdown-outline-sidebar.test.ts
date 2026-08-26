@@ -44,3 +44,10 @@ test("uses the leading toolbar panel button as the only outline control", () => 
   assert.doesNotMatch(source, /iconPanelLeftClose/);
   assert.match(iconPanelLeft(), /chrome:\/\/bamboo\/content\/icons\/markdown/);
 });
+
+test("uses XHTML-safe markup for sidebar toolbar icons", () => {
+  const icon = iconPanelLeft();
+
+  assert.match(icon, /^<img\b[^>]*\/>$/);
+  assert.doesNotMatch(icon, /<\/img>/);
+});

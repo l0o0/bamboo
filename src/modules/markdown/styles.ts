@@ -41,6 +41,18 @@ export function toolbarWidthAlignmentCSS(): string {
 
 export function sidebarEditorGeometryCSS(): string {
   return `
+item-pane-sidenav .btn[data-pane="zmd-markdown"] {
+  background-size: 20px 20px !important;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+
+item-pane-custom-section[data-pane="zmd-markdown"] > collapsible-section[data-pane="zmd-markdown"] > .head .title::before {
+  background-size: 16px 16px !important;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+
 .zmd-sidebar {
   height: auto;
 }

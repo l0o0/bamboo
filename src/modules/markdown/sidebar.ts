@@ -15,7 +15,7 @@ import { persistMarkdownContent } from "./persist";
 import { isMarkdownAttachment } from "./detect";
 import { createMarkdownAttachment } from "./create";
 import { openMarkdownTab } from "./tab";
-import { sessionRegistry } from "./session-registry";
+import { documentSyncRegistry } from "./document-sync";
 import { stripFrontmatter } from "./frontmatter";
 import {
   resolveImageAssetEntry,
@@ -46,6 +46,7 @@ import {
 const AUTOSAVE_DELAY_MS = 1500;
 const PENDING_RENDER_INTERVAL_MS = 100;
 const PENDING_RENDER_MAX_RETRIES = 50;
+let sidebarControllerSequence = 0;
 
 const controllers = new SidebarControllerRegistry<
   _ZoteroTypes.MainWindow,
@@ -84,7 +85,7 @@ export async function closeSidebarSessions(itemID: number): Promise<number> {
 }
 
 function faviconURL(): string {
-  return `chrome://${addon.data.config.addonRef}/content/icons/favicon.png`;
+  return `chrome://${addon.data.config.addonRef}/content/icons/favicon.svg`;
 }
 
 let sectionKey: string | null = null;
@@ -202,6 +203,7 @@ function listSnippet(content: string): string {
 
 class SidebarController {
   private readonly win: _ZoteroTypes.MainWindow;
+  private readonly controllerID = ++sidebarControllerSequence;
   private readonly root: HTMLElement;
   private readonly toolbar: HTMLElement;
   private readonly listEl: HTMLElement;
@@ -240,6 +242,9 @@ class SidebarController {
   private itemID: number | null = null;
   private editable = true;
   private autosaveTimer: number | null = null;
+  private documentSyncSourceID: string | null = null;
+  private documentSyncRefresh: Promise<void> | null = null;
+  private unbindDocumentSync: (() => void) | null = null;
   private setSummary: ((summary: string) => void) | null = null;
   private lastSummary: ((summary: string) => void) | null = null;
   private pendingBody: HTMLElement | null = null;
@@ -531,6 +536,8 @@ class SidebarController {
     }
     const editor = this.editor;
     const save = this.save;
+    const unbindDocumentSync = this.unbindDocumentSync;
+    this.unbindDocumentSync = null;
     this.save = null;
     this.root.remove();
     return (async () => {
@@ -540,8 +547,11 @@ class SidebarController {
         } catch (error) {
           ztoolkit.log("Sidebar flush on destroy failed", error);
         } finally {
+          unbindDocumentSync?.();
           editor.destroy();
         }
+      } else {
+        unbindDocumentSync?.();
       }
     })();
   }
@@ -613,10 +623,7 @@ class SidebarController {
     const item = this.itemID != null ? Zotero.Items.get(this.itemID) : null;
     if (!item) return;
     await this.flush();
-    const tabID = await openMarkdownTab(item, { win: this.win });
-    if (!tabID) return;
-    this.destroyEditor();
-    this.showHint(item);
+    await openMarkdownTab(item, { win: this.win });
   }
 
   private renderList(
@@ -691,6 +698,7 @@ class SidebarController {
       this.editor?.setReadOnly?.(!this.editable);
       this.showEditor();
       this.updateSummary();
+      void this.refreshFromDocumentSync();
       return;
     }
 
@@ -704,13 +712,6 @@ class SidebarController {
     }
     if (seq !== this.renderSeq || this.destroyed) return;
 
-    // A main-window tab already owns this document — don't create a second
-    // editor; offer to switch to the tab instead.
-    if (sessionRegistry.find(this.win, item.id)) {
-      this.showHint(item);
-      return;
-    }
-
     const path = (await item.getFilePathAsync()) || null;
     if (seq !== this.renderSeq || this.destroyed) return;
     if (!path) {
@@ -721,6 +722,8 @@ class SidebarController {
     if (seq !== this.renderSeq || this.destroyed) return;
 
     this.itemID = item.id;
+    const sourceID = `sidebar:${this.controllerID}:${item.id}`;
+    this.documentSyncSourceID = sourceID;
     this.showEditor();
     if (!this.editorHost.isConnected) {
       // The section body was detached between render and editor creation —
@@ -733,13 +736,14 @@ class SidebarController {
         this.root.parentElement.appendChild(this.root);
     }
 
-    this.editor = createMarkdownEditor(this.editorHost, {
+    const editor = createMarkdownEditor(this.editorHost, {
       channel: `pane-${item.id}`,
       surface: "sidebar",
       doc: content,
       readOnly: !this.editable,
       onChange: () => {
         this.save?.markChanged();
+        documentSyncRegistry.markEdited(sourceID);
         this.scheduleAutosave();
       },
       onSave: () => this.requestSave(true),
@@ -753,11 +757,12 @@ class SidebarController {
         void this.insertImage(new Uint8Array(bytes), mimeType);
       },
     });
-    this.editor.setMode("live");
-    this.save = new SaveCoordinator({
+    this.editor = editor;
+    editor.setMode("live");
+    const save: SaveCoordinator = new SaveCoordinator({
       getSnapshot: async () => ({
-        rev: this.save?.currentRev ?? 0,
-        value: (await this.editor?.requestSnapshot()) ?? "",
+        rev: save.currentRev,
+        value: await editor.requestSnapshot(),
       }),
       write: async (value, request) => {
         await persistMarkdownContent(item, value, {
@@ -765,9 +770,12 @@ class SidebarController {
           syncTitle: true,
           syncFile: true,
         });
+        documentSyncRegistry.markSaved(sourceID);
       },
       onStateChange: () => this.updateSummary(),
     });
+    this.save = save;
+    this.bindDocumentSync(sourceID, item, path, editor, save);
     this.updateSummary();
     void this.refreshImages(item, content);
   }
@@ -777,11 +785,102 @@ class SidebarController {
       this.win.clearTimeout(this.autosaveTimer);
       this.autosaveTimer = null;
     }
+    this.unbindDocumentSync?.();
+    this.unbindDocumentSync = null;
+    this.documentSyncSourceID = null;
+    this.documentSyncRefresh = null;
     this.editor?.destroy();
     this.editor = null;
     this.save = null;
     this.itemID = null;
     this.editorHost.hidden = true;
+  }
+
+  private bindDocumentSync(
+    sourceID: string,
+    item: Zotero.Item,
+    path: string,
+    editor: MarkdownEditorHandle,
+    save: SaveCoordinator,
+  ): void {
+    this.unbindDocumentSync?.();
+    const unregister = documentSyncRegistry.register({
+      sourceID,
+      itemID: item.id,
+      hasLocalWork: () => save.dirty || save.writing,
+      flush: async () => {
+        await save.request({ force: true });
+      },
+      getCurrentValue: () => editor.getValue(),
+      readPersisted: () => readFileText(path),
+      applyPersisted: (value) => {
+        if (
+          this.destroyed ||
+          this.itemID !== item.id ||
+          this.editor !== editor ||
+          this.save !== save ||
+          save.dirty ||
+          save.writing ||
+          editor.getValue() === value
+        ) {
+          return;
+        }
+        editor.setValue(value);
+        save.adoptPersistedSnapshot();
+        this.updateSummary();
+        void this.refreshImages(item, value);
+      },
+    });
+
+    const onFocus = () => {
+      void this.refreshFromDocumentSync();
+    };
+    this.editorHost.addEventListener("focusin", onFocus);
+    this.win.addEventListener("focus", onFocus);
+    this.unbindDocumentSync = () => {
+      this.editorHost.removeEventListener("focusin", onFocus);
+      this.win.removeEventListener("focus", onFocus);
+      unregister();
+      if (this.documentSyncSourceID === sourceID) {
+        this.documentSyncSourceID = null;
+      }
+    };
+  }
+
+  private refreshFromDocumentSync(): Promise<void> {
+    const sourceID = this.documentSyncSourceID;
+    if (
+      this.destroyed ||
+      !sourceID ||
+      !this.editor ||
+      this.editorHost.hidden ||
+      !this.root.isConnected ||
+      this.focusSuppressed
+    ) {
+      return Promise.resolve();
+    }
+    if (this.documentSyncRefresh) return this.documentSyncRefresh;
+
+    const refresh = documentSyncRegistry
+      .refreshOnFocus(sourceID)
+      .then((result) => {
+        if (result === "blocked-peer-dirty") {
+          ztoolkit.log("Sidebar refresh blocked by unsaved peer", {
+            itemID: this.itemID,
+            sourceID,
+          });
+        }
+      })
+      .catch((error) => {
+        ztoolkit.log("Sidebar focus refresh failed", error);
+      })
+      .finally(() => {
+        if (this.documentSyncRefresh === refresh) {
+          this.documentSyncRefresh = null;
+        }
+      });
+    this.documentSyncRefresh = refresh;
+    return refresh;
   }
 
   private scheduleAutosave(): void {

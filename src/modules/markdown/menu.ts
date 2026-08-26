@@ -9,7 +9,7 @@ const registeredMenuIDs: string[] = [];
 const itemMenuCleanups = new Map<Window, () => void>();
 let shortcutCallback: ((ev: KeyboardEvent, options: any) => void) | null = null;
 const icon = () =>
-  `chrome://${addon.data.config.addonRef}/content/icons/favicon@0.5x.png`;
+  `chrome://${addon.data.config.addonRef}/content/icons/favicon.svg`;
 
 /**
  * Register item context menus and the toolbar "New Note" popup entries via

@@ -6,7 +6,7 @@
 import { config } from "../../../package.json";
 
 function iconAsset(name: string): string {
-  return `<img class="zmd-icon" src="chrome://${config.addonRef}/content/icons/markdown/${name}.svg" alt="" aria-hidden="true"></img>`;
+  return `<img class="zmd-icon" src="chrome://${config.addonRef}/content/icons/markdown/${name}.svg" alt="" aria-hidden="true" />`;
 }
 
 function svg(_paths: string, name = "generic"): string {

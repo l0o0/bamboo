@@ -47,6 +47,9 @@ export interface OpenSession {
   closeTablePicker?: () => void;
   unbindTablePicker?: () => void;
   unbindTheme?: () => void;
+  documentSyncSourceID?: string;
+  documentSyncRefresh?: Promise<void>;
+  unbindDocumentSync?: () => void;
   modal?: MarkdownModalController;
 }
 

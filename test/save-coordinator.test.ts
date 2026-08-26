@@ -93,4 +93,24 @@ describe("SaveCoordinator", () => {
     assert.equal(save.dirty, true);
     assert.equal(save.lastError?.message, "disk full");
   });
+
+  it("adopts externally persisted content as clean without writing", async () => {
+    let writes = 0;
+    const save = new SaveCoordinator({
+      getSnapshot: () => ({ rev: save.currentRev, value: "external" }),
+      write: async () => {
+        writes += 1;
+      },
+    });
+
+    save.markChanged();
+    const previousRevision = save.currentRev;
+    save.adoptPersistedSnapshot();
+
+    assert.equal(save.currentRev, previousRevision + 1);
+    assert.equal(save.savedRev, save.currentRev);
+    assert.equal(save.dirty, false);
+    assert.equal(save.lastError, null);
+    assert.equal(writes, 0);
+  });
 });

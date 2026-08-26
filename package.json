@@ -5,7 +5,7 @@
   "description": "Native Markdown attachment support for Zotero — open, edit, and create .md files as first-class citizens.",
   "config": {
     "addonName": "Bamboo 竹子",
-    "addonID": "bamboo@l0o0.github.io",
+    "addonID": "bamboo@@linxzh.com",
     "addonRef": "bamboo",
     "addonInstance": "Bamboo",
     "prefsPrefix": "extensions.zotero.bamboo"

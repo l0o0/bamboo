@@ -84,7 +84,7 @@ describe("Markdown sidebar state", () => {
   });
 
   it("releases focus for other sidenav panes and restores it for Markdown", () => {
-    const markdownPaneID = "bamboo@l0o0.github.io-zmd-markdown";
+    const markdownPaneID = "bamboo@@linxzh.com-zmd-markdown";
     assert.equal(sidebarFocusAction("info", markdownPaneID), "release");
     assert.equal(sidebarFocusAction("attachments", markdownPaneID), "release");
     assert.equal(sidebarFocusAction(markdownPaneID, markdownPaneID), "focus");
@@ -169,6 +169,32 @@ describe("Markdown sidebar state", () => {
     assert.match(source, /closeItemSession\(itemID: number\)/);
   });
 
+  it("allows the same attachment to stay open in a tab and the sidebar", () => {
+    const source = readFileSync(
+      new URL("../src/modules/markdown/sidebar.ts", import.meta.url),
+      "utf8",
+    );
+    assert.doesNotMatch(
+      source,
+      /sessionRegistry\.find\(this\.win,\s*item\.id\)/,
+    );
+    assert.doesNotMatch(
+      source,
+      /this\.destroyEditor\(\);\s*this\.showHint\(item\);/,
+    );
+  });
+
+  it("publishes sidebar edits and saves to the document sync registry", () => {
+    const source = readFileSync(
+      new URL("../src/modules/markdown/sidebar.ts", import.meta.url),
+      "utf8",
+    );
+    assert.match(source, /documentSyncRegistry\.register/);
+    assert.match(source, /documentSyncRegistry\.markEdited/);
+    assert.match(source, /documentSyncRegistry\.markSaved/);
+    assert.match(source, /documentSyncRegistry\s*\.\s*refreshOnFocus/);
+  });
+
   it("forwards image cleanup requests through sidebar saves", () => {
     const source = readFileSync(
       new URL("../src/modules/markdown/sidebar.ts", import.meta.url),
@@ -251,6 +277,19 @@ describe("Markdown sidebar state", () => {
     assert.match(
       css,
       /\.zmd-sidebar-toolbar-button\s*\{[^}]*flex:\s*0 0 35px[^}]*width:\s*35px[^}]*height:\s*35px[^}]*min-height:\s*35px[^}]*max-height:\s*35px[^}]*margin:\s*0/s,
+    );
+  });
+
+  it("fits the native sidebar icons inside Zotero's fixed slots", () => {
+    const css = sidebarEditorGeometryCSS();
+
+    assert.match(
+      css,
+      /item-pane-sidenav\s+\.btn\[data-pane="zmd-markdown"\][^{]*\{[^}]*background-size:\s*20px\s+20px\s*!important[^}]*background-position:\s*center[^}]*background-repeat:\s*no-repeat/s,
+    );
+    assert.match(
+      css,
+      /item-pane-custom-section\[data-pane="zmd-markdown"\][^}]*\.title::before[^}]*\{[^}]*background-size:\s*16px\s+16px\s*!important[^}]*background-position:\s*center[^}]*background-repeat:\s*no-repeat/s,
     );
   });
 

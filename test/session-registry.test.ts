@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
 import { SessionRegistry } from "../src/modules/markdown/session-registry.ts";
 import { SaveCoordinator } from "../src/modules/markdown/save-coordinator.ts";
@@ -41,5 +42,18 @@ describe("SessionRegistry", () => {
     assert.equal(registry.find(winA, 7), undefined);
     assert.equal(registry.find(winB, 7)?.tabID, "tab-b");
     assert.equal(registry.get("tab-b")?.itemID, 7);
+  });
+
+  it("publishes tab edits and saves and refreshes when focus returns", () => {
+    const source = readFileSync(
+      new URL("../src/modules/markdown/tab.ts", import.meta.url),
+      "utf8",
+    );
+
+    assert.match(source, /documentSyncRegistry\.register/);
+    assert.match(source, /documentSyncRegistry\.markEdited/);
+    assert.match(source, /documentSyncRegistry\.markSaved/);
+    assert.match(source, /documentSyncRegistry\s*\.\s*refreshOnFocus/);
+    assert.match(source, /selectedID\s*!==\s*session\.tabID/);
   });
 });
