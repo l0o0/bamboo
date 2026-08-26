@@ -1,7 +1,7 @@
 {
   "name": "bamboo",
   "type": "module",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "Native Markdown attachment support for Zotero — open, edit, and create .md files as first-class citizens.",
   "config": {
     "addonName": "Bamboo 竹子",
@@ -31,7 +31,7 @@
     "lint:fix": "prettier --write . && eslint . --fix",
     "release": "zotero-plugin release",
     "test": "zotero-plugin test",
-    "test:unit": "tsx --test test/api-frontmatter-patch.test.ts test/bamboo-branding.test.ts test/markdown-api-guards.test.ts test/preview-worker-protocol.test.ts test/preview-worker-client.test.ts test/async-render.test.ts test/preview-render-state.test.ts test/markdown-error-i18n.test.ts test/editor-channel.test.ts test/editor-outline.test.ts test/editor-outline-bridge.test.ts test/editor-table.test.ts test/editor-table-cell-edit.test.ts test/editor-table-edge-actions.test.ts test/editor-table-operations.test.ts test/editor-table-menu.test.ts test/editor-theme.test.ts test/live-preview-*.test.ts test/markdown-create-target.test.ts test/markdown-filename.test.ts test/markdown-images.test.ts test/image-import-safety.test.ts test/markdown-outline-sidebar.test.ts test/markdown-modal.test.ts test/markdown-shortcut.test.ts test/markdown-settings-entry.test.ts test/markdown-settings-pages.test.ts test/markdown-sidebar.test.ts test/markdown-status.test.ts test/markdown-toolbar.test.ts test/more-menu.test.ts test/frontmatter-title-sync.test.ts test/save-coordinator.test.ts test/session-registry.test.ts test/preview-document.test.ts test/release-config.test.ts test/zotero-pane-compat.test.ts",
+    "test:unit": "tsx --test test/api-frontmatter-patch.test.ts test/bamboo-branding.test.ts test/markdown-api-guards.test.ts test/preview-worker-protocol.test.ts test/preview-worker-client.test.ts test/async-render.test.ts test/preview-render-state.test.ts test/markdown-error-i18n.test.ts test/editor-channel.test.ts test/editor-outline.test.ts test/editor-outline-bridge.test.ts test/editor-table.test.ts test/editor-table-cell-edit.test.ts test/editor-table-edge-actions.test.ts test/editor-table-operations.test.ts test/editor-table-menu.test.ts test/editor-theme.test.ts test/live-preview-*.test.ts test/markdown-create-target.test.ts test/markdown-filename.test.ts test/markdown-images.test.ts test/image-import-safety.test.ts test/markdown-outline-sidebar.test.ts test/markdown-modal.test.ts test/markdown-shortcut.test.ts test/markdown-settings-entry.test.ts test/markdown-settings-pages.test.ts test/markdown-sidebar.test.ts test/markdown-status.test.ts test/markdown-toolbar.test.ts test/more-menu.test.ts test/frontmatter-title-sync.test.ts test/document-sync.test.ts test/save-coordinator.test.ts test/session-registry.test.ts test/preview-document.test.ts test/release-config.test.ts test/zotero-pane-compat.test.ts",
     "update-deps": "pnpm update --save"
   },
   "dependencies": {
