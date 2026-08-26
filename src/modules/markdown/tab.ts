@@ -63,6 +63,7 @@ import {
   type DocumentModalData,
   type SettingsModalData,
 } from "./modal";
+import { storedMarkdownFilename } from "./storage-filename";
 import { markdownSettingsAbout, saveMarkdownSettings } from "./settings";
 import { formatSavedStatus, formatStats } from "./status";
 import { MARKDOWN_TAB_TYPE, resolveMarkdownTabTitle } from "./tabHooks";
@@ -1445,11 +1446,19 @@ async function renameSessionAttachment(session: OpenSession, filename: string) {
   const item = Zotero.Items.get(session.itemID);
   if (!item) throw new Error(getString("error-attachment-gone"));
   const newName = normalizeMarkdownFilename(filename);
-  const result = await item.renameAttachmentFile(newName, false);
+  const result = await item.renameAttachmentFile(
+    storedMarkdownFilename(newName),
+    false,
+  );
   if (result === false) throw new Error(getString("error-rename-missing"));
   if (result === -1) throw new Error(getString("error-rename-exists"));
   if (result === -2) throw new Error(getString("error-rename-failed"));
-  session.path = (await item.getFilePathAsync()) || session.path;
+  item.setField("title", newName);
+  await item.saveTx({ skipSelect: true });
+  const newPath = (await item.getFilePathAsync()) || session.path;
+  for (const openSession of sessionRegistry.all()) {
+    if (openSession.itemID === session.itemID) openSession.path = newPath;
+  }
   ensureTabTitle(session.win, session.tabID, session.itemID);
 }
 

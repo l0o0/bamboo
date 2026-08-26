@@ -26,6 +26,7 @@ import { persistMarkdownContent } from "./persist";
 import { closeMarkdownTab, openMarkdownTab } from "./tab";
 import { closeSidebarSessions, findSidebarSessions } from "./sidebar";
 import { normalizeMarkdownFilename } from "./modal";
+import { storedMarkdownFilename } from "./storage-filename";
 import { editorSnapshotChanged } from "./api-guards";
 import type { MarkdownEditorHandle } from "./editor";
 import type { SaveCoordinator } from "./save-coordinator";
@@ -567,7 +568,10 @@ async function rename(
   const newName = normalizeMarkdownFilename(raw);
   // NOTE: renames the underlying file. For linked attachments this renames
   // the file on disk (e.g. inside an Obsidian vault).
-  const result = await item.renameAttachmentFile(newName, false);
+  const result = await item.renameAttachmentFile(
+    storedMarkdownFilename(newName),
+    false,
+  );
   if (result === false) {
     throw apiError("ITEM_NOT_FOUND", "Attachment file not found");
   }
@@ -580,6 +584,8 @@ async function rename(
   if (result === -2) {
     throw apiError("WRITE_FAILED", "Failed to rename attachment");
   }
+  item.setField("title", newName);
+  await item.saveTx({ skipSelect: true });
   // Keep open editor sessions' cached paths in sync so the document-info
   // modal and reveal-folder show the new location (autosave resolves the
   // path fresh via getFilePathAsync, so writes are already safe).

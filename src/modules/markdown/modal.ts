@@ -18,6 +18,9 @@ import {
   settingsPageLabel,
   type SettingsPageID,
 } from "./settings-pages";
+import { normalizeMarkdownFilename } from "./storage-filename";
+
+export { normalizeMarkdownFilename } from "./storage-filename";
 
 export type ModalKind = "document-info" | "rename" | "settings";
 
@@ -72,16 +75,6 @@ export function modalTitle(kind: ModalKind): string {
     case "settings":
       return getString("more-settings");
   }
-}
-
-export function normalizeMarkdownFilename(value: string): string {
-  const trimmed = value.trim().replace(/\.md$/i, "");
-  const safe = trimmed
-    .replace(/[\\/:*?"<>|]/g, "-")
-    .replace(/\s+/g, "-")
-    .replace(/-+/g, "-")
-    .replace(/^[-.]+|[-.]+$/g, "");
-  return `${safe || "Note"}.md`;
 }
 
 export function formatModalBytes(size: number | null): string {

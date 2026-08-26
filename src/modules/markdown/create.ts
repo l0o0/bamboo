@@ -3,6 +3,7 @@ import { resolveMarkdownCollectionID } from "./create-target";
 import { defaultMarkdownFilename, markdownDocumentTitle } from "./detect";
 import { buildNoteWithFrontmatter } from "./frontmatter";
 import { openMarkdownAttachment } from "./open";
+import { createMarkdownImportPaths } from "./storage-filename";
 
 /**
  * Create a stored .md attachment under a regular item (or top-level), then open it.
@@ -63,12 +64,10 @@ export async function createMarkdownAttachment(
         })
       : buildPlainContent(documentTitle, parent));
 
-  const tmpDir = Zotero.getTempDirectory().path;
-  const tmpPath = PathUtils.join(
-    tmpDir,
-    `zotero-markdown-${Date.now()}-${filename}`,
-  );
+  const { directory: tmpDirectory, file: tmpPath } =
+    createMarkdownImportPaths(Zotero.getTempDirectory().path, filename);
 
+  await IOUtils.makeDirectory(tmpDirectory, { ignoreExisting: true });
   await Zotero.File.putContentsAsync(tmpPath, content);
 
   try {
@@ -144,8 +143,8 @@ export async function createMarkdownAttachment(
     return null;
   } finally {
     try {
-      if (await IOUtils.exists(tmpPath)) {
-        await IOUtils.remove(tmpPath);
+      if (await IOUtils.exists(tmpDirectory)) {
+        await IOUtils.remove(tmpDirectory, { recursive: true });
       }
     } catch {
       // ignore cleanup errors
