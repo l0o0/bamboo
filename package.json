@@ -1,7 +1,7 @@
 {
   "name": "bamboo",
   "type": "module",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "Native Markdown attachment support for Zotero — open, edit, and create .md files as first-class citizens.",
   "config": {
     "addonName": "Bamboo 竹子",
