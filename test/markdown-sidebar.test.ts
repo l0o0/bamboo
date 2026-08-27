@@ -267,6 +267,23 @@ describe("Markdown sidebar state", () => {
     assert.match(source, /surface:\s*"sidebar"/);
   });
 
+  it("keeps standalone and tab opening in the sidebar more menu", () => {
+    const source = readFileSync(
+      new URL("../src/modules/markdown/sidebar.ts", import.meta.url),
+      "utf8",
+    );
+    assert.match(source, /dataset\.sidebarMenuAction/);
+    assert.match(source, /open-window/);
+    assert.match(source, /openMarkdownWindow/);
+    assert.match(source, /open-tab/);
+    assert.doesNotMatch(source, /const openTabButton = toolbarButton\(/);
+    assert.match(source, /setAttribute\("role", "menu"\)/);
+    assert.match(source, /setAttribute\("role", "menuitem"\)/);
+    assert.match(source, /event\.key === "Escape"/);
+    assert.match(source, /addEventListener\("pointerdown"/);
+    assert.match(source, /showSidebarOpenError/);
+  });
+
   it("keeps the sidebar toolbar in one compact row", () => {
     const css = sidebarEditorGeometryCSS();
     assert.match(

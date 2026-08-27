@@ -64,8 +64,10 @@ export async function createMarkdownAttachment(
         })
       : buildPlainContent(documentTitle, parent));
 
-  const { directory: tmpDirectory, file: tmpPath } =
-    createMarkdownImportPaths(Zotero.getTempDirectory().path, filename);
+  const { directory: tmpDirectory, file: tmpPath } = createMarkdownImportPaths(
+    Zotero.getTempDirectory().path,
+    filename,
+  );
 
   await IOUtils.makeDirectory(tmpDirectory, { ignoreExisting: true });
   await Zotero.File.putContentsAsync(tmpPath, content);

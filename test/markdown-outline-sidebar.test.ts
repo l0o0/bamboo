@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import {
   outlineIndentPx,
+  outlineItemNeedsReveal,
   outlineVisibleAtWidth,
 } from "../src/modules/markdown/outline-sidebar.ts";
 import { iconPanelLeft } from "../src/modules/markdown/icons.ts";
@@ -15,6 +16,28 @@ test("caps indentation and auto-hides only at narrow widths", () => {
   assert.equal(outlineVisibleAtWidth(true, 900), true);
   assert.equal(outlineVisibleAtWidth(true, 620), false);
   assert.equal(outlineVisibleAtWidth(false, 900), false);
+});
+
+test("reveals only active items outside the outline viewport", () => {
+  const viewport = { top: 100, bottom: 300 };
+  assert.equal(
+    outlineItemNeedsReveal({ top: 120, bottom: 150 }, viewport),
+    false,
+  );
+  assert.equal(
+    outlineItemNeedsReveal({ top: 80, bottom: 110 }, viewport),
+    true,
+  );
+  assert.equal(
+    outlineItemNeedsReveal({ top: 290, bottom: 320 }, viewport),
+    true,
+  );
+
+  const source = readFileSync(
+    "src/modules/markdown/outline-sidebar.ts",
+    "utf8",
+  );
+  assert.match(source, /scrollIntoView\(\{ block: "nearest" \}\)/);
 });
 
 test("defines unframed geometry and complete collapse", () => {
@@ -39,6 +62,8 @@ test("uses the leading toolbar panel button as the only outline control", () => 
   assert.match(source, /zotero-markdown-outline-sidebar/);
   assert.match(source, /onOutline:/);
   assert.match(source, /revealPosition/);
+  assert.match(source, /session\.outlineActiveID = item\.id/);
+  assert.match(source, /outlineSidebar\?\.setActive\(item\.id\)/);
   assert.doesNotMatch(source, /zotero-markdown-outline-header/);
   assert.doesNotMatch(source, /outlineCollapseEl/);
   assert.doesNotMatch(source, /iconPanelLeftClose/);

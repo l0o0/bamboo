@@ -54,11 +54,7 @@ import {
   type EditorTheme,
   type ParentToEditorMessage,
 } from "../modules/markdown/editor-protocol";
-import {
-  activeOutlineID,
-  clampOutlinePosition,
-  extractEditorOutline,
-} from "./outline";
+import { clampOutlinePosition, extractEditorOutline } from "./outline";
 import { codeSyntaxHighlighting, editorThemeExtension } from "./theme";
 import { resolveCodeMirrorLanguage } from "./code-languages";
 import { imageDebug } from "./image-debug";
@@ -155,6 +151,7 @@ interface EditorRuntime {
   tableSelection: TableSelection;
   outlineItems: EditorOutlineItem[];
   outlineTimer: number | null;
+  outlineFrame: number | null;
   activeOutlineID: string | null;
 }
 
@@ -176,6 +173,7 @@ const runtime: EditorRuntime = {
   tableSelection: null,
   outlineItems: [],
   outlineTimer: null,
+  outlineFrame: null,
   activeOutlineID: null,
 };
 
@@ -815,10 +813,33 @@ function postToParent(message: {
   );
 }
 
+function activeOutlineAtScrollThreshold(
+  view: EditorView,
+  items: readonly EditorOutlineItem[],
+): string | null {
+  if (!items.length) return null;
+  const { scrollDOM } = view;
+  if (
+    scrollDOM.scrollTop + scrollDOM.clientHeight >=
+    scrollDOM.scrollHeight - 2
+  ) {
+    return items.at(-1)?.id ?? null;
+  }
+  const rect = scrollDOM.getBoundingClientRect();
+  const threshold = rect.top + rect.height * 0.5;
+  let active = items[0].id;
+  for (const item of items) {
+    const headingTop = view.documentTop + view.lineBlockAt(item.from).top;
+    if (headingTop > threshold) break;
+    active = item.id;
+  }
+  return active;
+}
+
 function publishOutline(view: EditorView) {
   runtime.outlineTimer = null;
   const items = extractEditorOutline(view.state);
-  const activeID = activeOutlineID(items, view.state.selection.main.head);
+  const activeID = activeOutlineAtScrollThreshold(view, items);
   runtime.outlineItems = items;
   runtime.activeOutlineID = activeID;
   postToParent({ type: "outline", payload: { items, activeID } });
@@ -836,13 +857,18 @@ function scheduleOutlineUpdate(view: EditorView, immediate = false) {
 }
 
 function publishActiveOutline(view: EditorView) {
-  const activeID = activeOutlineID(
-    runtime.outlineItems,
-    view.state.selection.main.head,
-  );
+  const activeID = activeOutlineAtScrollThreshold(view, runtime.outlineItems);
   if (activeID === runtime.activeOutlineID) return;
   runtime.activeOutlineID = activeID;
   postToParent({ type: "outlineActive", payload: { activeID } });
+}
+
+function scheduleActiveOutline(view: EditorView) {
+  if (runtime.outlineFrame != null) return;
+  runtime.outlineFrame = window.requestAnimationFrame(() => {
+    runtime.outlineFrame = null;
+    if (runtime.view === view) publishActiveOutline(view);
+  });
 }
 
 function guttersForMode(mode: EditorMode): Extension {
@@ -1012,7 +1038,7 @@ function buildExtensions(
           );
         }
       }
-      if (update.selectionSet) publishActiveOutline(update.view);
+      if (update.viewportChanged) scheduleActiveOutline(update.view);
       if (!update.docChanged) return;
       scheduleOutlineUpdate(update.view);
       if (
@@ -1507,6 +1533,10 @@ function handleParentMessage(data: ParentToEditorMessage) {
       if (runtime.outlineTimer != null) {
         window.clearTimeout(runtime.outlineTimer);
         runtime.outlineTimer = null;
+      }
+      if (runtime.outlineFrame != null) {
+        window.cancelAnimationFrame(runtime.outlineFrame);
+        runtime.outlineFrame = null;
       }
       runtime.outlineItems = [];
       runtime.activeOutlineID = null;

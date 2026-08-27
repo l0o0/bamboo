@@ -11,6 +11,7 @@ export {
   flushAllSessions,
   flushSessionsForWindow,
 } from "./tab";
+export { openMarkdownWindow, closeAllMarkdownWindows } from "./window";
 export {
   registerMenus,
   registerItemContextMenu,

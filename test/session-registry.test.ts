@@ -4,9 +4,18 @@ import { describe, it } from "node:test";
 import { SessionRegistry } from "../src/modules/markdown/session-registry.ts";
 import { SaveCoordinator } from "../src/modules/markdown/save-coordinator.ts";
 
-function session(registryNote: { tabID: string; itemID: number; win: Window }) {
+function session(registryNote: {
+  tabID: string;
+  itemID: number;
+  win: Window;
+  surface?: "tab" | "window";
+}) {
   return {
     ...registryNote,
+    surface: registryNote.surface ?? ("tab" as const),
+    sourceID: `${registryNote.surface ?? "tab"}:${registryNote.tabID}`,
+    isActive: () => true,
+    updateTitle: () => undefined,
     path: "/tmp/note.md",
     storageLabel: "stored",
     mode: "live" as const,
@@ -44,6 +53,29 @@ describe("SessionRegistry", () => {
     assert.equal(registry.get("tab-b")?.itemID, 7);
   });
 
+  it("filters tab sessions without excluding standalone sessions globally", () => {
+    const registry = new SessionRegistry();
+    const main = {} as Window;
+    const standalone = {} as Window;
+    registry.register(session({ tabID: "tab-1", itemID: 7, win: main }));
+    registry.register(
+      session({
+        tabID: "window-1",
+        itemID: 7,
+        win: standalone,
+        surface: "window",
+      }),
+    );
+
+    assert.deepEqual(
+      registry.tabs().map((entry) => entry.tabID),
+      ["tab-1"],
+    );
+    assert.equal(registry.find(main, 7, "tab")?.tabID, "tab-1");
+    assert.equal(registry.find(standalone, 7, "window")?.tabID, "window-1");
+    assert.equal(registry.all().length, 2);
+  });
+
   it("publishes tab edits and saves and refreshes when focus returns", () => {
     const source = readFileSync(
       new URL("../src/modules/markdown/tab.ts", import.meta.url),
@@ -54,6 +86,6 @@ describe("SessionRegistry", () => {
     assert.match(source, /documentSyncRegistry\.markEdited/);
     assert.match(source, /documentSyncRegistry\.markSaved/);
     assert.match(source, /documentSyncRegistry\s*\.\s*refreshOnFocus/);
-    assert.match(source, /selectedID\s*!==\s*session\.tabID/);
+    assert.match(source, /!session\.isActive\(\)/);
   });
 });

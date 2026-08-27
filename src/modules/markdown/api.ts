@@ -23,7 +23,7 @@ import {
   documentTitle as documentTitleFromSource,
 } from "./preview";
 import { persistMarkdownContent } from "./persist";
-import { closeMarkdownTab, openMarkdownTab } from "./tab";
+import { closeMarkdownSession, closeMarkdownTab, openMarkdownTab } from "./tab";
 import { closeSidebarSessions, findSidebarSessions } from "./sidebar";
 import { normalizeMarkdownFilename } from "./modal";
 import { storedMarkdownFilename } from "./storage-filename";
@@ -391,7 +391,7 @@ async function writeContent(
   }
   return {
     savedAt: new Date().toISOString(),
-    openInTab: !!sessionRegistry.all().find((s) => s.itemID === item.id),
+    openInTab: !!sessionRegistry.tabs().find((s) => s.itemID === item.id),
   };
 }
 
@@ -532,7 +532,7 @@ async function update(
     content = applyFrontmatterPatch(content, options.frontmatter);
   }
   if (content === existing && !options.cleanupImages) {
-    const session = sessionRegistry.all().find((s) => s.itemID === itemID);
+    const session = sessionRegistry.tabs().find((s) => s.itemID === itemID);
     return { savedAt: new Date().toISOString(), openInTab: !!session };
   }
   return writeContent(item, content, options, existing);
@@ -545,7 +545,7 @@ async function patchFrontmatter(
   const item = requireMarkdownItem(itemID);
   const existing = await currentContent(item);
   const content = applyFrontmatterPatch(existing, patch);
-  const openInTab = !!sessionRegistry.all().find((s) => s.itemID === itemID);
+  const openInTab = !!sessionRegistry.tabs().find((s) => s.itemID === itemID);
   if (content === existing) {
     return { content, savedAt: new Date().toISOString(), openInTab };
   }
@@ -593,6 +593,7 @@ async function rename(
   for (const session of sessionRegistry.all()) {
     if (session.itemID === itemID && newPath) {
       session.path = newPath;
+      session.updateTitle();
     }
   }
   return attachmentInfo(item);
@@ -606,7 +607,7 @@ async function trash(itemID: number): Promise<{ trashed: boolean }> {
   const open = sessionRegistry.all().filter((s) => s.itemID === itemID);
   await Promise.all(
     open.map((s) =>
-      closeMarkdownTab(s.tabID).catch((error) => {
+      closeMarkdownSession(s.tabID, { flush: true }).catch((error) => {
         ztoolkit.log(
           `Failed to close markdown tab ${s.tabID} before trash`,
           error,
@@ -646,7 +647,7 @@ async function closeTab(tabID: string): Promise<{ closed: boolean }> {
 }
 
 function sessions(): SessionSummary[] {
-  return sessionRegistry.all().map((s) => {
+  return sessionRegistry.tabs().map((s) => {
     let title: string | null = null;
     try {
       const item = Zotero.Items.get(s.itemID);

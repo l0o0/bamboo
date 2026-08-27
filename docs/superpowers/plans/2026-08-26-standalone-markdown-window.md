@@ -24,6 +24,7 @@
 ### Task 1: Stable Stored Markdown Filename
 
 **Files:**
+
 - Create: `src/modules/markdown/storage-filename.ts`
 - Modify: `src/modules/markdown/create.ts`
 - Modify: `src/modules/markdown/tab.ts`
@@ -32,6 +33,7 @@
 - Modify: `package.json`
 
 **Interfaces:**
+
 - Produces: `storedMarkdownFilename(logicalFilename: string): string`
 - Produces: `logicalMarkdownFilename(storedFilename: string): string`
 - Produces: `createMarkdownImportPaths(tempRoot: string, logicalFilename: string, uniqueID?: string): { directory: string; file: string }`
@@ -115,12 +117,14 @@ git commit -m "fix(markdown): use compact stored filenames"
 ### Task 2: Host-Aware Shared Editor Session
 
 **Files:**
+
 - Modify: `src/modules/markdown/session-registry.ts`
 - Modify: `src/modules/markdown/tab.ts`
 - Modify: `src/modules/markdown/api.ts`
 - Test: `test/session-registry.test.ts`
 
 **Interfaces:**
+
 - Produces: `SessionSurface = "tab" | "window"`
 - Adds to `OpenSession`: `surface`, `sourceID`, `isActive()`, and `updateTitle()`.
 - Produces: `mountMarkdownEditorSurface(options): Promise<OpenSession>`
@@ -132,7 +136,10 @@ git commit -m "fix(markdown): use compact stored filenames"
 ```ts
 registry.register(tabSession);
 registry.register(windowSession);
-assert.deepEqual(registry.tabs().map((s) => s.tabID), ["tab-1"]);
+assert.deepEqual(
+  registry.tabs().map((s) => s.tabID),
+  ["tab-1"],
+);
 assert.equal(registry.find(mainWindow, itemID, "tab"), tabSession);
 ```
 
@@ -188,6 +195,7 @@ git commit -m "refactor(markdown): share editor session hosts"
 ### Task 3: Single-Instance Standalone Window
 
 **Files:**
+
 - Create: `addon/content/markdownWindow.xhtml`
 - Create: `src/modules/markdown/window-registry.ts`
 - Create: `src/modules/markdown/window.ts`
@@ -198,6 +206,7 @@ git commit -m "refactor(markdown): share editor session hosts"
 - Modify: `package.json`
 
 **Interfaces:**
+
 - Produces: `MarkdownWindowRegistry<TWindow, TSession>` with `open`, `get`, `close`, and `closeAll` lifecycle ownership.
 - Produces: `openMarkdownWindow(item: Zotero.Item, options?: { opener?: _ZoteroTypes.MainWindow }): Promise<Window | null>`
 - Produces: `closeAllMarkdownWindows(): Promise<void>`
@@ -275,6 +284,7 @@ git commit -m "feat(markdown): add standalone editor window"
 ### Task 4: Sidebar More Menu and Localization
 
 **Files:**
+
 - Create: `src/modules/markdown/sidebar-menu.ts`
 - Modify: `src/modules/markdown/sidebar.ts`
 - Modify: `src/modules/markdown/sidebar-state.ts` if menu state belongs in existing pure helpers
@@ -287,6 +297,7 @@ git commit -m "feat(markdown): add standalone editor window"
 - Test: `test/markdown-error-i18n.test.ts`
 
 **Interfaces:**
+
 - Produces: `SIDEBAR_MENU_ACTIONS = ["open-tab", "open-window"] as const`
 - Consumes: `openMarkdownTab()` and `openMarkdownWindow()`.
 
@@ -345,10 +356,12 @@ git commit -m "feat(markdown): add sidebar opening menu"
 ### Task 5: Integrated Verification and Existing Copy Fix
 
 **Files:**
+
 - Modify only if verification exposes defects in files already listed above.
 - Include the pre-existing changes in `src/modules/markdown/styles.ts` and `test/markdown-modal.test.ts` in the final feature commit if still uncommitted.
 
 **Interfaces:**
+
 - Consumes all prior tasks.
 - Produces a buildable Bamboo XPI with regression coverage.
 
@@ -382,4 +395,3 @@ Expected: no whitespace errors and no unintended generated files.
 git add src/modules/markdown/styles.ts test/markdown-modal.test.ts
 git commit -m "fix(markdown): allow copying document information"
 ```
-

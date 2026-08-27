@@ -13,6 +13,13 @@ export function outlineVisibleAtWidth(
   return expanded && width >= OUTLINE_AUTO_HIDE_WIDTH;
 }
 
+export function outlineItemNeedsReveal(
+  item: { top: number; bottom: number },
+  viewport: { top: number; bottom: number },
+): boolean {
+  return item.top < viewport.top || item.bottom > viewport.bottom;
+}
+
 export interface OutlineSidebarHandle {
   update(items: readonly EditorOutlineItem[], activeID: string | null): void;
   setActive(activeID: string | null): void;
@@ -46,6 +53,7 @@ export function mountOutlineSidebar(options: {
   let autoHidden = false;
 
   const syncActive = () => {
+    let activeElement: HTMLElement | null = null;
     for (const element of list.querySelectorAll<HTMLElement>(
       "[data-outline-id]",
     )) {
@@ -53,6 +61,19 @@ export function mountOutlineSidebar(options: {
       element.classList.toggle("is-active", active);
       if (active) element.setAttribute("aria-current", "location");
       else element.removeAttribute("aria-current");
+      if (active) activeElement = element;
+    }
+    if (
+      activeElement &&
+      getExpanded() &&
+      !autoHidden &&
+      activeElement.isConnected &&
+      outlineItemNeedsReveal(
+        activeElement.getBoundingClientRect(),
+        list.getBoundingClientRect(),
+      )
+    ) {
+      activeElement.scrollIntoView({ block: "nearest" });
     }
   };
 
@@ -63,6 +84,7 @@ export function mountOutlineSidebar(options: {
       String(expanded && !autoHidden),
     );
     sidebar.setAttribute("aria-hidden", String(!expanded || autoHidden));
+    if (expanded && !autoHidden) syncActive();
   };
 
   const syncWidth = () => {

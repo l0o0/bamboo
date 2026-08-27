@@ -126,6 +126,7 @@ item-pane-custom-section[data-pane="zmd-markdown"] > collapsible-section[data-pa
 }
 
 .zmd-sidebar-toolbar {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 2px;
@@ -184,6 +185,51 @@ item-pane-custom-section[data-pane="zmd-markdown"] > collapsible-section[data-pa
 .zmd-sidebar-toolbar-button .zmd-icon {
   width: 17px;
   height: 17px;
+}
+
+.zmd-sidebar-more-menu {
+  position: absolute;
+  z-index: 20;
+  inset-block-start: 39px;
+  inset-inline-end: 4px;
+  min-inline-size: 190px;
+  padding: 4px;
+  border: 1px solid var(--zmd-border);
+  border-radius: 8px;
+  background: var(--zmd-surface);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 18%);
+}
+
+.zmd-sidebar-more-menu-item {
+  appearance: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 32px;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--zmd-text);
+  font: inherit;
+  font-size: 12px;
+  text-align: start;
+  cursor: pointer;
+}
+
+.zmd-sidebar-more-menu-item:hover {
+  background: var(--zmd-surface-2);
+}
+
+.zmd-sidebar-more-menu-item .zmd-btn-inner {
+  display: inline-flex;
+  flex: 0 0 17px;
+}
+
+.zmd-sidebar-more-menu-item .zmd-icon {
+  width: 16px;
+  height: 16px;
 }`;
 }
 

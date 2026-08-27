@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import {
+  activePreviewOutlineID,
   applyAssetsToHtml,
   buildStandaloneDocument,
   documentTitle,
@@ -125,4 +127,32 @@ test("maps rendered headings to outline anchors by order", () => {
 
   assert.deepEqual(previewOutlineAnchors(items, 3), ["h1:0", "h2:12", null]);
   assert.deepEqual(previewOutlineAnchors(items, 1), ["h1:0"]);
+});
+
+test("maps preview heading geometry to the top visible section", () => {
+  const headings = [
+    { id: "one", top: 40 },
+    { id: "two", top: 140 },
+    { id: "three", top: 240 },
+  ];
+
+  assert.equal(activePreviewOutlineID(headings, 0), "one");
+  assert.equal(activePreviewOutlineID(headings, 139), "one");
+  assert.equal(activePreviewOutlineID(headings, 140), "two");
+  assert.equal(activePreviewOutlineID(headings, 999), "three");
+  assert.equal(activePreviewOutlineID([], 0), null);
+});
+
+test("the shared surface tracks and cleans up preview scrolling", () => {
+  const source = readFileSync(
+    new URL("../src/modules/markdown/tab.ts", import.meta.url),
+    "utf8",
+  );
+  assert.match(source, /bindPreviewOutlineTracking/);
+  assert.match(source, /addEventListener\("scroll"/);
+  assert.match(source, /requestAnimationFrame/);
+  assert.match(source, /activePreviewOutlineID/);
+  assert.match(source, /rect\.top \+ rect\.height \* 0\.5/);
+  assert.match(source, /unbindPreviewOutline/);
+  assert.match(source, /cancelAnimationFrame/);
 });

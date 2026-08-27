@@ -4,6 +4,7 @@ import {
   flushSessionsForWindow,
   injectMarkdownStyles,
   openMarkdownAttachment,
+  closeAllMarkdownWindows,
   registerFileOpenInterceptor,
   registerMarkdownTabHooks,
   registerMenus,
@@ -98,6 +99,7 @@ async function onMainWindowUnload(_win: Window): Promise<void> {
 }
 
 async function onShutdown(): Promise<void> {
+  await closeAllMarkdownWindows();
   await flushAllSessions();
   await unregisterSidebarSection();
   disposeMarkdownRenderer();

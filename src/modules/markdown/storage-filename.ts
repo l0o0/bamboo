@@ -27,7 +27,8 @@ export function createMarkdownImportPaths(
   uniqueID = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
 ): { directory: string; file: string } {
   const safeID = uniqueID.replace(/[^a-zA-Z0-9_-]/g, "-") || "import";
-  const separator = tempRoot.includes("\\") && !tempRoot.includes("/") ? "\\" : "/";
+  const separator =
+    tempRoot.includes("\\") && !tempRoot.includes("/") ? "\\" : "/";
   const root = tempRoot.replace(/[\\/]+$/, "");
   const directory = `${root}${separator}bamboo-${safeID}`;
   return {

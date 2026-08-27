@@ -66,9 +66,12 @@ export function extractEditorOutline(state: EditorState): EditorOutlineItem[] {
 export function activeOutlineID(
   items: readonly EditorOutlineItem[],
   position: number,
+  options: { firstBeforeStart?: boolean } = {},
 ): string | null {
   if (!Number.isFinite(position) || position < 0) return null;
-  let active: string | null = null;
+  let active: string | null = options.firstBeforeStart
+    ? (items[0]?.id ?? null)
+    : null;
   for (const item of items) {
     if (item.from > position) break;
     active = item.id;

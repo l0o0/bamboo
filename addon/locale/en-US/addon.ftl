@@ -119,6 +119,7 @@ modal-cancel = Cancel
 modal-done = Done
 
 sidebar-open-tab = Open in new tab
+sidebar-open-window = Open in standalone window
 sidebar-bold = Bold
 sidebar-italic = Italic
 sidebar-h1 = Heading 1
@@ -143,6 +144,7 @@ error-read-only-image = This attachment is read-only and cannot accept images.
 error-image-reference-unsupported = Unsupported image reference.
 error-image-missing = Image missing or not yet synchronized.
 error-attachment-gone = The Markdown attachment no longer exists.
+error-open-window = Unable to open the standalone Markdown window.
 error-rename-missing = The attachment file does not exist.
 error-rename-exists = The target file already exists.
 error-rename-failed = Failed to rename the attachment.

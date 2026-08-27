@@ -15,6 +15,7 @@ import { persistMarkdownContent } from "./persist";
 import { isMarkdownAttachment } from "./detect";
 import { createMarkdownAttachment } from "./create";
 import { openMarkdownTab } from "./tab";
+import { openMarkdownWindow } from "./window";
 import { documentSyncRegistry } from "./document-sync";
 import { stripFrontmatter } from "./frontmatter";
 import {
@@ -211,6 +212,8 @@ class SidebarController {
   private readonly emptyEl: HTMLElement;
   private readonly emptyText: HTMLElement;
   private readonly hintEl: HTMLElement;
+  private readonly moreMenu: HTMLElement;
+  private readonly moreButton: HTMLButtonElement;
 
   /** Item currently edited by this controller (null when idle). */
   get currentItemID(): number | null {
@@ -297,13 +300,6 @@ class SidebarController {
       return button;
     };
 
-    const openTabButton = toolbarButton(
-      "open-tab",
-      getString("sidebar-open-tab"),
-      iconOpenInNew(),
-    );
-    const separator = doc.createElement("span");
-    separator.className = "zmd-sidebar-toolbar-separator";
     const formatButtons = [
       toolbarButton("bold", getString("sidebar-bold"), iconBold(), true),
       toolbarButton("italic", getString("sidebar-italic"), iconItalic(), true),
@@ -318,13 +314,31 @@ class SidebarController {
       getString("sidebar-more"),
       iconMoreHorizontal(),
     );
-    this.toolbar.append(
-      openTabButton,
-      separator,
-      ...formatButtons,
-      spacer,
-      moreButton,
+    this.moreButton = moreButton;
+    moreButton.setAttribute("aria-expanded", "false");
+
+    this.moreMenu = doc.createElement("div");
+    this.moreMenu.className = "zmd-sidebar-more-menu";
+    this.moreMenu.hidden = true;
+    this.moreMenu.setAttribute("role", "menu");
+    const menuItem = (action: string, label: string, icon: string) => {
+      const button = doc.createElement("button");
+      button.type = "button";
+      button.className = "zmd-sidebar-more-menu-item";
+      button.dataset.sidebarMenuAction = action;
+      button.setAttribute("role", "menuitem");
+      button.innerHTML = `${iconOnlyButtonHtml(icon)}<span>${label}</span>`;
+      return button;
+    };
+    this.moreMenu.append(
+      menuItem("open-tab", getString("sidebar-open-tab"), iconOpenInNew()),
+      menuItem(
+        "open-window",
+        getString("sidebar-open-window"),
+        iconOpenInNew(),
+      ),
     );
+    this.toolbar.append(...formatButtons, spacer, moreButton, this.moreMenu);
 
     this.listEl = doc.createElement("div");
     this.listEl.className = "zmd-sidebar-list";
@@ -364,9 +378,7 @@ class SidebarController {
       const button = target?.closest?.("[data-action]") as HTMLElement | null;
       const action = button?.dataset.action;
       if (!action || !this.toolbar.contains(button)) return;
-      if (action === "open-tab") {
-        void this.openInTab();
-      } else if (action === "bold") {
+      if (action === "bold") {
         this.editor?.wrapSelection("**");
       } else if (action === "italic") {
         this.editor?.wrapSelection("*");
@@ -377,15 +389,31 @@ class SidebarController {
       } else if (action === "link") {
         this.editor?.wrapSelection("[", "](url)");
       } else if (action === "more") {
-        new ztoolkit.ProgressWindow(addon.data.config.addonName)
-          .createLine({
-            text: getString("sidebar-more-planned"),
-            type: "default",
-          })
-          .show();
+        const opening = this.moreMenu.hidden;
+        if (opening) this.openMoreMenu();
+        else this.closeMoreMenu();
       }
-      if (action !== "open-tab" && action !== "more") this.editor?.focus();
+      if (action !== "more") this.editor?.focus();
     });
+
+    this.moreMenu.addEventListener("click", (event) => {
+      const target = event.target as Element | null;
+      const item = target?.closest?.(
+        "[data-sidebar-menu-action]",
+      ) as HTMLElement | null;
+      const action = item?.dataset.sidebarMenuAction;
+      if (!action) return;
+      this.closeMoreMenu();
+      const command =
+        action === "open-tab"
+          ? this.openInTab()
+          : action === "open-window"
+            ? this.openInWindow()
+            : null;
+      void command?.catch((error) => this.showSidebarOpenError(error));
+    });
+    doc.addEventListener("pointerdown", this.onDocumentPointerDown);
+    doc.addEventListener("keydown", this.onDocumentKeyDown);
 
     hintButton.addEventListener("click", () => {
       const item = this.itemID != null ? Zotero.Items.get(this.itemID) : null;
@@ -539,7 +567,13 @@ class SidebarController {
     const unbindDocumentSync = this.unbindDocumentSync;
     this.unbindDocumentSync = null;
     this.save = null;
+    this.win.document.removeEventListener(
+      "pointerdown",
+      this.onDocumentPointerDown,
+    );
+    this.win.document.removeEventListener("keydown", this.onDocumentKeyDown);
     this.root.remove();
+    this.moreMenu.remove();
     return (async () => {
       if (editor && save) {
         try {
@@ -624,6 +658,46 @@ class SidebarController {
     if (!item) return;
     await this.flush();
     await openMarkdownTab(item, { win: this.win });
+  }
+
+  private async openInWindow(): Promise<void> {
+    const item = this.itemID != null ? Zotero.Items.get(this.itemID) : null;
+    if (!item) return;
+    await this.flush();
+    await openMarkdownWindow(item, { opener: this.win });
+  }
+
+  private openMoreMenu(): void {
+    this.moreMenu.hidden = false;
+    this.moreButton.setAttribute("aria-expanded", "true");
+    this.moreMenu.querySelector<HTMLButtonElement>("[role=menuitem]")?.focus();
+  }
+
+  private closeMoreMenu(): void {
+    this.moreMenu.hidden = true;
+    this.moreButton.setAttribute("aria-expanded", "false");
+  }
+
+  private readonly onDocumentPointerDown = (event: Event): void => {
+    const target = event.target as Node | null;
+    if (!this.moreMenu.hidden && target && !this.toolbar.contains(target)) {
+      this.closeMoreMenu();
+    }
+  };
+
+  private readonly onDocumentKeyDown = (event: KeyboardEvent): void => {
+    if (event.key === "Escape" && !this.moreMenu.hidden) {
+      event.preventDefault();
+      this.closeMoreMenu();
+      this.moreButton.focus();
+    }
+  };
+
+  private showSidebarOpenError(error: unknown): void {
+    ztoolkit.log("Failed to open Markdown editor from sidebar", error);
+    new ztoolkit.ProgressWindow(addon.data.config.addonName)
+      .createLine({ text: getString("error-open-window"), type: "fail" })
+      .show();
   }
 
   private renderList(

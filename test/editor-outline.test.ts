@@ -78,6 +78,18 @@ test("finds the nearest preceding heading", () => {
   assert.equal(activeOutlineID(items, 19), "h1:0");
   assert.equal(activeOutlineID(items, 20), "h2:20");
   assert.equal(activeOutlineID(items, -1), null);
+  assert.equal(activeOutlineID(items, 0, { firstBeforeStart: true }), "h1:0");
+});
+
+test("uses the first heading before the scroll baseline reaches it", () => {
+  const items = [
+    { id: "h1:10", level: 1 as const, text: "One", from: 10 },
+    { id: "h2:30", level: 2 as const, text: "Two", from: 30 },
+  ];
+
+  assert.equal(activeOutlineID(items, 0), null);
+  assert.equal(activeOutlineID(items, 0, { firstBeforeStart: true }), "h1:10");
+  assert.equal(activeOutlineID([], 0, { firstBeforeStart: true }), null);
 });
 
 test("clamps stale positions and rejects invalid positions", () => {

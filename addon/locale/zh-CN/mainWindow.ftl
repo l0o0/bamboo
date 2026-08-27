@@ -122,6 +122,7 @@ modal-done = 完成
 
 ## Sidebar toolbar
 sidebar-open-tab = 在新标签页打开
+sidebar-open-window = 在独立窗口打开
 sidebar-bold = 粗体
 sidebar-italic = 斜体
 sidebar-h1 = 一级标题
@@ -147,6 +148,7 @@ error-read-only-image = 当前附件为只读，无法插入图片。
 error-image-reference-unsupported = 不支持的图片引用。
 error-image-missing = 图片缺失或尚未同步。
 error-attachment-gone = Markdown 附件已不存在。
+error-open-window = 无法打开独立 Markdown 窗口。
 error-rename-missing = 附件文件不存在。
 error-rename-exists = 目标文件已存在。
 error-rename-failed = 重命名附件失败。

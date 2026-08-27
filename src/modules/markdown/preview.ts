@@ -20,6 +20,19 @@ export function previewOutlineAnchors(
   );
 }
 
+export function activePreviewOutlineID(
+  headings: readonly { id: string; top: number }[],
+  baselineTop: number,
+): string | null {
+  if (!headings.length || !Number.isFinite(baselineTop)) return null;
+  let active = headings[0].id;
+  for (const heading of headings) {
+    if (heading.top > baselineTop) break;
+    active = heading.id;
+  }
+  return active;
+}
+
 /**
  * Render markdown source to an HTML fragment (html input disabled).
  * YAML frontmatter is stripped so it does not pollute the preview.

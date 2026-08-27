@@ -33,6 +33,24 @@ test("bootstrap schedules outline updates and handles revealPosition", () => {
   assert.match(source, /outlineTimer/);
 });
 
+test("viewport scrolling owns active outline publication", () => {
+  const source = readFileSync("src/editor/bootstrap.ts", "utf8");
+  const publishStart = source.indexOf("function publishActiveOutline");
+  const publishEnd = source.indexOf("function guttersForMode", publishStart);
+  const publishSource = source.slice(publishStart, publishEnd);
+
+  assert.match(source, /update\.viewportChanged/);
+  assert.match(source, /requestAnimationFrame/);
+  assert.match(publishSource, /activeOutlineAtScrollThreshold\(/);
+  assert.doesNotMatch(publishSource, /selection\.main\.head/);
+  assert.match(source, /scrollDOM\.getBoundingClientRect\(\)/);
+  assert.match(source, /rect\.top \+ rect\.height \* 0\.5/);
+  assert.match(source, /view\.lineBlockAt\(item\.from\)\.top/);
+  assert.match(source, /scrollTop \+ scrollDOM\.clientHeight/);
+  assert.match(source, /items\.at\(-1\)/);
+  assert.match(source, /cancelAnimationFrame/);
+});
+
 test("parent editor exposes outline callbacks and navigation", () => {
   const source = readFileSync("src/modules/markdown/editor.ts", "utf8");
 
