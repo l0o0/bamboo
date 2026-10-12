@@ -7,7 +7,7 @@
 <p align="center"><strong>Markdown &amp; Whiteboard for Zotero</strong></p>
 
 <p align="center">
-  <a href="https://www.zotero.org"><img src="https://img.shields.io/badge/Zotero-9%2F10-green?style=flat-square&amp;logo=zotero&amp;logoColor=CC2936" alt="Zotero compatibility" /></a>
+  <a href="https://www.zotero.org"><img src="https://img.shields.io/badge/Zotero-9%2F10%2F11-green?style=flat-square&amp;logo=zotero&amp;logoColor=CC2936" alt="Zotero compatibility" /></a>
   <a href="https://github.com/l0o0/scholar-sketch/releases"><img src="https://img.shields.io/badge/version-0.2.4-blue?style=flat-square" alt="version" /></a>
   <a href="./LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0-orange?style=flat-square" alt="license" /></a>
 </p>
@@ -27,7 +27,7 @@ Scholar Sketch extends Zotero with Markdown notes and visual whiteboards, connec
 
 ## Install
 
-Requires **Zotero 9 / 10 for desktop**.
+Requires **Zotero 9 / 10 / 11 for desktop**.
 
 1. Download `scholarsketch-v{version}.xpi` from [Releases](https://github.com/l0o0/scholar-sketch/releases/latest).
 2. In Zotero, open **Tools → Plugins → gear → Install Plugin From File…** and select the downloaded file.
