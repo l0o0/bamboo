@@ -1,7 +1,7 @@
 {
   "name": "scholarsketch",
   "type": "module",
-  "version": "0.2.5",
+  "version": "0.2.6",
   "description": "Markdown & Whiteboard for Zotero — edit Markdown files and connect literature, notes, and ideas on a visual canvas.",
   "config": {
     "addonName": "Scholar Sketch",
