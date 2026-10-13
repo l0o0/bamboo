@@ -1349,6 +1349,7 @@ function mountWhiteboardUI(
 
 type SurfaceOptions = {
   win?: _ZoteroTypes.MainWindow;
+  shouldOpen?: () => boolean;
   surface?: "tab" | "window" | "sidebar";
   container?: HTMLElement;
   onClose?: () => void;
@@ -1356,7 +1357,10 @@ type SurfaceOptions = {
 
 export function openWhiteboardTab(
   item: Zotero.Item,
-  options: { win?: _ZoteroTypes.MainWindow } = {},
+  options: {
+    win?: _ZoteroTypes.MainWindow;
+    shouldOpen?: () => boolean;
+  } = {},
 ): Promise<string | null> {
   // Opening an attachment again focuses its current surface.
   return openWhiteboardSurface(item, {
@@ -1411,9 +1415,11 @@ async function mountWhiteboardSurface(
   item: Zotero.Item,
   options: SurfaceOptions,
 ) {
+  if (options.shouldOpen?.() === false) return null;
   if (!isWhiteboardAttachment(item)) return null;
   let existing = whiteboardRegistry.findByItem(item.id);
   if (existing?.closePromise) await existing.closePromise;
+  if (options.shouldOpen?.() === false) return null;
   existing = whiteboardRegistry.findByItem(item.id);
   if (existing && !existing.win.closed) {
     if (!options.surface || options.surface === (existing.surface ?? "tab")) {
@@ -1429,18 +1435,26 @@ async function mountWhiteboardSurface(
   const surface = options.surface ?? "tab";
   let session: WhiteboardSession | undefined;
   let closeHost: (() => void) | undefined;
+  const cancelIfRequested = () => {
+    if (options.shouldOpen?.() !== false) return false;
+    if (session) disposeWhiteboardSession(session);
+    closeHost?.();
+    return true;
+  };
   if (existing) {
     existing.transitioning = true;
     if (existing.view) existing.view.root.inert = true;
   }
   try {
     const path = await item.getFilePathAsync();
+    if (cancelIfRequested()) return null;
     if (!path) throw new Error(getString("whiteboard-open-failed"));
     // A surface change needs a fresh snapshot, but does not require overwriting
     // an externally changed file. Conflicting drafts keep their old baseline.
     const parsed = await captureWhiteboardSurfaceTransfer(existing ?? {}, () =>
       readCanvasFile(path),
     );
+    if (cancelIfRequested()) return null;
     for (const issue of parsed.issues) {
       ztoolkit.log("Canvas parse issue", {
         code: issue.code,
@@ -1510,6 +1524,7 @@ async function mountWhiteboardSurface(
         };
         win.addEventListener("load", loaded, { once: true });
       });
+      if (cancelIfRequested()) return null;
       const root = win.document.getElementById("bamboo-whiteboard-window-root");
       if (!root) throw new Error(getString("whiteboard-open-failed"));
       // Bind to the loaded chrome document, rather than its initial about:blank window.
@@ -1560,14 +1575,17 @@ async function mountWhiteboardSurface(
         .editor!.ready.then(resolve, reject)
         .finally(() => mainWin.clearTimeout(timer));
     });
+    if (cancelIfRequested()) return null;
     if (existing) {
       // Acquire once more after loading, in case an in-flight source operation completed.
       const transferred = await captureWhiteboardSurfaceTransfer(existing, () =>
         readCanvasFile(path),
       );
+      if (cancelIfRequested()) return null;
       session.editor!.loadSnapshot(transferred.document);
       session.fileRevision = transferred.revision;
       const loaded = await session.editor!.requestSnapshot();
+      if (cancelIfRequested()) return null;
       if (transferred.conflict) {
         session.saveCoordinator!.adoptUnsavedSnapshot(transferred.conflict);
         toast(transferred.conflict.message);
@@ -1591,6 +1609,7 @@ async function mountWhiteboardSurface(
   } catch (error) {
     if (session) disposeWhiteboardSession(session);
     closeHost?.();
+    if (options.shouldOpen?.() === false) return null;
     ztoolkit.log("Failed to open whiteboard", error);
     throw error;
   } finally {

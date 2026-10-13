@@ -106,7 +106,6 @@ test("plugin owns tutorial onboarding across startup and shutdown", () => {
   );
   for (const [label, pattern] of [
     ["initLocale()", /^\s*initLocale\(\);$/m],
-    ["registerMenus()", /^\s*registerMenus\(\);$/m],
     [
       "onMainWindowLoad(win)",
       /^\s*Zotero\.getMainWindows\(\)\.map\(\(win\) => onMainWindowLoad\(win\)\),$/m,

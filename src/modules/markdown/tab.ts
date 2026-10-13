@@ -190,7 +190,10 @@ export function mountMarkdownEditorSurface(
  */
 export async function openMarkdownTab(
   item: Zotero.Item,
-  options: { win?: _ZoteroTypes.MainWindow } = {},
+  options: {
+    win?: _ZoteroTypes.MainWindow;
+    shouldOpen?: () => boolean;
+  } = {},
 ): Promise<string | null> {
   const win =
     options.win ||
@@ -199,6 +202,7 @@ export async function openMarkdownTab(
     ztoolkit.log("No main window for Markdown tab");
     return null;
   }
+  if (options.shouldOpen?.() === false) return null;
 
   ensureDOMGlobals(win);
 
@@ -222,6 +226,7 @@ export async function openMarkdownTab(
   }
 
   const path = await item.getFilePathAsync();
+  if (options.shouldOpen?.() === false) return null;
   if (!path) {
     new ztoolkit.ProgressWindow(addon.data.config.addonName)
       .createLine({ text: "Markdown file not found", type: "fail" })
@@ -240,6 +245,7 @@ export async function openMarkdownTab(
       contentLength: content.length,
     });
   } catch (e) {
+    if (options.shouldOpen?.() === false) return null;
     ztoolkit.log("Failed to read markdown file", e);
     new ztoolkit.ProgressWindow(addon.data.config.addonName)
       .createLine({ text: "Failed to read markdown file", type: "fail" })
@@ -247,7 +253,9 @@ export async function openMarkdownTab(
     return null;
   }
 
+  if (options.shouldOpen?.() === false) return null;
   const title = await resolveMarkdownTabTitle(item.id);
+  if (options.shouldOpen?.() === false) return null;
   const storageLabel = item.isStoredFileAttachment?.()
     ? "stored"
     : item.attachmentLinkMode === Zotero.Attachments.LINK_MODE_LINKED_FILE

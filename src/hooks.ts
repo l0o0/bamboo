@@ -18,7 +18,6 @@ import {
   closeAllMarkdownWindows,
   registerFileOpenInterceptor,
   registerMarkdownTabHooks,
-  registerMenus,
   registerItemContextMenu,
   registerShortcuts,
   unregisterFileOpenInterceptor,
@@ -58,6 +57,11 @@ import {
   unregisterAttachmentIcons,
 } from "./modules/attachment-icons";
 import { runShutdownSteps } from "./utils/shutdown";
+import {
+  registerCreationToolbar,
+  unregisterCreationToolbar,
+  unregisterAllCreationToolbars,
+} from "./modules/creation-toolbar";
 
 let tutorialStartup: Promise<void> | undefined;
 
@@ -73,9 +77,6 @@ async function onStartup() {
   await registerAttachmentIcons();
   registerFileOpenInterceptor();
   registerWhiteboardFileOpenInterceptor();
-  // Register global toolbar menus first. registerMenus() performs a global
-  // cleanup, so per-window item context menus must be mounted afterwards.
-  registerMenus();
 
   await Promise.all(
     Zotero.getMainWindows().map((win) => onMainWindowLoad(win)),
@@ -119,6 +120,7 @@ async function onMainWindowLoad(win: _ZoteroTypes.MainWindow): Promise<void> {
 
   registerMarkdownTabHooks(win);
   registerWhiteboardTabHooks(win);
+  registerCreationToolbar(win);
   registerItemContextMenu(win);
   registerWhiteboardMenus(win);
   injectMarkdownStyles(win);
@@ -144,6 +146,7 @@ async function onMainWindowUnload(_win: Window): Promise<void> {
   // Per-window cleanup is handled by the toolkit's own Services.wm
   // onCloseWindow callbacks (unInitKeyboardListener for the closing window).
   if (Zotero.getMainWindows().length <= 1) retainWorkspaceOnShutdown();
+  unregisterCreationToolbar(_win);
   await flushSessionsForWindow(_win);
   unregisterItemContextMenu(_win);
   unregisterWhiteboardMenus(_win);
@@ -162,6 +165,7 @@ async function onShutdown(): Promise<void> {
     [
       ["retainWorkspace", retainWorkspaceOnShutdown],
       ["attachmentIcons", unregisterAttachmentIcons],
+      ["creationToolbar", unregisterAllCreationToolbars],
       [
         "tutorialStartup",
         async () => {

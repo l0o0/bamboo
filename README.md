@@ -51,8 +51,8 @@ Requires **Zotero 9 / 10 / 11 for desktop**.
 
 ## Quick start
 
-- **Write a note**: right-click a paper → **New Markdown…**. Double-click its `.md` attachment to continue editing. Type `[[` to link another note.
-- **Create a whiteboard**: choose **Tools → New Whiteboard…**, drag in papers, and connect cards. Hold **Space** and drag to pan.
+- **Write a note**: click the **Scholar Sketch** toolbar button → **New Markdown Note…**. Select a paper first to attach the note to it, or clear the selection to create a standalone note in the current library or collection. Double-click its `.md` attachment to continue editing. Type `[[` to link another note.
+- **Create a whiteboard**: click the **Scholar Sketch** toolbar button → **New Whiteboard…**, drag in papers, and connect cards. Hold **Space** and drag to pan.
 - **Explore an example**: choose **Help → Scholar Sketch: Create Example Whiteboard**.
 
 Stored attachments follow Zotero file sync; linked attachments need separate syncing. Local history stays on the current device.

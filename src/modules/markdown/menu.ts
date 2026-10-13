@@ -1,6 +1,6 @@
 import { showAnnotationExport } from "./annotations";
 import { registerFileHistoryMenu } from "../file-history-ui";
-import { getLocaleID, getString } from "../../utils/locale";
+import { getString } from "../../utils/locale";
 import { getPref } from "../../utils/prefs";
 import { createMarkdownAttachment, createMarkdownForSelection } from "./create";
 import { isMarkdownAttachment } from "./detect";
@@ -8,63 +8,10 @@ import { openMarkdownAttachment } from "./open";
 import { resolveConfiguredShortcut } from "./shortcut";
 import { openMarkdownWindow } from "./window";
 
-const registeredMenuIDs: string[] = [];
 const itemMenuCleanups = new Map<Window, () => void>();
 let shortcutCallback: ((ev: KeyboardEvent, options: any) => void) | null = null;
 const icon = () =>
   `chrome://${addon.data.config.addonRef}/content/icons/favicon.png`;
-
-/**
- * Register item context menus and the toolbar "New Note" popup entries via
- * Zotero.MenuManager (replaces deprecated ztoolkit.Menu in toolkit 5.2+).
- */
-export function registerMenus() {
-  unregisterMenus();
-
-  const pluginID = addon.data.config.addonID;
-  const menuIcon = icon();
-
-  // Toolbar #zotero-tb-note-add popup: standalone + child markdown notes
-  track(
-    Zotero.MenuManager.registerMenu({
-      menuID: `${addon.data.config.addonRef}-add-note-menu`,
-      pluginID,
-      target: "main/library/addNote",
-      menus: [
-        {
-          menuType: "separator",
-        },
-        {
-          menuType: "menuitem",
-          l10nID: getLocaleID("menuitem-create-standalone-md"),
-          icon: menuIcon,
-          onShowing: (_event, context) => {
-            setMenuLabel(context, "menuitem-create-standalone-md");
-          },
-          onCommand: () => {
-            void createMarkdownAttachment(null, { open: true });
-          },
-        },
-        {
-          menuType: "menuitem",
-          l10nID: getLocaleID("menuitem-create-item-md"),
-          icon: menuIcon,
-          onShowing: (_event, context) => {
-            setMenuLabel(context, "menuitem-create-item-md");
-            const items = context.items || [];
-            const one =
-              items.length === 1 &&
-              (items[0].isRegularItem() || !items[0].isTopLevelItem());
-            context.setEnabled(one);
-          },
-          onCommand: () => {
-            void createMarkdownForSelection();
-          },
-        },
-      ],
-    }),
-  );
-}
 
 /** Register item context commands like Jasminum's legacy toolkit Menu API. */
 export function registerItemContextMenu(win: _ZoteroTypes.MainWindow) {
@@ -163,35 +110,7 @@ export function unregisterItemContextMenu(win: Window) {
   itemMenuCleanups.delete(win);
 }
 
-/**
- * MenuManager only accepts Fluent IDs. Some Zotero builds do not resolve an
- * add-on's FTL resource for dynamically registered menus, leaving a blank
- * selectable item. Set the XUL label during popup construction as a fallback.
- */
-function setMenuLabel(
-  context: { menuElem?: Element },
-  id:
-    | "menuitem-create-md"
-    | "menuitem-open-md"
-    | "menuitem-create-standalone-md"
-    | "menuitem-create-item-md",
-) {
-  const label = getString(id);
-  const menuElem = context.menuElem;
-  if (menuElem && label) {
-    menuElem.setAttribute("label", label);
-  }
-}
-
 export function unregisterMenus() {
-  for (const id of registeredMenuIDs) {
-    try {
-      Zotero.MenuManager.unregisterMenu(id);
-    } catch (e) {
-      ztoolkit.log("unregisterMenu failed", id, e);
-    }
-  }
-  registeredMenuIDs.length = 0;
   for (const cleanup of itemMenuCleanups.values()) cleanup();
   itemMenuCleanups.clear();
 }
@@ -239,12 +158,6 @@ export function registerShortcuts() {
   };
 
   ztoolkit.Keyboard.register(shortcutCallback);
-}
-
-function track(id: string | false) {
-  if (typeof id === "string" && id) {
-    registeredMenuIDs.push(id);
-  }
 }
 
 async function openSelectedMarkdown(win?: _ZoteroTypes.MainWindow) {

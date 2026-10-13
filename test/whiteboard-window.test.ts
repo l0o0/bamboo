@@ -1041,6 +1041,77 @@ async function mountNativeTab(t: TestContext) {
   return { f, session: whiteboardRegistry.findByItem(f.item.id)! };
 }
 
+test("a canceled Canvas opener queued behind an item lock does not focus the old surface", async (t) => {
+  const { item, calls, session } = setup(t);
+  let finish!: () => void;
+  const blocked = new Promise<void>((resolve) => {
+    finish = resolve;
+  });
+  const previous = whiteboardRegistry.withItemLock(item.id, () => blocked);
+  let allowed = true;
+  const opening = openWhiteboardTab(item, { shouldOpen: () => allowed });
+  allowed = false;
+  finish();
+  await previous;
+  assert.equal(await opening, null);
+  assert.deepEqual(calls, []);
+  assert.equal(whiteboardRegistry.findByItem(item.id), session);
+});
+
+test("Canvas opening canceled during a disk read never creates or registers a replacement tab", async (t) => {
+  const f = setupTransfer(t, false);
+  whiteboardRegistry.unregister(f.oldSession.tabID);
+  f.oldSession.editor!.destroy();
+  f.oldSession.view!.root.remove();
+  let allowed = true;
+  let started!: () => void;
+  let finish!: () => void;
+  const waiting = new Promise<void>((resolve) => {
+    started = resolve;
+  });
+  const readFinished = new Promise<void>((resolve) => {
+    finish = resolve;
+  });
+  const files = Zotero.File as unknown as {
+    getContentsAsync(path: string): Promise<string>;
+  };
+  const originalRead = files.getContentsAsync.bind(files);
+  t.mock.method(files, "getContentsAsync", async (path: string) => {
+    if (path === "/tmp/transfer.canvas") {
+      started();
+      await readFinished;
+    }
+    return originalRead(path);
+  });
+  const opening = openWhiteboardTab(f.item, { shouldOpen: () => allowed });
+  await waiting;
+  allowed = false;
+  finish();
+  assert.equal(await opening, null);
+  assert.equal(f.frames.length, 0);
+  assert.deepEqual(f.nativeTabCloses, []);
+  assert.equal(whiteboardRegistry.findByItem(f.item.id), undefined);
+});
+
+test("Canvas opening canceled while its real iframe loads closes the provisional tab before registration", async (t) => {
+  const f = setupTransfer(t, false);
+  whiteboardRegistry.unregister(f.oldSession.tabID);
+  f.oldSession.editor!.destroy();
+  f.oldSession.view!.root.remove();
+  let allowed = true;
+  installTransferFrame(t, f.main, f.frames, () => {
+    allowed = false;
+  });
+  assert.equal(
+    await openWhiteboardTab(f.item, { shouldOpen: () => allowed }),
+    null,
+  );
+  assert.equal(f.frames.length, 1);
+  assert.equal(f.nativeTabCloses.length, 1);
+  assert.equal(f.tabs._getTab(f.nativeTabCloses[0]).tab, undefined);
+  assert.equal(whiteboardRegistry.findByItem(f.item.id), undefined);
+});
+
 test(
   "closeAllWhiteboards retains a tab after failed saving and closes its native host only after a successful retry",
   { timeout: 2000 },

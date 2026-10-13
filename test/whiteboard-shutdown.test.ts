@@ -31,6 +31,7 @@ const { outputText: shutdownCode } = transpileModule(shutdown.getText(source), {
 const operations = [
   "retainWorkspaceOnShutdown",
   "unregisterAttachmentIcons",
+  "unregisterAllCreationToolbars",
   "closeAllMarkdownWindows",
   "flushAllSessions",
   "flushAllWhiteboards",
@@ -107,7 +108,10 @@ test("shutdown waits for saving before unregistering and closing editors", async
   const fixture = setup({ flushAllWhiteboards: () => saving });
   const closing = fixture.onShutdown();
   await setImmediate();
-  assert.deepEqual(fixture.calls, operations.slice(0, 5));
+  assert.deepEqual(
+    fixture.calls,
+    operations.slice(0, operations.indexOf("flushAllWhiteboards") + 1),
+  );
   assert.equal(fixture.Zotero.ScholarSketch, fixture.addon);
   finish();
   await closing;
