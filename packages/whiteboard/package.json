@@ -25,7 +25,7 @@
     "@zotero-plugin/fake-zotero": "workspace:*",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
-    "@vitejs/plugin-react": "^4.3.4",
+    "@vitejs/plugin-react": "^6.1.1",
     "typescript": "^6.0.3",
     "vite": "^5.4.8"
   }
