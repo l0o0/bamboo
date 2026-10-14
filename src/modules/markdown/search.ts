@@ -1,37 +1,92 @@
 import { getString } from "../../utils/locale";
-import { readLibraryNotes } from "./note-library";
+import {
+  readLibrarySearchCandidates,
+  subscribeNoteLibrary,
+} from "./note-library";
 import { formatNoteLink, type NoteDocument } from "./note-links";
 import { openDocumentLink } from "./document-links";
 
-export function searchNotes(notes: readonly NoteDocument[], query: string) {
-  const terms = query
+function searchTerms(query: string): RegExp[] {
+  return query
     .trim()
     .split(/\s+/)
     .filter(Boolean)
     .map(
       (term) => new RegExp(term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "iu"),
     );
-  if (!terms.length) return [];
+}
+
+export interface NoteSearchMatch {
+  note: NoteDocument;
+  position: number;
+  snippet: string;
+}
+
+function matchNote(
+  note: NoteDocument,
+  terms: readonly RegExp[],
+): NoteSearchMatch | undefined {
+  if (note.readError || !terms.length) return undefined;
+  const searchable = `${note.title}\n${note.filename}\n${note.content}`;
+  if (!terms.every((term) => term.test(searchable))) return undefined;
+  const position =
+    terms
+      .map((term) => term.exec(note.content)?.index)
+      .find((index) => index !== undefined) ?? 0;
+  const from = Math.max(0, position - 60);
+  return {
+    note,
+    position,
+    snippet: `${from ? "…" : ""}${note.content.slice(from, position + 180).replace(/\s+/g, " ")}`,
+  };
+}
+
+export function searchNotes(
+  notes: readonly NoteDocument[],
+  query: string,
+): NoteSearchMatch[] {
+  const terms = searchTerms(query);
   return notes
-    .filter(
-      (note) =>
-        !note.readError &&
-        terms.every((term) =>
-          term.test(`${note.title}\n${note.filename}\n${note.content}`),
-        ),
-    )
-    .map((note) => {
-      const position =
-        terms
-          .map((term) => term.exec(note.content)?.index)
-          .find((index) => index !== undefined) ?? 0;
-      const from = Math.max(0, position - 60);
-      return {
-        note,
-        position,
-        snippet: `${from ? "…" : ""}${note.content.slice(from, position + 180).replace(/\s+/g, " ")}`,
-      };
-    });
+    .map((note) => matchNote(note, terms))
+    .filter((match): match is NoteSearchMatch => Boolean(match));
+}
+
+export interface NoteSearchResult {
+  matches: NoteSearchMatch[];
+  total: number;
+  cancelled: boolean;
+}
+
+/** Keep result DOM bounded and yield between chunks, including fallback scans. */
+export async function searchNotesAsync(
+  notes: readonly NoteDocument[],
+  query: string,
+  options: {
+    isCancelled?: () => boolean;
+    limit?: number;
+    onProgress?: (result: NoteSearchResult) => void;
+  } = {},
+): Promise<NoteSearchResult> {
+  const terms = searchTerms(query);
+  const result: NoteSearchResult = { matches: [], total: 0, cancelled: false };
+  const cancelled = () => Boolean(options.isCancelled?.());
+  if (!terms.length) return result;
+  const limit = Math.max(0, options.limit ?? 100);
+  let started = Date.now();
+  for (let index = 0; index < notes.length; index += 1) {
+    if (cancelled()) return { ...result, cancelled: true };
+    const match = matchNote(notes[index], terms);
+    if (match) {
+      result.total += 1;
+      if (result.matches.length < limit) result.matches.push(match);
+    }
+    if ((index + 1) % 24 === 0 || Date.now() - started >= 8) {
+      options.onProgress?.(result);
+      await new Promise<void>((resolve) => setTimeout(resolve, 0));
+      started = Date.now();
+    }
+  }
+  return { ...result, cancelled: cancelled() };
 }
 
 export async function showNoteSearch(win: Window, currentItem: Zotero.Item) {
@@ -71,47 +126,75 @@ export async function showNoteSearch(win: Window, currentItem: Zotero.Item) {
     }
     status.textContent = getString("note-search-loading");
     try {
-      const notes = await readLibraryNotes(currentItem.libraryID);
-      if (token !== sequence || !dialog.isConnected) return;
-      const matches = searchNotes(notes, query.value);
-      status.textContent = getString("note-search-count", {
-        args: { count: matches.length },
-      });
-      for (const match of matches.slice(0, 100)) {
-        const button = element("button");
-        button.type = "button";
-        button.style.cssText =
-          "text-align:start;white-space:normal;padding:10px";
-        const heading = element("strong");
-        heading.textContent = match.note.title || match.note.filename;
-        const snippet = element("div");
-        snippet.textContent = match.snippet;
-        button.append(heading, snippet);
-        button.addEventListener("click", () => {
-          void openDocumentLink(formatNoteLink(match.note), {
-            currentItem,
-            win,
-            position: match.position,
-          })
-            .then((result) => {
-              if (result.status === "opened") dialog.close();
-              else status.textContent = getString("document-link-unresolved");
+      const text = query.value;
+      const isCancelled = () => token !== sequence || !dialog.isConnected;
+      const notes = await readLibrarySearchCandidates(
+        currentItem.libraryID,
+        text,
+        isCancelled,
+      );
+      if (isCancelled()) return;
+      let rendered = 0;
+      const renderMatches = (matches: NoteSearchMatch[]) => {
+        if (isCancelled()) return;
+        for (const match of matches.slice(rendered)) {
+          rendered += 1;
+          const button = element("button");
+          button.type = "button";
+          button.style.cssText =
+            "text-align:start;white-space:normal;padding:10px";
+          const heading = element("strong");
+          heading.textContent = match.note.title || match.note.filename;
+          const snippet = element("div");
+          snippet.textContent = match.snippet;
+          button.append(heading, snippet);
+          button.addEventListener("click", () => {
+            void openDocumentLink(formatNoteLink(match.note), {
+              currentItem,
+              win,
+              position: match.position,
             })
-            .catch((error) => {
-              status.textContent = String(error);
-            });
-        });
-        results.append(button);
-      }
+              .then((result) => {
+                if (result.status === "opened") dialog.close();
+                else status.textContent = getString("document-link-unresolved");
+              })
+              .catch((error) => {
+                status.textContent = String(error);
+              });
+          });
+          results.append(button);
+        }
+      };
+      const result = await searchNotesAsync(notes, text, {
+        isCancelled,
+        onProgress: (partial) => renderMatches(partial.matches),
+      });
+      if (result.cancelled || isCancelled()) return;
+      renderMatches(result.matches);
+      status.textContent = getString("note-search-count", {
+        args: { count: result.total },
+      });
     } catch (error) {
       if (token === sequence) status.textContent = String(error);
     }
   };
-  query.addEventListener("input", () => {
+  const scheduleSearch = () => {
     sequence++;
     clearTimeout(timer);
+    results.replaceChildren();
     timer = setTimeout(() => void search(), 150);
+  };
+  query.addEventListener("input", scheduleSearch);
+  const unsubscribe = subscribeNoteLibrary((libraryID) => {
+    if (libraryID === currentItem.libraryID) scheduleSearch();
   });
+  const dispose = () => {
+    sequence++;
+    clearTimeout(timer);
+    unsubscribe();
+    win.removeEventListener("unload", dispose);
+  };
+  win.addEventListener("unload", dispose, { once: true });
   query.addEventListener("keydown", (event) => {
     if (event.key === "Enter") {
       event.preventDefault();
@@ -122,8 +205,7 @@ export async function showNoteSearch(win: Window, currentItem: Zotero.Item) {
   dialog.addEventListener(
     "close",
     () => {
-      sequence++;
-      clearTimeout(timer);
+      dispose();
       dialog.remove();
       previous?.focus();
     },

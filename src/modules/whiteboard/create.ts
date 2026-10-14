@@ -7,6 +7,10 @@ import {
 import { serializeCanvasDocument } from "../../../packages/whiteboard/src/model/canvas-file";
 import { defaultCanvasFilename } from "./detect";
 import { createZoteroSourceGateway } from "./source-gateway";
+import {
+  getSelectedCollections,
+  getSelectedLibraryIDs,
+} from "../../compat/zotero-pane";
 
 function decodeHtmlEntities(value: string): string {
   const named: Record<string, string> = {
@@ -153,6 +157,25 @@ export interface CreateWhiteboardAttachmentOptions {
   filename?: string;
   select?: boolean;
   reportError?: boolean;
+  win?: _ZoteroTypes.MainWindow;
+}
+
+function validLibraryID(id: number): boolean {
+  return (
+    Number.isInteger(id) &&
+    id > 0 &&
+    typeof Zotero.Libraries.get === "function" &&
+    !!Zotero.Libraries.get(id)
+  );
+}
+
+function collectionInLibrary(id: number, libraryID: number): boolean {
+  if (!Number.isInteger(id) || id <= 0) return false;
+  if (typeof Zotero.Collections?.get !== "function") return false;
+  const collection = Zotero.Collections.get(id);
+  return (
+    !!collection && !collection.deleted && collection.libraryID === libraryID
+  );
 }
 
 export async function createWhiteboardAttachment(
@@ -160,17 +183,10 @@ export async function createWhiteboardAttachment(
   options: CreateWhiteboardAttachmentOptions = {},
 ): Promise<Zotero.Item | null> {
   let parent: Zotero.Item | undefined;
-  if (parentItem) {
-    if (
-      parentItem.isAttachment() ||
-      parentItem.isNote() ||
-      parentItem.isAnnotation()
-    ) {
-      parent = parentItem.parentItem || undefined;
-    } else if (parentItem.isRegularItem()) {
-      parent = parentItem;
-    }
-  }
+  let candidate = parentItem;
+  while (candidate && !candidate.isRegularItem())
+    candidate = candidate.parentItem || undefined;
+  if (candidate?.isRegularItem()) parent = candidate;
 
   const filename = Zotero.File.getValidFileName(
     options.filename ?? defaultCanvasFilename(),
@@ -184,26 +200,33 @@ export async function createWhiteboardAttachment(
     `bamboo-canvas-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
   );
   const tmpPath = PathUtils.join(tmpDir, filename);
-  await IOUtils.makeDirectory(tmpDir, { ignoreExisting: false });
-
   try {
-    await Zotero.File.putContentsAsync(tmpPath, content);
-    const pane = Zotero.getActiveZoteroPane();
-    const selectedLibraryIDs = pane?.getSelectedLibraryIDs?.();
+    // Capture selection before filesystem work can change the active window.
+    const pane = options.win?.ZoteroPane ?? Zotero.getActiveZoteroPane();
     const libraryID =
-      options.libraryID ??
       parent?.libraryID ??
-      (selectedLibraryIDs?.[0] as number | undefined) ??
+      options.libraryID ??
+      getSelectedLibraryIDs(pane).find(validLibraryID) ??
       Zotero.Libraries.userLibraryID;
-    const selectedCollections = pane?.getSelectedCollections?.(true);
+    if (!validLibraryID(libraryID))
+      throw new Error("Invalid whiteboard library");
     const selectedCollection = !parent
-      ? (selectedCollections?.[0] as number | undefined)
+      ? getSelectedCollections(pane, true).find((id) =>
+          collectionInLibrary(id, libraryID),
+        )
       : undefined;
-    const collections =
-      options.collections ??
-      (typeof selectedCollection === "number" && selectedCollection > 0
-        ? [selectedCollection]
-        : undefined);
+    const collections = parent
+      ? undefined
+      : options.collections !== undefined
+        ? [...new Set(options.collections)].filter((id) =>
+            collectionInLibrary(id, libraryID),
+          )
+        : selectedCollection !== undefined
+          ? [selectedCollection]
+          : undefined;
+
+    await IOUtils.makeDirectory(tmpDir, { ignoreExisting: false });
+    await Zotero.File.putContentsAsync(tmpPath, content);
 
     const attachment = await Zotero.Attachments.importFromFile({
       file: tmpPath,
@@ -333,10 +356,22 @@ export function buildCollectionCanvas(
   return document;
 }
 
-export async function createWhiteboardFromCollection(): Promise<void> {
-  const pane = Zotero.getActiveZoteroPane();
-  const selectedCollections = pane?.getSelectedCollections?.(true);
-  const collectionID = selectedCollections?.[0] as number | undefined;
+export async function createWhiteboardFromCollection(
+  options: {
+    win?: _ZoteroTypes.MainWindow;
+    shouldOpen?: () => boolean;
+  } = {},
+): Promise<void> {
+  const canOpen = () =>
+    !options.win?.closed && options.shouldOpen?.() !== false;
+  if (!canOpen()) return;
+  const pane = options.win?.ZoteroPane ?? Zotero.getActiveZoteroPane();
+  const libraryID =
+    getSelectedLibraryIDs(pane).find(validLibraryID) ??
+    Zotero.Libraries.userLibraryID;
+  const collectionID = getSelectedCollections(pane, true).find((id) =>
+    collectionInLibrary(id, libraryID),
+  );
   if (!collectionID) {
     new ztoolkit.ProgressWindow(addon.data.config.addonName)
       .createLine({ text: "Select a collection first", type: "fail" })
@@ -344,16 +379,40 @@ export async function createWhiteboardFromCollection(): Promise<void> {
     return;
   }
   const collection = Zotero.Collections.get(collectionID);
-  if (!collection) {
+  if (!collection || collection.deleted) {
     new ztoolkit.ProgressWindow(addon.data.config.addonName)
       .createLine({ text: "Collection not found", type: "fail" })
       .show();
     return;
   }
+  const library = Zotero.Libraries.get(collection.libraryID);
+  if (
+    !library ||
+    !library.editable ||
+    !library.filesEditable ||
+    (typeof pane?.canEdit === "function" && !pane.canEdit())
+  )
+    return;
   const document = buildCollectionCanvas(collection);
-  const attachment = await createWhiteboardAttachment(null, { document });
-  if (attachment) {
-    const { openWhiteboardAttachment } = await import("./open");
-    await openWhiteboardAttachment(attachment);
+  const attachment = await createWhiteboardAttachment(null, {
+    document,
+    libraryID: collection.libraryID,
+    collections: [collection.id],
+    win: options.win,
+    select: false,
+  });
+  if (!attachment || !canOpen()) return;
+  try {
+    await pane?.selectItem?.(attachment.id);
+  } catch (error) {
+    ztoolkit.log("selectItem after collection whiteboard failed", error);
   }
+  if (!canOpen()) return;
+  const [{ openWhiteboardTab }, { rememberWhiteboard }] = await Promise.all([
+    import("./tab"),
+    import("./open"),
+  ]);
+  if (!canOpen()) return;
+  const tabID = await openWhiteboardTab(attachment, options);
+  if (tabID && canOpen()) rememberWhiteboard(attachment.id);
 }

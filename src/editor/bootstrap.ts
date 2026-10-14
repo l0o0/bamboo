@@ -1,5 +1,12 @@
 import type { EditorAppearance } from "../modules/markdown/editor-protocol";
 import {
+  createLinkCompletionPopup,
+  DEFAULT_LINK_LABELS,
+  type LinkCompletionPopup,
+} from "./link-completion";
+import { editorTableLabels } from "./table-config";
+import { openEditorLink } from "./link-target";
+import {
   normalizeFontFamily,
   normalizeBackgroundColor,
 } from "../modules/markdown/preferences";
@@ -59,6 +66,8 @@ import {
   type EditorDocChange,
   type EditorInitPayload,
   type EditorLinkCandidate,
+  type EditorLinkFilter,
+  type EditorLinkLabels,
   type EditorMode,
   type EditorOutlineItem,
   type EditorSurface,
@@ -175,9 +184,12 @@ interface EditorRuntime {
   activeOutlineID: string | null;
   linkSearchRequestID: number;
   linkSearchQuery: string;
-  removeLinkCompletion: (() => void) | null;
-  linkCompletionCandidates: EditorLinkCandidate[];
-  linkCompletionIndex: number;
+  linkSearchFrom: number | null;
+  linkSearchFilter: EditorLinkFilter;
+  linkLabels: EditorLinkLabels;
+  linkCompletion: LinkCompletionPopup | null;
+  composing: boolean;
+  removeCompositionListeners: (() => void) | null;
 }
 
 const runtime: EditorRuntime = {
@@ -203,9 +215,12 @@ const runtime: EditorRuntime = {
   activeOutlineID: null,
   linkSearchRequestID: 0,
   linkSearchQuery: "",
-  removeLinkCompletion: null,
-  linkCompletionCandidates: [],
-  linkCompletionIndex: 0,
+  linkSearchFrom: null,
+  linkSearchFilter: "all",
+  linkLabels: DEFAULT_LINK_LABELS,
+  linkCompletion: null,
+  composing: false,
+  removeCompositionListeners: null,
 };
 
 const editorChannel =
@@ -249,20 +264,6 @@ function isCodeSyntaxAt(view: EditorView, position: number): boolean {
   return false;
 }
 
-function sourceLinkAt(view: EditorView, position: number): string | null {
-  const line = view.state.doc.lineAt(position);
-  if (isCodeSyntaxAt(view, position)) return null;
-  const offset = position - line.from;
-  const range = parseInlineL2(line.text).find(
-    (candidate) =>
-      candidate.kind === "link" &&
-      candidate.href &&
-      offset >= candidate.from &&
-      offset <= candidate.to,
-  );
-  return range?.href || null;
-}
-
 function activeWikiQuery(view: EditorView): ActiveWikiQuery | null {
   const position = view.state.selection.main.head;
   const line = view.state.doc.lineAt(position);
@@ -298,10 +299,11 @@ function activeWikiQuery(view: EditorView): ActiveWikiQuery | null {
 }
 
 function clearLinkCompletion() {
-  runtime.removeLinkCompletion?.();
-  runtime.removeLinkCompletion = null;
-  runtime.linkCompletionCandidates = [];
-  runtime.linkCompletionIndex = 0;
+  runtime.linkCompletion?.destroy();
+  runtime.linkCompletion = null;
+  runtime.linkSearchRequestID += 1;
+  runtime.linkSearchFrom = null;
+  runtime.linkSearchFilter = "all";
 }
 
 function escapedMarkdownLabel(value: string): string {
@@ -313,6 +315,7 @@ function escapedMarkdownLabel(value: string): string {
 
 function completeLinkCandidate(candidate: EditorLinkCandidate) {
   const view = runtime.view;
+  if (runtime.composing || view?.compositionStarted) return;
   const active = view && activeWikiQuery(view);
   if (!view || !active || view.state.readOnly) return;
   const label = active.label || candidate.title;
@@ -334,111 +337,58 @@ function completeLinkCandidate(candidate: EditorLinkCandidate) {
 function showLinkCompletion(
   view: EditorView,
   results: readonly EditorLinkCandidate[],
+  loading = false,
 ) {
-  clearLinkCompletion();
-  if (!results.length) return;
-  runtime.linkCompletionCandidates = [...results];
-  runtime.linkCompletionIndex = 0;
-  const popup = document.createElement("div");
-  popup.className = "zmd-link-completion";
-  popup.setAttribute("role", "listbox");
-  Object.assign(popup.style, {
-    position: "fixed",
-    zIndex: "1000",
-    maxWidth: "min(420px, calc(100vw - 24px))",
-    maxHeight: "260px",
-    overflow: "auto",
-    padding: "4px",
-    borderRadius: "6px",
-    backgroundColor: "var(--zmd-menu-bg, var(--material-background, #fff))",
-    border: "1px solid var(--zmd-menu-border, var(--material-border, #ccc))",
-    color: "var(--zmd-menu-text, inherit)",
-    boxShadow: "0 6px 18px rgb(0 0 0 / 20%)",
-  });
-  for (const candidate of results) {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.setAttribute("role", "option");
-    const title = candidate.heading
-      ? `${candidate.title} › ${candidate.heading}`
-      : candidate.title;
-    button.textContent = `${title} · ${candidate.kindLabel || candidate.kind} [${candidate.key}]`;
-    Object.assign(button.style, {
-      display: "block",
-      width: "100%",
-      padding: "5px 8px",
-      border: "0",
-      borderRadius: "4px",
-      background: "transparent",
-      color: "var(--zmd-menu-text, inherit)",
-      textAlign: "start",
-      cursor: "pointer",
+  if (runtime.composing || view.compositionStarted || view.state.readOnly)
+    return;
+  if (!runtime.linkCompletion) {
+    runtime.linkCompletion = createLinkCompletionPopup({
+      host: view.dom,
+      contentDOM: view.contentDOM,
+      labels: runtime.linkLabels,
+      isComposing: () => runtime.composing || view.compositionStarted,
+      focusEditor: () => view.focus(),
+      anchor: () => {
+        const active = activeWikiQuery(view);
+        return active ? view.coordsAtPos(active.to) : null;
+      },
+      onFilter: (filter) => {
+        if (
+          runtime.composing ||
+          view.compositionStarted ||
+          filter === runtime.linkSearchFilter
+        )
+          return;
+        runtime.linkSearchFilter = filter;
+        requestLinkSearch(view);
+      },
+      onChoose: completeLinkCandidate,
+      onDismiss: clearLinkCompletion,
     });
-    button.addEventListener("mousedown", (event) => event.preventDefault());
-    button.addEventListener("click", () => completeLinkCandidate(candidate));
-    popup.appendChild(button);
   }
-  view.dom.appendChild(popup);
-  const buttons = Array.from(
-    popup.querySelectorAll<HTMLButtonElement>("button"),
-  );
-  const updateActive = () => {
-    buttons.forEach((button, index) => {
-      const active = index === runtime.linkCompletionIndex;
-      button.classList.toggle("is-active", active);
-      button.setAttribute("aria-selected", String(active));
-      button.style.backgroundColor = active
-        ? "var(--zmd-menu-hover, Highlight)"
-        : "transparent";
-      if (active) button.scrollIntoView({ block: "nearest" });
-    });
-  };
-  const onKeydown = (event: KeyboardEvent) => {
-    if (!runtime.linkCompletionCandidates.length) return;
-    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-      event.preventDefault();
-      event.stopPropagation();
-      const delta = event.key === "ArrowDown" ? 1 : -1;
-      runtime.linkCompletionIndex =
-        (runtime.linkCompletionIndex + delta + buttons.length) % buttons.length;
-      updateActive();
-    } else if (event.key === "Enter") {
-      event.preventDefault();
-      event.stopPropagation();
-      completeLinkCandidate(
-        runtime.linkCompletionCandidates[runtime.linkCompletionIndex],
-      );
-    } else if (event.key === "Escape") {
-      event.preventDefault();
-      event.stopPropagation();
-      clearLinkCompletion();
-    }
-  };
-  view.dom.addEventListener("keydown", onKeydown, true);
-  updateActive();
-  const active = activeWikiQuery(view);
-  const coords = active ? view.coordsAtPos(active.to) : null;
-  if (coords) {
-    popup.style.left = `${Math.max(8, coords.left)}px`;
-    const below = coords.bottom + 4;
-    popup.style.top = `${below + 270 < window.innerHeight ? below : Math.max(8, coords.top - 270)}px`;
-  }
-  runtime.removeLinkCompletion = () => {
-    view.dom.removeEventListener("keydown", onKeydown, true);
-    popup.remove();
-  };
+  runtime.linkCompletion.update(runtime.linkSearchFilter, results, loading);
 }
 
 function requestLinkSearch(view: EditorView) {
+  if (runtime.composing || view.compositionStarted) return;
   const active = activeWikiQuery(view);
-  clearLinkCompletion();
+  if (!active || view.state.readOnly) {
+    clearLinkCompletion();
+    return;
+  }
+  if (runtime.linkSearchFrom !== active.from) runtime.linkSearchFilter = "all";
+  runtime.linkSearchFrom = active.from;
   runtime.linkSearchRequestID += 1;
   const requestId = runtime.linkSearchRequestID;
-  runtime.linkSearchQuery = active?.query || "";
-  if (!active) return;
+  runtime.linkSearchQuery = active.query;
+  showLinkCompletion(view, [], true);
   postToParent({
     type: "linkSearch",
-    payload: { requestId, query: active.query },
+    payload: {
+      requestId,
+      query: active.query,
+      filter: runtime.linkSearchFilter,
+    },
   });
 }
 
@@ -1032,10 +982,65 @@ function forwardImageFile(files: File[], event: Event) {
 }
 
 let viewStateTimer: ReturnType<typeof setTimeout> | undefined;
+
+function bindComposition(view: EditorView) {
+  let endTimer: number | undefined;
+  const start = () => {
+    window.clearTimeout(endTimer);
+    if (runtime.composing) return;
+    runtime.composing = true;
+    clearTimeout(viewStateTimer);
+    if (runtime.outlineTimer != null) {
+      window.clearTimeout(runtime.outlineTimer);
+      runtime.outlineTimer = null;
+    }
+    if (runtime.outlineFrame != null) {
+      window.cancelAnimationFrame(runtime.outlineFrame);
+      runtime.outlineFrame = null;
+    }
+    clearLinkCompletion();
+    runtime.linkSearchRequestID += 1;
+    postToParent({ type: "composition", payload: { active: true } });
+  };
+  const end = () => {
+    window.clearTimeout(endTimer);
+    if (!runtime.composing) return;
+    // CodeMirror consumes pending native mutations after compositionend.
+    // Notify the parent only afterwards so its title/save work sees the
+    // committed text. Never dispatch or replace editor DOM in this event.
+    endTimer = window.setTimeout(() => {
+      endTimer = undefined;
+      if (runtime.view !== view) return;
+      runtime.composing = false;
+      postToParent({ type: "composition", payload: { active: false } });
+      scheduleOutlineUpdate(view);
+      scheduleViewState(view);
+      if (view.hasFocus) requestLinkSearch(view);
+    }, 0);
+  };
+  // Capture also covers editable table cells whose widgets handle events
+  // themselves. Blur releases our background-work guard if the end event is
+  // lost; ownership of the native IME session stays with the browser.
+  view.dom.addEventListener("compositionstart", start, true);
+  view.dom.addEventListener("compositionend", end, true);
+  view.dom.addEventListener("blur", end, true);
+  runtime.removeCompositionListeners = () => {
+    window.clearTimeout(endTimer);
+    view.dom.removeEventListener("compositionstart", start, true);
+    view.dom.removeEventListener("compositionend", end, true);
+    view.dom.removeEventListener("blur", end, true);
+    if (runtime.composing) {
+      runtime.composing = false;
+      postToParent({ type: "composition", payload: { active: false } });
+    }
+    runtime.removeCompositionListeners = null;
+  };
+}
+
 function scheduleViewState(view: EditorView) {
   clearTimeout(viewStateTimer);
   viewStateTimer = setTimeout(() => {
-    if (runtime.view !== view) return;
+    if (runtime.view !== view || runtime.composing) return;
     postToParent({
       type: "viewState",
       payload: {
@@ -1053,6 +1058,7 @@ function postToParent(message: {
     | "outline"
     | "outlineActive"
     | "change"
+    | "composition"
     | "viewState"
     | "snapshot"
     | "resolveAsset"
@@ -1100,6 +1106,7 @@ function activeOutlineAtScrollThreshold(
 
 function publishOutline(view: EditorView) {
   runtime.outlineTimer = null;
+  if (runtime.view !== view || runtime.composing) return;
   const items = extractEditorOutline(view.state);
   const activeID = activeOutlineAtScrollThreshold(view, items);
   runtime.outlineItems = items;
@@ -1110,7 +1117,9 @@ function publishOutline(view: EditorView) {
 function scheduleOutlineUpdate(view: EditorView, immediate = false) {
   if (runtime.outlineTimer != null) {
     window.clearTimeout(runtime.outlineTimer);
+    runtime.outlineTimer = null;
   }
+  if (runtime.composing) return;
   if (immediate) {
     publishOutline(view);
     return;
@@ -1119,6 +1128,7 @@ function scheduleOutlineUpdate(view: EditorView, immediate = false) {
 }
 
 function publishActiveOutline(view: EditorView) {
+  if (runtime.composing) return;
   const activeID = activeOutlineAtScrollThreshold(view, runtime.outlineItems);
   if (activeID === runtime.activeOutlineID) return;
   runtime.activeOutlineID = activeID;
@@ -1166,6 +1176,7 @@ function buildExtensions(
     dropCursor(),
     history(),
     imageControls(init.imageLabels),
+    editorTableLabels.of(init.tableLabels ?? {}),
     bracketMatching(),
     highlightSelectionMatches(),
     EditorView.lineWrapping,
@@ -1366,6 +1377,7 @@ function buildExtensions(
             tableTarget,
             editorView.state.readOnly,
             contextSelection,
+            editorView.state.facet(editorTableLabels),
           ),
         );
         event.preventDefault();
@@ -1379,26 +1391,9 @@ function buildExtensions(
         return true;
       },
       mousedown(event, editorView) {
-        const mouse = event as MouseEvent;
-        if (mouse.button !== 0 || (!mouse.ctrlKey && !mouse.metaKey))
-          return false;
-        // Resolve the rendered link before CodeMirror moves the selection and
-        // reveals its Markdown syntax, which changes the click coordinates.
-        const renderedLink = (mouse.target as Element | null)?.closest?.(
-          "[data-zmd-link]",
-        );
-        const position = renderedLink
-          ? editorView.posAtDOM(renderedLink)
-          : editorView.posAtCoords({ x: mouse.clientX, y: mouse.clientY });
-        if (position === null || isCodeSyntaxAt(editorView, position))
-          return false;
-        const href =
-          renderedLink?.getAttribute("data-zmd-link") ||
-          sourceLinkAt(editorView, position);
-        if (!href) return false;
-        postToParent({ type: "openLink", payload: { href } });
-        mouse.preventDefault();
-        return true;
+        return openEditorLink(event as MouseEvent, editorView, (href) => {
+          postToParent({ type: "openLink", payload: { href } });
+        });
       },
       paste(event) {
         return forwardImageFile([...(event.clipboardData?.files || [])], event);
@@ -1542,6 +1537,7 @@ function createOrResetEditor(init: EditorInitPayload) {
   }
 
   if (runtime.view) {
+    runtime.removeCompositionListeners?.();
     if (runtime.outlineTimer != null) {
       window.clearTimeout(runtime.outlineTimer);
       runtime.outlineTimer = null;
@@ -1565,6 +1561,9 @@ function createOrResetEditor(init: EditorInitPayload) {
   // must never match the first request of this freshly initialized editor.
   runtime.linkSearchRequestID += 1;
   runtime.linkSearchQuery = "";
+  runtime.linkSearchFrom = null;
+  runtime.linkSearchFilter = "all";
+  runtime.linkLabels = { ...DEFAULT_LINK_LABELS, ...init.linkLabels };
   runtime.imageAssets = {};
   runtime.tableSelection = null;
   runtime.tableContextSelection = null;
@@ -1607,6 +1606,7 @@ function createOrResetEditor(init: EditorInitPayload) {
       docLength: runtime.view.state.doc.length,
     });
   }
+  bindComposition(runtime.view);
   const viewState = init.viewState;
   if (validViewState(viewState)) {
     runtime.view.dispatch({
@@ -1903,13 +1903,24 @@ function handleParentMessage(data: ParentToEditorMessage) {
     }
     case "linkSearchResults": {
       if (!runtime.view) return;
-      if (data.payload.requestId !== runtime.linkSearchRequestID) return;
+      if (
+        data.payload.requestId !== runtime.linkSearchRequestID ||
+        data.payload.query !== runtime.linkSearchQuery ||
+        (data.payload.filter || "all") !== runtime.linkSearchFilter
+      )
+        return;
       const active = activeWikiQuery(runtime.view);
-      if (!active || active.query !== data.payload.query) return;
+      if (
+        !active ||
+        active.from !== runtime.linkSearchFrom ||
+        active.query !== data.payload.query
+      )
+        return;
       showLinkCompletion(runtime.view, data.payload.results);
       break;
     }
     case "destroy": {
+      runtime.removeCompositionListeners?.();
       if (runtime.outlineTimer != null) {
         window.clearTimeout(runtime.outlineTimer);
         runtime.outlineTimer = null;

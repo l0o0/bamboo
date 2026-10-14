@@ -1,7 +1,7 @@
 {
   "name": "scholarsketch",
   "type": "module",
-  "version": "0.2.6",
+  "version": "0.2.7",
   "description": "Markdown & Whiteboard for Zotero — edit Markdown files and connect literature, notes, and ideas on a visual canvas.",
   "config": {
     "addonName": "Scholar Sketch",
@@ -34,7 +34,7 @@
     "whiteboard:dev": "pnpm --filter @zotero-markdown/whiteboard dev",
     "whiteboard:build": "pnpm --filter @zotero-markdown/whiteboard build",
     "test:fake-zotero": "pnpm --filter @zotero-plugin/fake-zotero test && tsx --test test/fake-zotero-*.test.ts",
-    "test:unit": "tsx --test test/remaining-features.test.ts test/attachment-sync.test.ts test/markdown-sync-persist.test.ts test/markdown-rename.test.ts test/file-safety.test.ts test/file-history-ui.test.ts test/api-frontmatter-patch.test.ts test/attachment-icons.test.ts test/creation-toolbar.test.ts test/bamboo-branding.test.ts test/markdown-api-guards.test.ts test/preview-worker-protocol.test.ts test/preview-worker-client.test.ts test/async-render.test.ts test/preview-render-state.test.ts test/markdown-error-i18n.test.ts test/editor-channel.test.ts test/editor-outline.test.ts test/editor-outline-bridge.test.ts test/editor-table.test.ts test/editor-table-cell-edit.test.ts test/editor-table-edge-actions.test.ts test/editor-table-operations.test.ts test/editor-table-menu.test.ts test/editor-theme.test.ts test/live-preview-*.test.ts test/markdown-create-target.test.ts test/markdown-filename.test.ts test/markdown-storage-filename.test.ts test/markdown-window-registry.test.ts test/markdown-window.test.ts test/markdown-images.test.ts test/image-import-safety.test.ts test/markdown-outline-sidebar.test.ts test/markdown-modal.test.ts test/markdown-shortcut.test.ts test/markdown-settings-entry.test.ts test/markdown-settings-pages.test.ts test/markdown-sidebar.test.ts test/markdown-status.test.ts test/markdown-toolbar.test.ts test/more-menu.test.ts test/frontmatter-title-sync.test.ts test/document-sync.test.ts test/save-coordinator.test.ts test/session-registry.test.ts test/document-links*.test.ts test/preview-document.test.ts test/release-config.test.ts test/zotero-pane-compat.test.ts test/whiteboard-*.test.ts",
+    "test:unit": "node --import tsx --test --test-concurrency=4 test/remaining-features.test.ts test/attachment-sync.test.ts test/markdown-sync-persist.test.ts test/markdown-rename.test.ts test/file-safety.test.ts test/file-history-ui.test.ts test/api-frontmatter-patch.test.ts test/attachment-icons.test.ts test/creation-toolbar.test.ts test/bamboo-branding.test.ts test/markdown-api-guards.test.ts test/preview-worker-protocol.test.ts test/preview-worker-client.test.ts test/async-render.test.ts test/preview-render-state.test.ts test/markdown-error-i18n.test.ts test/editor-channel.test.ts test/editor-stats.test.ts test/markdown-change-scheduling.test.ts test/editor-outline.test.ts test/editor-outline-bridge.test.ts test/editor-table.test.ts test/editor-table-cell-edit.test.ts test/editor-table-edge-actions.test.ts test/editor-table-operations.test.ts test/editor-table-menu.test.ts test/editor-theme.test.ts test/live-preview-*.test.ts test/markdown-create-target.test.ts test/markdown-filename.test.ts test/markdown-storage-filename.test.ts test/markdown-window-registry.test.ts test/markdown-window.test.ts test/markdown-images.test.ts test/image-import-safety.test.ts test/image-asset-cache.test.ts test/markdown-image-compat.test.ts test/markdown-outline-sidebar.test.ts test/markdown-modal.test.ts test/markdown-shortcut.test.ts test/markdown-settings-entry.test.ts test/markdown-settings-pages.test.ts test/markdown-sidebar.test.ts test/markdown-status.test.ts test/markdown-toolbar.test.ts test/markdown-responsive-toolbar.test.ts test/more-menu.test.ts test/frontmatter-title-sync.test.ts test/document-sync.test.ts test/save-coordinator.test.ts test/session-registry.test.ts test/document-links*.test.ts test/preview-document.test.ts test/release-config.test.ts test/zotero-pane-compat.test.ts test/whiteboard-*.test.ts test/editor-link-target.test.ts test/editor-link-completion.test.ts test/document-link-filters.test.ts test/lezer-link-parser.test.ts test/markdown-sidebar-motion.test.ts test/editor-composition.test.ts test/markdown-math.test.ts test/markdown-export-flush.test.ts test/markdown-transfer.test.ts test/markdown-context-menu.test.ts",
     "update-deps": "pnpm update --save"
   },
   "dependencies": {
@@ -102,6 +102,9 @@
     ]
   },
   "pnpm": {
-    "blockExoticSubdeps": false
+    "blockExoticSubdeps": false,
+    "patchedDependencies": {
+      "@lezer/markdown@1.7.2": "patches/@lezer__markdown@1.7.2.patch"
+    }
   }
 }

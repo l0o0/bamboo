@@ -198,14 +198,18 @@ const editor = createMarkdownEditor(element("markdown-host"), {
   onSave: () => {
     void save();
   },
-  onLinkSearch: async (query) =>
+  onLinkSearch: async (query, filter) =>
     (
       await searchDocumentLinks(currentItem(), query, false, {
+        filter,
+        win: window,
         currentContent: editor.getValue(),
       })
     ).map((candidate) => ({
       ...candidate,
-      kindLabel: candidate.kind === "markdown" ? "Markdown" : "Literature",
+      kindLabel:
+        candidate.kindLabel ||
+        (candidate.kind === "markdown" ? "Markdown" : candidate.kind),
     })),
   onOpenLink(href) {
     void openDocumentLink(href, {

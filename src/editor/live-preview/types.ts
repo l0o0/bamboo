@@ -40,6 +40,8 @@ export interface InlineRange {
   from: number;
   to: number;
   kind: InlineKind;
+  /** Shared source extent for a link and its syntax markers (line-relative). */
+  linkSource?: { from: number; to: number };
   /** Source URL for links, or the complete [[…]] source for wiki links. */
   href?: string;
 }

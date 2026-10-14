@@ -83,6 +83,8 @@ function setup(t: TestContext) {
     win: NativeWindow;
   }> = [];
   const reports: unknown[][] = [];
+  const transfers: Array<{ kind: string; win: NativeWindow; value: unknown }> =
+    [];
   const observers = new Map<
     string,
     { notify: (...args: unknown[]) => unknown }
@@ -117,6 +119,7 @@ function setup(t: TestContext) {
   };
 
   const Zotero = {
+    Attachments: { LINK_MODE_LINKED_URL: 3 },
     Libraries: {
       userLibraryID: 1,
       get: (id: number) => libraries.get(id),
@@ -175,6 +178,18 @@ function setup(t: TestContext) {
         open("whiteboard", attachment, options),
     },
     "./whiteboard/open": { rememberWhiteboard: () => {} },
+    "./markdown/transfer": {
+      importMarkdownFile: async (win: NativeWindow, target: unknown) => {
+        transfers.push({ kind: "import", win, value: target });
+        return null;
+      },
+    },
+    "./markdown/export-notes": {
+      exportSelectedNotes: async (win: NativeWindow, items: unknown) => {
+        transfers.push({ kind: "export", win, value: items });
+        return null;
+      },
+    },
   };
   const context = {
     Zotero,
@@ -214,7 +229,7 @@ function setup(t: TestContext) {
         if (Object.hasOwn(mocks, name)) return mocks[name];
         // Load the real compatibility helpers, rather than reimplementing
         // singular/plural selection behavior in the host fixture.
-        if (name === "../compat/zotero-pane") {
+        if (name === "../compat/zotero-pane" || name === "./markdown/detect") {
           return loadModule(resolve(dirname(path), `${name}.ts`));
         }
         throw new Error(`Unexpected toolbar dependency: ${name}`);
@@ -303,6 +318,7 @@ function setup(t: TestContext) {
     calls,
     opened,
     reports,
+    transfers,
     observers,
     setCreateResult: (value: typeof createResult) => {
       createResult = value;
@@ -354,7 +370,7 @@ test("mounts one native dropdown after the note button without changing its menu
   assert.equal(button.previousElementSibling, nativeNote);
   assert.equal(button.nextElementSibling?.id, "native-next-button");
   assert.equal(button.querySelectorAll("menupopup").length, 1);
-  assert.equal(button.querySelectorAll("menuitem").length, 2);
+  assert.equal(button.querySelectorAll("menuitem").length, 4);
   assert.equal(nativeNote?.innerHTML, nativeContents);
   assert.equal(menuItem(win, "markdown").parentElement?.localName, "menupopup");
   assert.equal(
@@ -761,4 +777,75 @@ test("a window without the native item toolbar can register and unregister safel
   assert.equal(win.document.getElementById("bamboo-create-document"), null);
   fixture.unregisterCreationToolbar(win);
   fixture.unregisterAllCreationToolbars();
+});
+
+test("import and export use the owning window's captured target and Markdown selection", async (t) => {
+  const f = setup(t);
+  const first = f.makeWindow();
+  const second = f.makeWindow();
+  const parent = item(41, 2);
+  first.selection.items = [parent];
+  second.selection.libraryID = 2;
+  second.selection.collectionID = 203;
+  f.registerCreationToolbar(first.win);
+  f.registerCreationToolbar(second.win);
+  const transfer = async (win: NativeWindow, kind: "import" | "export") => {
+    win.document
+      .getElementById(`bamboo-${kind}-markdown`)!
+      .dispatchEvent(new win.Event("command", { bubbles: true }));
+    await setImmediate();
+    await setImmediate();
+  };
+  await transfer(first.win, "import");
+  await transfer(second.win, "import");
+  assert.equal(f.transfers[0].win, first.win);
+  assert.equal((f.transfers[0].value as { parent: Item }).parent, parent);
+  assert.equal(f.transfers[1].win, second.win);
+  assert.equal((f.transfers[1].value as { libraryID: number }).libraryID, 2);
+  assert.equal(
+    (f.transfers[1].value as { collectionID: number }).collectionID,
+    203,
+  );
+  const firstNote = Object.assign(item(51, 2, "attachment", parent), {
+    attachmentFilename: "First.md",
+  });
+  const secondNote = Object.assign(item(52, 2, "attachment"), {
+    attachmentFilename: "Second.md",
+  });
+  first.selection.items = [firstNote];
+  second.selection.items = [secondNote];
+  showPopup(first.win);
+  showPopup(second.win);
+  assert.equal(
+    first.win.document
+      .getElementById("bamboo-export-markdown")!
+      .hasAttribute("disabled"),
+    false,
+  );
+  await transfer(first.win, "export");
+  await transfer(second.win, "export");
+  assert.equal(f.transfers[2].win, first.win);
+  assert.deepEqual(Array.from(f.transfers[2].value as Item[]), [firstNote]);
+  assert.equal(f.transfers[3].win, second.win);
+  assert.deepEqual(Array.from(f.transfers[3].value as Item[]), [secondNote]);
+  first.selection.items = [firstNote, parent];
+  showPopup(first.win);
+  assert.equal(
+    first.win.document
+      .getElementById("bamboo-export-markdown")!
+      .getAttribute("disabled"),
+    "true",
+  );
+  await transfer(first.win, "export");
+  assert.equal(f.transfers.length, 4);
+  f.libraries.get(2)!.filesEditable = false;
+  showPopup(second.win);
+  assert.equal(
+    second.win.document
+      .getElementById("bamboo-import-markdown")!
+      .getAttribute("disabled"),
+    "true",
+  );
+  await transfer(second.win, "import");
+  assert.equal(f.transfers.length, 4);
 });

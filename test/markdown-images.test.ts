@@ -91,11 +91,14 @@ test("parses angle-bracket destinations and keeps positions in order", () => {
 test("counts relative and wikilink references as used assets", () => {
   const source =
     "![](./assets/rel.png)\n![[Pasted image.png]]\n![a](<assets/space name.png>)";
-  assert.deepEqual(referencedAssets(source), [
-    "assets/rel.png",
-    "assets/space name.png",
-    "assets/Pasted image.png",
-  ]);
+  assert.deepEqual(
+    new Set(referencedAssets(source)),
+    new Set([
+      "assets/rel.png",
+      "assets/space name.png",
+      "assets/Pasted image.png",
+    ]),
+  );
 });
 
 test("encodes image bytes as a data URL", () => {

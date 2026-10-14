@@ -18,10 +18,8 @@ import {
 import type { CanvasNodeStyle } from "../model/core";
 import type { CanvasDocument } from "../model/document";
 import { isConnectionSide } from "../model/connection";
-import {
-  isSafeAttachmentDataUrl,
-  isSafeImagePreview,
-} from "../model/file-attachment";
+import { isSafeAttachmentDataUrl } from "../model/file-attachment";
+import { originalImagePreview } from "./file-import";
 
 export function connectionEndpoint(
   node: Pick<CanvasNode, "position" | "width" | "height">,
@@ -506,12 +504,11 @@ export function buildCanvasSvg(
       return `<g><line${attribute("x1", x + from.x)}${attribute("y1", y + from.y)}${attribute("x2", x + to.x)}${attribute("y2", y + to.y)}${attribute("stroke", stroke)}${attribute("stroke-width", strokeWidth)}${attribute("stroke-opacity", style.strokeOpacity)}${attribute("stroke-dasharray", dash)}${marker}/>${label}</g>`;
     }
     if (node.kind === "pdf" || node.kind === "attachment") {
-      const preview =
-        node.data.image && isSafeImagePreview(node.data.image)
-          ? node.data.image
-          : node.data.fileData && isSafeImagePreview(node.data.fileData)
-            ? node.data.fileData
-            : undefined;
+      const preview = originalImagePreview(
+        node.data.image,
+        node.data.fileData,
+        node.data.contentType,
+      );
       if (preview) {
         const previewWidth = Math.max(1, width - 24);
         const previewHeight = Math.max(
@@ -749,12 +746,11 @@ export function buildCanvasMarkdown(doc: CanvasDocument): string {
       const text = inlineText(canvasNodeText(node)) || node.kind;
       lines.push(`- ${basicKindLabel(node.kind)}: ${text} [${node.id}]`);
       if (node.kind === "attachment" || node.kind === "pdf") {
-        const preview =
-          node.data.image && isSafeImagePreview(node.data.image)
-            ? node.data.image
-            : node.data.fileData && isSafeImagePreview(node.data.fileData)
-              ? node.data.fileData
-              : undefined;
+        const preview = originalImagePreview(
+          node.data.image,
+          node.data.fileData,
+          node.data.contentType,
+        );
         if (preview) {
           lines.push(
             `  ![${escapeMarkdownImageAlt(node.data.title)}](${preview})`,

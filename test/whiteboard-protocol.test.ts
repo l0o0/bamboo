@@ -1150,6 +1150,24 @@ test("null-source init requires complete labels and a canonical canvas document"
     isParentToWhiteboardMessageForChannel(init, "tab-9:canvas-a"),
     true,
   );
+  for (const editable of [true, false]) {
+    assert.equal(
+      isParentToWhiteboardMessageForChannel(
+        { ...init, payload: { ...init.payload, editable } },
+        "tab-9:canvas-a",
+      ),
+      true,
+    );
+  }
+  for (const editable of ["false", 0, null]) {
+    assert.equal(
+      isParentToWhiteboardMessageForChannel(
+        { ...init, payload: { ...init.payload, editable } },
+        "tab-9:canvas-a",
+      ),
+      false,
+    );
+  }
 
   for (const label of [
     "shortcutFreeMove",

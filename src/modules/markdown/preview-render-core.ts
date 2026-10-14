@@ -1,5 +1,5 @@
 import MarkdownIt from "markdown-it";
-import { katex } from "@mdit/plugin-katex";
+import { configureMath } from "./math";
 import { footnote } from "@mdit/plugin-footnote";
 import {
   extractFirstHeadingTitle,
@@ -10,6 +10,7 @@ import { highlightFencedCode } from "./code-highlight";
 import { parseDocumentLink, isPdfDocumentLink } from "./document-link-shared";
 import { parseNoteLink } from "./note-links";
 import { parseHtmlImage } from "./images/html";
+import { parseWikiImage } from "./images/reference";
 import {
   isSafeAttachmentDataUrl,
   MAX_ATTACHMENT_BYTES,
@@ -46,14 +47,7 @@ const md = new MarkdownItCtor({
 });
 
 md.use(footnote);
-md.use(katex, {
-  output: "mathml",
-  trust: false,
-  throwOnError: false,
-  maxExpand: 1000,
-  maxSize: 20,
-  mathFence: true,
-});
+configureMath(md);
 
 // Sized images have one small HTML vocabulary. Keep general HTML disabled.
 md.inline.ruler.before("html_inline", "zmd_sized_image", (state, silent) => {
@@ -72,6 +66,23 @@ md.inline.ruler.before("html_inline", "zmd_sized_image", (state, silent) => {
   return true;
 });
 md.renderer.rules.zmd_sized_image = (tokens, idx, options, _env, self) =>
+  self.renderToken(tokens, idx, options);
+
+md.inline.ruler.before("link", "zmd_wiki_image", (state, silent) => {
+  if (!state.src.startsWith("![[", state.pos)) return false;
+  const image = parseWikiImage(state.src, state.pos);
+  if (!image || !md.validateLink(image.source)) return false;
+  if (!silent) {
+    const token = state.push("zmd_wiki_image", "img", 0);
+    token.attrSet("src", state.md.normalizeLink(image.source));
+    token.attrSet("alt", image.alt);
+    token.attrSet("referrerpolicy", "no-referrer");
+    if (image.width) token.attrSet("width", String(image.width));
+  }
+  state.pos = image.to;
+  return true;
+});
+md.renderer.rules.zmd_wiki_image = (tokens, idx, options, _env, self) =>
   self.renderToken(tokens, idx, options);
 
 // Wiki links are rendered as inert spans first. The host resolves their title

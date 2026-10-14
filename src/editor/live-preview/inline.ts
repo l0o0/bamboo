@@ -1,5 +1,6 @@
 import type { InlineRange } from "./types";
 import { parseNoteLink } from "../../modules/markdown/note-links";
+import { parseMathRanges } from "./math-syntax";
 
 /**
  * L2 inline ranges for a single line (offsets relative to the line string).
@@ -14,8 +15,17 @@ function parseInline(
   opts: { code: boolean; link: boolean },
 ): InlineRange[] {
   const out: InlineRange[] = [];
+  const formulas = parseMathRanges(line);
+  let formulaIndex = 0;
   let i = 0;
   while (i < line.length) {
+    while (formulas[formulaIndex]?.to <= i) formulaIndex++;
+    const formula = formulas[formulaIndex];
+    if (formula && i >= formula.from) {
+      i = formula.to;
+      formulaIndex++;
+      continue;
+    }
     // Skip long uniform delimiter runs in O(1): a pasted line of thousands
     // of `*`/`~`/`` ` `` must not trigger a full-line indexOf scan per
     // character (O(n²)). Runs of 4+ are degenerate markdown anyway.
@@ -67,17 +77,19 @@ function parseInline(
           raw.trim() &&
           label.trim()
         ) {
-          out.push({ from: i, to: i + 2, kind: "mark" });
+          const linkSource = { from: i, to: close + 2 };
+          out.push({ from: i, to: i + 2, kind: "mark", linkSource });
           if (labelStart > i + 2) {
-            out.push({ from: i + 2, to: labelStart, kind: "mark" });
+            out.push({ from: i + 2, to: labelStart, kind: "mark", linkSource });
           }
           out.push({
             from: labelStart,
             to: close,
             kind: "link",
+            linkSource,
             href: line.slice(i, close + 2),
           });
-          out.push({ from: close, to: close + 2, kind: "mark" });
+          out.push({ from: close, to: close + 2, kind: "mark", linkSource });
           i = close + 2;
           continue;
         }
@@ -94,14 +106,21 @@ function parseInline(
         findUnescaped(line, ")", closeBracket + 2) !== -1
       ) {
         const closeParen = findUnescaped(line, ")", closeBracket + 2);
-        out.push({ from: i, to: i + 1, kind: "mark" }); // [
+        const linkSource = { from: i, to: closeParen + 1 };
+        out.push({ from: i, to: i + 1, kind: "mark", linkSource }); // [
         out.push({
           from: i + 1,
           to: closeBracket,
           kind: "link",
+          linkSource,
           href: line.slice(closeBracket + 2, closeParen),
         });
-        out.push({ from: closeBracket, to: closeParen + 1, kind: "mark" }); // ](url)
+        out.push({
+          from: closeBracket,
+          to: closeParen + 1,
+          kind: "mark",
+          linkSource,
+        }); // ](url)
         i = closeParen + 1;
         continue;
       }

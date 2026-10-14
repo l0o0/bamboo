@@ -8,7 +8,7 @@
 
 <p align="center">
   <a href="https://www.zotero.org"><img src="https://img.shields.io/badge/Zotero-9%2F10%2F11-green?style=flat-square&amp;logo=zotero&amp;logoColor=CC2936" alt="Zotero compatibility" /></a>
-  <a href="https://github.com/l0o0/scholar-sketch/releases"><img src="https://img.shields.io/badge/version-0.2.6-blue?style=flat-square" alt="version" /></a>
+  <a href="https://github.com/l0o0/scholar-sketch/releases"><img src="https://img.shields.io/badge/version-0.2.7-blue?style=flat-square" alt="version" /></a>
   <a href="./LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0-orange?style=flat-square" alt="license" /></a>
 </p>
 
@@ -52,7 +52,9 @@ Requires **Zotero 9 / 10 / 11 for desktop**.
 ## Quick start
 
 - **Write a note**: click the **Scholar Sketch** toolbar button → **New Markdown Note…**. Select a paper first to attach the note to it, or clear the selection to create a standalone note in the current library or collection. Double-click its `.md` attachment to continue editing. Type `[[` to link another note.
+- **Reference literature**: type `[[` and search by title. The picker shows Zotero item icons and filters for **All**, **Regular items**, **Notes/attachments**, and **Open tabs**. Open tabs includes attachments from every open tab in the current Zotero window and their parent items. Tab cycles filters immediately, Shift+Tab cycles backward, ↑/↓ selects a result, Enter inserts it, and Esc closes the picker. You can continue typing without leaving the editor.
 - **Create a whiteboard**: click the **Scholar Sketch** toolbar button → **New Whiteboard…**, drag in papers, and connect cards. Hold **Space** and drag to pan.
+- **Organize a collection or revisit a board**: use **New Whiteboard from Collection…** or **Recent Whiteboards** below the separator in the same toolbar menu.
 - **Explore an example**: choose **Help → Scholar Sketch: Create Example Whiteboard**.
 
 Stored attachments follow Zotero file sync; linked attachments need separate syncing. Local history stays on the current device.

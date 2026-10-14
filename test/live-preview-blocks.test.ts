@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { Window } from "happy-dom";
 import { EditorState } from "@codemirror/state";
+import { ensureSyntaxTree } from "@codemirror/language";
 import { EditorView } from "@codemirror/view";
 import { markdown } from "@codemirror/lang-markdown";
 import { history, undo, redo } from "@codemirror/commands";
@@ -13,10 +14,13 @@ import {
 import { frontmatterLineNumbersFromLines } from "../src/editor/live-preview/active-lines.ts";
 
 function state(doc: string) {
-  return EditorState.create({
+  const current = EditorState.create({
     doc,
     extensions: [markdown({ extensions: GFM }), history()],
   });
+  // The default 20ms initialization budget may yield under concurrent tests.
+  assert.ok(ensureSyntaxTree(current, current.doc.length, 5000));
+  return current.update({}).state;
 }
 
 test("recognizes real task items and rules without treating code or Setext headings as rules", () => {

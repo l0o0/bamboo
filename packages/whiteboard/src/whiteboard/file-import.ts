@@ -2,7 +2,9 @@ import {
   inferAttachmentContentType,
   MAX_ATTACHMENT_BYTES,
   isSafeAttachmentDataUrl,
+  isSafeImagePreview,
 } from "../model/file-attachment";
+import { createImageThumbnail } from "./image-thumbnail";
 
 export const MAX_ATTACHMENT_BATCH_BYTES = 30 * 1024 * 1024;
 export const MAX_TEXT_PREVIEW_CHARS = 2000;
@@ -44,6 +46,21 @@ export interface ImportedWhiteboardFile {
   image?: string;
   imageWidth?: number;
   imageHeight?: number;
+}
+
+/** Cards use thumbnails; opening a raster image must retain the original. */
+export function originalImagePreview(
+  image: string | undefined,
+  fileData: string | undefined,
+  contentType: string | undefined,
+): string | undefined {
+  if (
+    (!contentType || contentType.trim().toLowerCase().startsWith("image/")) &&
+    fileData &&
+    isSafeImagePreview(fileData)
+  )
+    return fileData;
+  return image && isSafeImagePreview(image) ? image : undefined;
 }
 
 export function importedImageMarkdown(file: ImportedWhiteboardFile): string {
@@ -102,22 +119,6 @@ function isTextType(contentType: string, filename: string): boolean {
   );
 }
 
-function imageDimensions(
-  dataUrl: string,
-): Promise<{ width?: number; height?: number }> {
-  if (typeof Image === "undefined") return Promise.resolve({});
-  return new Promise((resolve) => {
-    const image = new Image();
-    image.onload = () =>
-      resolve({
-        width: image.naturalWidth || image.width || undefined,
-        height: image.naturalHeight || image.height || undefined,
-      });
-    image.onerror = () => resolve({});
-    image.src = dataUrl;
-  });
-}
-
 function normalizeDataUrlMime(dataUrl: string, contentType: string): string {
   const comma = dataUrl.indexOf(",");
   return comma >= 0
@@ -161,9 +162,10 @@ export async function importWhiteboardFiles(
         );
       }
       if (IMAGE_TYPES.has(contentType)) {
-        const dimensions = await imageDimensions(fileData);
+        const dimensions = await createImageThumbnail(fileData);
         if (dimensions.width) result.imageWidth = dimensions.width;
         if (dimensions.height) result.imageHeight = dimensions.height;
+        if (dimensions.image) result.image = dimensions.image;
       }
       files.push(result);
     } catch (error) {

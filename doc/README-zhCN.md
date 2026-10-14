@@ -10,7 +10,7 @@
 
 <p align="center">
   <a href="https://www.zotero.org"><img src="https://img.shields.io/badge/Zotero-9%2F10%2F11-green?style=flat-square&amp;logo=zotero&amp;logoColor=CC2936" alt="Zotero compatibility" /></a>
-  <a href="https://github.com/l0o0/scholar-sketch/releases"><img src="https://img.shields.io/badge/version-0.2.6-blue?style=flat-square" alt="version" /></a>
+  <a href="https://github.com/l0o0/scholar-sketch/releases"><img src="https://img.shields.io/badge/version-0.2.7-blue?style=flat-square" alt="version" /></a>
   <a href="../LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0-orange?style=flat-square" alt="license" /></a>
 </p>
 
@@ -54,7 +54,9 @@ Scholar Sketch 为 Zotero 扩展 Markdown 笔记与可视化白板，让文献�
 ## 快速开始
 
 - **写笔记**：点击工具栏的 **Scholar Sketch** 按钮 → **新建 Markdown 笔记…**。先选中文献可创建其附属笔记；取消选择则在当前文库或分类下创建独立笔记。之后双击 `.md` 附件即可继续编辑，输入 `[[` 可链接其他笔记。
+- **引用文献**：输入 `[[` 后按标题检索，候选列表显示 Zotero 条目类型图标，并可切换 **全部**、**常规条目**、**笔记/附件**、**已打开**。其中“已打开”包含当前 Zotero 窗口所有已打开标签页中的附件及其父条目。Tab 立即循环切换分类，Shift+Tab 反向切换，↑/↓ 选择条目，Enter 插入，Esc 关闭弹窗；切换分类后仍可直接继续输入。
 - **建白板**：点击工具栏的 **Scholar Sketch** 按钮 → **新建白板…**，拖入文献、添加卡片并连接想法。按住 **空格** 拖动可移动画布。
+- **整理分类或回到最近白板**：在同一工具栏菜单的分隔线下选择 **从分类新建白板…** 或 **最近打开的白板**。
 - **试用示例**：选择 **帮助 → Scholar Sketch：创建示例白板**。
 
 存储附件可随 Zotero 文件同步；链接附件需自行同步。本地历史仅保存在当前设备。

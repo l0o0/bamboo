@@ -167,6 +167,7 @@ test("document-link search stays safe when the minimal fake has no Search API", 
   const fake = createFakeZotero({
     items: [{ id: 5, key: "REGULAR2", itemType: "journalArticle" }],
   });
+  Object.defineProperty(fake.Zotero, "Search", { value: undefined });
   t.after(install(fake));
   const item = fake.Zotero.Items.get(5);
   assert.ok(item);

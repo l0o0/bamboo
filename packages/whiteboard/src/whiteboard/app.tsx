@@ -7,6 +7,13 @@ import {
   searchCanvasNodes,
 } from "./selection";
 import { THEME_TOKENS, UI_METRICS } from "../../../../src/ui/theme";
+import { flushSync } from "react-dom";
+import {
+  FullCanvasRenderContext,
+  attachCanvasHandles,
+  shouldCullCanvasNodes,
+  waitForCanvasPaint,
+} from "./rendering";
 /// <reference lib="dom" />
 
 import {
@@ -50,6 +57,8 @@ import {
   type EdgeChange,
   type NodeChange,
   type OnNodeDrag,
+  type OnConnectStart,
+  type OnConnectEnd,
   type ReactFlowInstance,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
@@ -106,6 +115,9 @@ import {
 } from "../model/colorSchemes";
 import { canvasNodeTypes, type CanvasFlowNode } from "../nodes";
 import { PropertiesPanel } from "../chrome/PropertiesPanel";
+import { GroupPicker } from "../chrome/GroupPicker";
+import { joinFrame } from "./groupMembership";
+import { createConnectedNote, createNoteFromQuote } from "./continuation";
 import {
   AnnotationBrowser,
   existingAnnotationKeys,
@@ -150,13 +162,14 @@ import {
   buildCanvasSvg,
   connectionEndpoint,
 } from "./export";
-import { exportCanvasPng, type PngScale } from "./png";
+import { exportCanvasPng, pngExportSize, type PngScale } from "./png";
 import {
   canAcceptNativeFileTransfer,
   fileImportFailureMessage,
   importedImageMarkdown,
   importWhiteboardFiles,
   isEditingImportSessionCurrent,
+  originalImagePreview,
   type ImportedWhiteboardFile,
 } from "./file-import";
 import {
@@ -177,6 +190,7 @@ import {
   mergeEditingStyle,
   toggleEditingBold,
   type CanvasFlowEdge,
+  updateCanvasNodeText,
   updateFlowNodeModel,
   verticalAlignmentStyle,
   withEdgeStyle,
@@ -479,6 +493,7 @@ function fileLabel(
 
 export interface WhiteboardAppProps {
   theme: WhiteboardTheme;
+  editable?: boolean;
   colorScheme?: ColorSchemeID;
   appearance?: WhiteboardAppearance;
   labels?: WhiteboardLabels;
@@ -538,6 +553,7 @@ export interface WhiteboardAppProps {
 }
 
 export interface WhiteboardRuntime {
+  setEditable: (editable: boolean) => void;
   setTheme: (theme: WhiteboardTheme) => void;
   setColorScheme: (scheme: ColorSchemeID) => void;
   setAppearance: (appearance: WhiteboardAppearance) => void;
@@ -775,14 +791,11 @@ function embeddedFileInfo(model: CanvasNode): EmbeddedFileInfo | undefined {
 function embeddedImageInfo(model: CanvasNode): EmbeddedFileInfo | undefined {
   if (model.kind !== "attachment" && model.kind !== "pdf") return undefined;
   const data = model.data as Record<string, unknown>;
-  const image =
-    typeof data.image === "string"
-      ? data.image
-      : typeof data.fileData === "string" &&
-          typeof data.contentType === "string" &&
-          data.contentType.startsWith("image/")
-        ? data.fileData
-        : undefined;
+  const image = originalImagePreview(
+    typeof data.image === "string" ? data.image : undefined,
+    typeof data.fileData === "string" ? data.fileData : undefined,
+    typeof data.contentType === "string" ? data.contentType : undefined,
+  );
   if (!image) return undefined;
   return {
     title: typeof data.title === "string" ? data.title : "Image",
@@ -998,6 +1011,10 @@ export function WhiteboardApp(props: WhiteboardAppProps): ReactElement {
   }
   const academicAcquisition = academicAcquisitionRef.current;
   const [theme, setTheme] = useState<WhiteboardTheme>(props.theme);
+  const [editable, setEditable] = useState(props.editable ?? true);
+  const editableRef = useRef(editable);
+  editableRef.current = editable;
+  useEffect(() => setEditable(props.editable ?? true), [props.editable]);
   const [appearance, setAppearance] = useState<WhiteboardAppearance>(
     props.appearance ?? DEFAULT_APPEARANCE,
   );
@@ -1072,16 +1089,67 @@ export function WhiteboardApp(props: WhiteboardAppProps): ReactElement {
   const [saveState, setSaveState] = useState<"saved" | "saving" | "error">(
     "saved",
   );
-  const [editing, setEditing] = useState<{
+  const [editing, setEditingState] = useState<{
     nodeId: string;
     value: string;
   } | null>(null);
   const editingRef = useRef(editing);
-  editingRef.current = editing;
+  const setEditing = useCallback((next: typeof editing) => {
+    // Snapshot requests can arrive synchronously from the change callback.
+    editingRef.current = next;
+    setEditingState(next);
+  }, []);
   const editingRevisionRef = useRef(0);
+  const snapshotWithDraft = useCallback(() => {
+    const document = snapshotNow();
+    const draft = editingRef.current;
+    if (!draft) return document;
+    return {
+      ...document,
+      nodes: document.nodes.map((node) =>
+        node.id === draft.nodeId
+          ? updateCanvasNodeText(node, draft.value)
+          : node,
+      ),
+    };
+  }, [snapshotNow]);
   const [edgeEditorHeight, setEdgeEditorHeight] = useState(32);
   const [editingEdge, setEditingEdge] = useState<EdgeEditingState | null>(null);
   const [menu, setMenu] = useState<ContextMenuState | null>(null);
+  const [groupPicker, setGroupPicker] = useState<{ ids: string[] } | null>(
+    null,
+  );
+  const [groupPreviewId, setGroupPreviewId] = useState<string | null>(null);
+  const [groupFeedback, setGroupFeedback] = useState<string | null>(null);
+  const continuationRef = useRef<{
+    originId: string;
+    handleId: string | null;
+    handleType: "source" | "target";
+  } | null>(null);
+  const reconnectingRef = useRef(false);
+  const connectionCanceledRef = useRef(false);
+  useEffect(() => {
+    const cancelConnectionGesture = () => {
+      if (!continuationRef.current && !reconnectingRef.current) return;
+      continuationRef.current = null;
+      connectionCanceledRef.current = true;
+    };
+    window.addEventListener("blur", cancelConnectionGesture);
+    document.addEventListener("pointercancel", cancelConnectionGesture);
+    document.addEventListener("touchcancel", cancelConnectionGesture);
+    return () => {
+      window.removeEventListener("blur", cancelConnectionGesture);
+      document.removeEventListener("pointercancel", cancelConnectionGesture);
+      document.removeEventListener("touchcancel", cancelConnectionGesture);
+    };
+  }, []);
+  useEffect(() => {
+    if (editable) return;
+    setGroupPicker(null);
+    setGroupPreviewId(null);
+    continuationRef.current = null;
+    connectionCanceledRef.current = true;
+  }, [editable]);
   const [imageViewer, setImageViewer] = useState<EmbeddedFileInfo | null>(null);
   const [fileNotice, setFileNotice] = useState<string | null>(null);
   const [fileDropTargetId, setFileDropTargetId] = useState<string | null>(null);
@@ -1140,6 +1208,23 @@ export function WhiteboardApp(props: WhiteboardAppProps): ReactElement {
   const mountedRef = useRef(true);
   const importGenerationRef = useRef(0);
   const holdEditFocusRef = useRef(false);
+  const updateEditingDraft = useCallback(
+    (nodeId: string, value: string) => {
+      const current = editingRef.current;
+      if (
+        !mountedRef.current ||
+        !editableRef.current ||
+        current?.nodeId !== nodeId ||
+        current.value === value
+      )
+        return;
+      editingRevisionRef.current += 1;
+      setEditing({ nodeId, value });
+      // Keep draft notifications separate from the committed undo history.
+      bump();
+    },
+    [bump, setEditing],
+  );
 
   useEffect(() => {
     if (!imageViewer) return;
@@ -1268,6 +1353,11 @@ export function WhiteboardApp(props: WhiteboardAppProps): ReactElement {
 
   const loadSnapshot = useCallback(
     (value: CanvasDocument) => {
+      setGroupPicker(null);
+      setGroupPreviewId(null);
+      setGroupFeedback(null);
+      continuationRef.current = null;
+      connectionCanceledRef.current = true;
       importGenerationRef.current += 1;
       cancelIdleResolution();
       annotationBrowserRef.current = replaceDocumentAnnotationBrowserSession(
@@ -1849,6 +1939,8 @@ export function WhiteboardApp(props: WhiteboardAppProps): ReactElement {
 
   const onConnect = useCallback(
     (connection: Connection) => {
+      continuationRef.current = null;
+      if (connectionCanceledRef.current || !editableRef.current) return;
       pushHistory();
       const id = newId("edge");
       const color = "#9ca3af";
@@ -1887,6 +1979,7 @@ export function WhiteboardApp(props: WhiteboardAppProps): ReactElement {
 
   const onReconnect = useCallback(
     (edge: CanvasFlowEdge, connection: Connection) => {
+      if (!editableRef.current || connectionCanceledRef.current) return;
       if (
         edge.source === connection.source &&
         edge.target === connection.target &&
@@ -1897,9 +1990,10 @@ export function WhiteboardApp(props: WhiteboardAppProps): ReactElement {
       const rawEdge = edgesRef.current.find(
         (candidate) => candidate.id === edge.id,
       );
+      if (!rawEdge) return;
       pushHistory();
       setEdges((current) =>
-        reconnectEdge(rawEdge ?? edge, connection, current, {
+        reconnectEdge(rawEdge, connection, current, {
           shouldReplaceId: false,
         }),
       );
@@ -2044,7 +2138,7 @@ export function WhiteboardApp(props: WhiteboardAppProps): ReactElement {
         selection?: { start: number; end: number };
       } = {},
     ) => {
-      if (!files.length) return;
+      if (!files.length || !mountedRef.current || !editableRef.current) return;
       const node = nodesRef.current.find(
         (candidate) => candidate.id === nodeId,
       );
@@ -2108,11 +2202,10 @@ export function WhiteboardApp(props: WhiteboardAppProps): ReactElement {
         );
         if (images.length) {
           const markdown = images.join("\n");
-          editingRevisionRef.current += 1;
-          setEditing({
+          updateEditingDraft(
             nodeId,
-            value: `${current.value.slice(0, start)}${markdown}${current.value.slice(end)}`,
-          });
+            `${current.value.slice(0, start)}${markdown}${current.value.slice(end)}`,
+          );
           window.requestAnimationFrame(() => {
             const textarea = editingTextareaRef.current;
             if (!textarea) return;
@@ -2172,7 +2265,7 @@ export function WhiteboardApp(props: WhiteboardAppProps): ReactElement {
         bump();
       }
     },
-    [bump, labels, nodesRef, pushHistory, setNodes],
+    [bump, labels, nodesRef, pushHistory, setNodes, updateEditingDraft],
   );
 
   const addImportedFilesToNote = useCallback(
@@ -2656,6 +2749,121 @@ export function WhiteboardApp(props: WhiteboardAppProps): ReactElement {
     setEditing(transition.editing);
   }, []);
 
+  const canContinue = useCallback(
+    () =>
+      editableRef.current &&
+      activeToolRef.current === "select" &&
+      !editingRef.current &&
+      !editingEdge &&
+      !annotationBrowserRef.current &&
+      !imageViewer &&
+      !groupPicker,
+    [editingEdge, groupPicker, imageViewer],
+  );
+  const commitContinuation = useCallback(
+    (result: ReturnType<typeof createConnectedNote>) => {
+      if (!result) return;
+      pushHistory();
+      applyDocument(result.document);
+      startEdit(result.noteId);
+      bump();
+    },
+    [applyDocument, bump, pushHistory, startEdit],
+  );
+  const onConnectStart = useCallback<OnConnectStart>(
+    (_event, params) => {
+      continuationRef.current = null;
+      connectionCanceledRef.current = false;
+      if (
+        !canContinue() ||
+        reconnectingRef.current ||
+        !params.nodeId ||
+        !params.handleType
+      )
+        return;
+      const node = nodesRef.current.find((node) => node.id === params.nodeId);
+      if (
+        !node ||
+        node.data.model.kind === "frame" ||
+        academicAcquisition.pendingNodeIds().includes(node.id)
+      )
+        return;
+      continuationRef.current = {
+        originId: node.id,
+        handleId: params.handleId,
+        handleType: params.handleType,
+      };
+    },
+    [academicAcquisition, canContinue, nodesRef],
+  );
+  const onConnectEnd = useCallback<OnConnectEnd>(
+    (event, state) => {
+      const pending = continuationRef.current;
+      continuationRef.current = null;
+      if (
+        !pending ||
+        connectionCanceledRef.current ||
+        reconnectingRef.current ||
+        !canContinue() ||
+        state.isValid ||
+        state.toNode ||
+        state.toHandle
+      )
+        return;
+      const pointer =
+        "changedTouches" in event ? event.changedTouches[0] : event;
+      if (
+        !pointer ||
+        !Number.isFinite(pointer.clientX) ||
+        !Number.isFinite(pointer.clientY)
+      )
+        return;
+      const hit =
+        document.elementFromPoint?.(pointer.clientX, pointer.clientY) ??
+        (event.target as Element | null);
+      if (
+        !hit?.closest?.(".react-flow__pane") ||
+        hit.closest(".react-flow__node, .react-flow__handle") ||
+        !canvasHostRef.current?.contains(hit)
+      )
+        return;
+      const position = flowRef.current?.screenToFlowPosition({
+        x: pointer.clientX,
+        y: pointer.clientY,
+      });
+      if (!position) return;
+      commitContinuation(
+        createConnectedNote(workingSnapshot(), {
+          ...pending,
+          nodeId: newId("note"),
+          edgeId: newId("edge"),
+          position: { x: position.x - 130, y: position.y - 76 },
+        }),
+      );
+    },
+    [canContinue, commitContinuation, workingSnapshot],
+  );
+  const continueQuote = useCallback(
+    (nodeId: string, noteType: "claim" | "evidence") => {
+      if (!canContinue()) return;
+      const origin = nodesRef.current.find((node) => node.id === nodeId);
+      if (!origin || origin.data.model.kind !== "quote") return;
+      commitContinuation(
+        createNoteFromQuote(workingSnapshot(), {
+          originId: nodeId,
+          noteType,
+          nodeId: newId("note"),
+          edgeId: newId("edge"),
+          position: {
+            x: origin.position.x + nodeSize(origin).width + 48,
+            y: origin.position.y,
+          },
+        }),
+      );
+    },
+    [canContinue, commitContinuation, nodesRef, workingSnapshot],
+  );
+
   const startEdgeEdit = useCallback(
     (edgeId: string) => {
       const edge = edgesRef.current.find(
@@ -2750,12 +2958,16 @@ export function WhiteboardApp(props: WhiteboardAppProps): ReactElement {
   }, [updateNode]);
 
   const cancelEdit = useCallback(() => {
+    const current = editingRef.current;
+    const node = nodesRef.current.find((item) => item.id === current?.nodeId);
+    const changed = current && node && flowNodeText(node) !== current.value;
     editingRevisionRef.current += 1;
     setEditing(null);
     setNodes((current) =>
       current.map((item) => ({ ...item, className: undefined })),
     );
-  }, []);
+    if (changed) bump();
+  }, [bump, nodesRef, setEditing, setNodes]);
 
   const commitEdgeEdit = useCallback(
     (text: string) => {
@@ -3173,6 +3385,102 @@ export function WhiteboardApp(props: WhiteboardAppProps): ReactElement {
     workingSnapshot,
   ]);
 
+  const openGroupPicker = useCallback(
+    (nodeId?: string) => {
+      if (!canContinue()) return;
+      const selected = nodesRef.current
+        .filter((node) => node.selected)
+        .map((node) => node.id);
+      const ids = nodeId && !selected.includes(nodeId) ? [nodeId] : selected;
+      const pending = new Set(academicAcquisition.pendingNodeIds());
+      const eligible = nodesRef.current
+        .filter(
+          (node) =>
+            ids.includes(node.id) &&
+            node.data.model.kind !== "frame" &&
+            !pending.has(node.id),
+        )
+        .map((node) => node.id);
+      if (!eligible.length) return;
+      setMenu(null);
+      setDetailsTarget(null);
+      setGroupFeedback(null);
+      setGroupPicker({ ids: eligible });
+    },
+    [academicAcquisition, canContinue, nodesRef],
+  );
+  const closeGroupPicker = useCallback(() => {
+    setGroupPicker(null);
+    setGroupPreviewId(null);
+    canvasHostRef.current?.focus();
+  }, []);
+  const joinSelectedToFrame = useCallback(
+    (frameId: string) => {
+      if (
+        !groupPicker ||
+        !editableRef.current ||
+        editingRef.current ||
+        editingEdge ||
+        annotationBrowserRef.current ||
+        imageViewer
+      )
+        return;
+      const before = workingSnapshot();
+      const joined = joinFrame(before, groupPicker.ids, frameId);
+      closeGroupPicker();
+      if (joined === before) return;
+      const nodeSelection = new Set(
+        nodesRef.current.filter((node) => node.selected).map((node) => node.id),
+      );
+      const edgeSelection = new Set(
+        edgesRef.current.filter((edge) => edge.selected).map((edge) => edge.id),
+      );
+      pushHistory();
+      applyDocument(joined);
+      setNodes((current) =>
+        current.map((node) => ({
+          ...node,
+          selected: nodeSelection.has(node.id),
+        })),
+      );
+      setEdges((current) =>
+        current.map((edge) => ({
+          ...edge,
+          selected: edgeSelection.has(edge.id),
+        })),
+      );
+      const frame = joined.nodes.find((node) => node.id === frameId);
+      const title =
+        frame?.kind === "frame"
+          ? frame.title || labels.unnamedGroup || labels.kindFrame
+          : labels.kindFrame;
+      setGroupFeedback(
+        (labels.groupJoined ?? "Joined {title}").replace("{title}", title),
+      );
+      bump();
+    },
+    [
+      applyDocument,
+      bump,
+      closeGroupPicker,
+      edgesRef,
+      editingEdge,
+      groupPicker,
+      imageViewer,
+      labels,
+      nodesRef,
+      pushHistory,
+      setEdges,
+      setNodes,
+      workingSnapshot,
+    ],
+  );
+  useEffect(() => {
+    if (!groupFeedback) return;
+    const timer = window.setTimeout(() => setGroupFeedback(null), 3000);
+    return () => window.clearTimeout(timer);
+  }, [groupFeedback]);
+
   const removeFromGroup = useCallback(
     (nodeId: string) => {
       const node = nodesRef.current.find(
@@ -3247,7 +3555,7 @@ export function WhiteboardApp(props: WhiteboardAppProps): ReactElement {
     (format: "png" | "svg" | "md", scale: PngScale = 2) => {
       if (exportBusyRef.current) return;
       setMenu(null);
-      const doc = snapshotNow();
+      const doc = snapshotWithDraft();
       const requestId = `export-${Date.now().toString(36)}`;
       if (format === "md") {
         propsRef.current.onExportFile({
@@ -3274,9 +3582,16 @@ export function WhiteboardApp(props: WhiteboardAppProps): ReactElement {
       }
       const host = canvasHostRef.current;
       if (!host) return;
+      try {
+        pngExportSize(doc, scale);
+      } catch {
+        setExportStatus("error");
+        return;
+      }
       exportBusyRef.current = true;
-      setExportStatus("busy");
-      void exportCanvasPng(host, doc, scale)
+      flushSync(() => setExportStatus("busy"));
+      void waitForCanvasPaint(host)
+        .then(() => exportCanvasPng(host, doc, scale))
         .then((dataUrl) => {
           propsRef.current.onExportFile({
             requestId,
@@ -3294,11 +3609,25 @@ export function WhiteboardApp(props: WhiteboardAppProps): ReactElement {
           exportBusyRef.current = false;
         });
     },
-    [snapshotNow, labels, appearance, theme],
+    [snapshotWithDraft, labels, appearance, theme],
   );
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
+      if (
+        event.key === "Escape" &&
+        (continuationRef.current || reconnectingRef.current)
+      ) {
+        continuationRef.current = null;
+        connectionCanceledRef.current = true;
+      }
+      if (groupPicker) {
+        if (event.key === "Escape") {
+          event.preventDefault();
+          closeGroupPicker();
+        }
+        return;
+      }
       if (imageViewer) {
         if (event.key === "Escape") {
           event.preventDefault();
@@ -3368,6 +3697,8 @@ export function WhiteboardApp(props: WhiteboardAppProps): ReactElement {
     editing,
     editingEdge,
     imageViewer,
+    groupPicker,
+    closeGroupPicker,
     cancelDraw,
     deleteCanvasElements,
     edgesRef,
@@ -3422,6 +3753,7 @@ export function WhiteboardApp(props: WhiteboardAppProps): ReactElement {
 
   useEffect(() => {
     const runtime: WhiteboardRuntime = {
+      setEditable,
       setTheme,
       setColorScheme,
       setAppearance,
@@ -3430,7 +3762,7 @@ export function WhiteboardApp(props: WhiteboardAppProps): ReactElement {
         setCustomTemplates(parseNoteTemplateRegistry(templates));
       },
       loadSnapshot: loadCanvasSnapshot,
-      getSnapshot: snapshotNow,
+      getSnapshot: snapshotWithDraft,
       undo: undoCanvas,
       redo: redoCanvas,
       beginAcademicDrop(requestId, nodeId, screenPosition, sources) {
@@ -3596,7 +3928,7 @@ export function WhiteboardApp(props: WhiteboardAppProps): ReactElement {
     noteRefreshRuntime,
     rejectAnnotationList,
     redoCanvas,
-    snapshotNow,
+    snapshotWithDraft,
     showCanvasNotice,
     undoCanvas,
   ]);
@@ -3622,6 +3954,22 @@ export function WhiteboardApp(props: WhiteboardAppProps): ReactElement {
   }, [currentSourceRequests, nodes, requestSources]);
 
   const selectedNodes = nodes.filter((node) => node.selected);
+  const renderedNodes = useMemo(
+    () =>
+      attachCanvasHandles(
+        groupPreviewId
+          ? nodes.map((node) =>
+              node.id === groupPreviewId
+                ? {
+                    ...node,
+                    className: `${node.className ?? ""} is-group-target`.trim(),
+                  }
+                : node,
+            )
+          : nodes,
+      ),
+    [nodes, groupPreviewId],
+  );
   const selectedEdges = edges.filter((edge) => edge.selected);
   useEffect(() => {
     setDetailsTarget((current) => {
@@ -3817,7 +4165,7 @@ export function WhiteboardApp(props: WhiteboardAppProps): ReactElement {
     [edges, labels, editingEdge],
   );
 
-  return (
+  const canvas = (
     <WhiteboardLabelsProvider value={labels}>
       <div
         ref={canvasHostRef}
@@ -4102,6 +4450,22 @@ export function WhiteboardApp(props: WhiteboardAppProps): ReactElement {
           onCopy={copyNode}
           onDelete={deleteNode}
           onRemoveFromGroup={removeFromGroup}
+          onJoinGroup={
+            editable && !editing && !editingEdge ? openGroupPicker : undefined
+          }
+          groupTitle={
+            propertyNode && "frameId" in propertyNode.data.model
+              ? (() => {
+                  const model = propertyNode.data.model;
+                  const frame = nodes.find(
+                    (node) => "frameId" in model && node.id === model.frameId,
+                  )?.data.model;
+                  return frame?.kind === "frame"
+                    ? frame.title || labels.unnamedGroup || labels.kindFrame
+                    : undefined;
+                })()
+              : undefined
+          }
           noteTemplates={noteTemplates}
           onBadgeChange={changeNoteBadge}
           onTypeChange={changeSelectedNoteType}
@@ -4156,8 +4520,13 @@ export function WhiteboardApp(props: WhiteboardAppProps): ReactElement {
           />
         ) : null}
         <ReactFlow<CanvasFlowNode, CanvasFlowEdge>
+          onlyRenderVisibleElements={shouldCullCanvasNodes(
+            nodes.length,
+            exportStatus === "busy",
+            Boolean(editing),
+          )}
           colorMode={theme}
-          nodes={nodes}
+          nodes={renderedNodes}
           edges={displayEdges}
           nodeTypes={canvasNodeTypes}
           defaultViewport={initial.viewport}
@@ -4189,8 +4558,16 @@ export function WhiteboardApp(props: WhiteboardAppProps): ReactElement {
           selectionOnDrag={activeTool === "select"}
           elementsSelectable={activeTool === "select"}
           nodesDraggable={!eraser && !editing && activeTool === "select"}
-          nodesConnectable={!eraser && activeTool === "select"}
-          edgesReconnectable={!eraser && !editing && activeTool === "select"}
+          nodesConnectable={
+            editable &&
+            !eraser &&
+            !editing &&
+            !editingEdge &&
+            activeTool === "select"
+          }
+          edgesReconnectable={
+            editable && !eraser && !editing && activeTool === "select"
+          }
           onInit={(instance) => {
             flowRef.current = instance;
             if (fitPendingViewRef.current) fitPendingView();
@@ -4200,7 +4577,18 @@ export function WhiteboardApp(props: WhiteboardAppProps): ReactElement {
           onNodesChange={onNodesChange}
           onEdgesChange={onEdgesChange}
           onConnect={onConnect}
+          onConnectStart={onConnectStart}
+          onConnectEnd={onConnectEnd}
           onReconnect={onReconnect}
+          onReconnectStart={() => {
+            reconnectingRef.current = true;
+            connectionCanceledRef.current = false;
+            continuationRef.current = null;
+          }}
+          onReconnectEnd={() => {
+            reconnectingRef.current = false;
+            continuationRef.current = null;
+          }}
           onNodeClick={(event, node) => {
             if (editingRef.current && editingRef.current.nodeId !== node.id)
               commitEdit();
@@ -4477,6 +4865,7 @@ export function WhiteboardApp(props: WhiteboardAppProps): ReactElement {
                         : undefined
                     }
                     className="zmd-board-in-shape-edit"
+                    readOnly={!editable}
                     value={editing.value}
                     style={{
                       ...labelTextStyle(editingTextStyle),
@@ -4486,11 +4875,7 @@ export function WhiteboardApp(props: WhiteboardAppProps): ReactElement {
                       lineHeight: editingNode.type === "note" ? 1.45 : 1.25,
                     }}
                     onChange={(event) => {
-                      editingRevisionRef.current += 1;
-                      setEditing({
-                        nodeId: editing.nodeId,
-                        value: event.target.value,
-                      });
+                      updateEditingDraft(editing.nodeId, event.target.value);
                     }}
                     onPaste={(event) => {
                       if (editingNode.type !== "note") return;
@@ -4602,6 +4987,50 @@ export function WhiteboardApp(props: WhiteboardAppProps): ReactElement {
                     <span>{labels.groupSelection}</span>
                   </button>
                 ) : null}
+                {menuNode.data.model.kind !== "frame" ? (
+                  <button
+                    type="button"
+                    disabled={
+                      !editable ||
+                      Boolean(editing || editingEdge || annotationBrowser)
+                    }
+                    onClick={() => openGroupPicker(menuNode.id)}
+                  >
+                    <IconOpen />
+                    <span>{labels.joinGroup ?? "Join group"}</span>
+                  </button>
+                ) : null}
+                {menuNode.data.model.kind === "quote" ? (
+                  <>
+                    <button
+                      type="button"
+                      disabled={
+                        !editable ||
+                        Boolean(editing || editingEdge || annotationBrowser)
+                      }
+                      onClick={() => continueQuote(menuNode.id, "claim")}
+                    >
+                      <IconEdit />
+                      <span>
+                        {labels.quoteCreateClaim ?? "Create a viewpoint"}
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      disabled={
+                        !editable ||
+                        Boolean(editing || editingEdge || annotationBrowser)
+                      }
+                      onClick={() => continueQuote(menuNode.id, "evidence")}
+                    >
+                      <IconEdit />
+                      <span>
+                        {labels.quoteCreateEvidence ??
+                          "Create an evidence note"}
+                      </span>
+                    </button>
+                  </>
+                ) : null}
                 {menuNode.data.model.kind === "frame" ? (
                   <button type="button" onClick={() => deleteNode(menuNode.id)}>
                     <IconOpen />
@@ -4692,6 +5121,42 @@ export function WhiteboardApp(props: WhiteboardAppProps): ReactElement {
                 </button>
               </>
             )}
+          </div>
+        ) : null}
+        {groupPicker ? (
+          <GroupPicker
+            labels={labels}
+            frames={nodes
+              .filter(
+                (node) => node.data.model.kind === "frame" && !node.hidden,
+              )
+              .map((node) => ({
+                id: node.id,
+                title:
+                  (node.data.model.kind === "frame" && node.data.model.title) ||
+                  labels.unnamedGroup ||
+                  labels.kindFrame,
+                members: nodes.filter(
+                  (member) =>
+                    "frameId" in member.data.model &&
+                    member.data.model.frameId === node.id,
+                ).length,
+                current: groupPicker.ids.every((id) => {
+                  const member = nodes.find((node) => node.id === id)?.data
+                    .model;
+                  return (
+                    member && "frameId" in member && member.frameId === node.id
+                  );
+                }),
+              }))}
+            onPreview={setGroupPreviewId}
+            onJoin={joinSelectedToFrame}
+            onClose={closeGroupPicker}
+          />
+        ) : null}
+        {groupFeedback ? (
+          <div className="zmd-board-notice" role="status">
+            {groupFeedback}
           </div>
         ) : null}
         {editing && editingNode && editingScreen ? (
@@ -4906,5 +5371,10 @@ export function WhiteboardApp(props: WhiteboardAppProps): ReactElement {
         ) : null}
       </div>
     </WhiteboardLabelsProvider>
+  );
+  return (
+    <FullCanvasRenderContext.Provider value={exportStatus === "busy"}>
+      {canvas}
+    </FullCanvasRenderContext.Provider>
   );
 }

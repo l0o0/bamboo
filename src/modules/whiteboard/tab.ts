@@ -964,6 +964,17 @@ function mountWhiteboardUI(
     },
   });
   session.editor = createWhiteboardEditor(host, {
+    editable: (() => {
+      const attachment = Zotero.Items.get(session.itemID);
+      const library =
+        attachment && Zotero.Libraries.get?.(attachment.libraryID);
+      return Boolean(
+        attachment &&
+        attachment.isEditable?.() &&
+        library &&
+        library.filesEditable,
+      );
+    })(),
     colorScheme: normalizeColorScheme(getPref("whiteboardColorScheme")),
     appearance: {
       fontFamily: normalizeFontFamily(getPref("whiteboardFontFamily")),
@@ -1123,6 +1134,18 @@ function mountWhiteboardUI(
       groupSelection: getString("whiteboard-group-selection"),
       removeFromGroup: getString("whiteboard-remove-from-group"),
       ungroup: getString("whiteboard-ungroup"),
+      joinGroup: getString("whiteboard-join-group"),
+      groupLabel: getString("whiteboard-group-label"),
+      unnamedGroup: getString("whiteboard-group-unnamed"),
+      groupMembers: getString("whiteboard-group-members", {
+        args: { count: "{count}" },
+      }),
+      groupJoined: getString("whiteboard-group-joined", {
+        args: { title: "{title}" },
+      }),
+      noGroups: getString("whiteboard-no-groups"),
+      quoteCreateClaim: getString("whiteboard-quote-create-claim"),
+      quoteCreateEvidence: getString("whiteboard-quote-create-evidence"),
       fitSelection: getString("whiteboard-fit-selection"),
       drawTools: getString("whiteboard-draw-tools"),
       selectionDetails: getString("whiteboard-selection-details"),

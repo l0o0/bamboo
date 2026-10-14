@@ -14,6 +14,8 @@ type NormalizedSaveRequest = {
 };
 
 export interface SaveCoordinatorOptions {
+  /** A paused background save stays pending; explicit force saves still run. */
+  canAutosave?: () => boolean;
   getSnapshot: () => SaveSnapshot | Promise<SaveSnapshot>;
   write: (value: string, request: NormalizedSaveRequest) => Promise<void>;
   onStateChange?: () => void;
@@ -85,8 +87,18 @@ export class SaveCoordinator {
       const request = this.pending ?? { force: false, cleanupImages: false };
       this.pending = null;
       if (!request.force && !this.dirty) continue;
+      if (!request.force && this.options.canAutosave?.() === false) {
+        this.enqueue(request);
+        return;
+      }
 
       const snapshot = await this.options.getSnapshot();
+      // Composition may start while the iframe is returning a snapshot or
+      // while a previous write is in flight. Do not drain its newer draft.
+      if (!request.force && this.options.canAutosave?.() === false) {
+        this.enqueue(request);
+        return;
+      }
       if (!request.force && snapshot.rev === this.savedRev) continue;
 
       this.writing = true;

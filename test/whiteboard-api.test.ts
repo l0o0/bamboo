@@ -103,9 +103,17 @@ test("public canvas API validates, creates, reads and protects replacement write
         LINK_MODE_LINKED_URL: 3,
         importFromFile: async (options: {
           file: string;
-          collections: number[];
+          collections?: number[];
+          parentItemID?: number;
+          libraryID?: number;
         }) => {
-          assert.deepEqual(options.collections, []);
+          if (options.parentItemID !== undefined) {
+            assert.equal(options.parentItemID, paper.id);
+            assert.equal(options.collections, undefined);
+            assert.equal(options.libraryID, undefined);
+          } else {
+            assert.deepEqual(options.collections, []);
+          }
           disk.set("/board.canvas", disk.get(options.file)!);
           return board;
         },

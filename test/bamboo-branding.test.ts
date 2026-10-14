@@ -22,7 +22,7 @@ test("uses Scholar Sketch branding with stable Bamboo compatibility identifiers"
 });
 
 test("uses packaged branding icons and a theme-aware Markdown sidebar icon", async () => {
-  const [manifestText, ...sources] = await Promise.all([
+  const [manifestText, hooks, ...sources] = await Promise.all([
     read("addon/manifest.json"),
     read("src/hooks.ts"),
     read("src/modules/markdown/menu.ts"),
@@ -30,12 +30,14 @@ test("uses packaged branding icons and a theme-aware Markdown sidebar icon", asy
     read("src/utils/ztoolkit.ts"),
   ]);
   await access("addon/content/icons/favicon.png");
+  await access("addon/content/icons/scholar-sketch-toolbar.svg");
   const manifest = JSON.parse(manifestText);
-  const combined = [manifestText, ...sources].join("\n");
+  const combined = [manifestText, hooks, ...sources].join("\n");
 
   assert.equal(manifest.name, "__addonName__ — Markdown & Whiteboard");
   assert.equal(manifest.icons["48"], "content/icons/favicon.png");
   assert.equal(manifest.icons["96"], "content/icons/favicon.png");
+  assert.match(hooks, /image:.*scholar-sketch-toolbar\.svg/);
   for (const source of sources) assert.match(source, /favicon\.png/);
   assert.doesNotMatch(combined, /favicon(?:\.svg|@0\.5x\.png)/);
   const sidebar = await read("src/modules/markdown/sidebar.ts");

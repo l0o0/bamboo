@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { posix } from "node:path";
 import test from "node:test";
 import {
   buildNoteExport,
@@ -207,7 +208,15 @@ test("exportNoteLibrary writes a new directory and reports asset copy failures",
   files.set(assetPath, new Uint8Array([1, 2, 3]));
 
   globals.PathUtils = {
-    join: (...parts: string[]) => parts.join("/").replace(/\/+/g, "/"),
+    join: (base: string, ...parts: string[]) => {
+      for (const part of parts) {
+        if (!part || /[\\/\0]/.test(part) || part === "..")
+          throw new Error(
+            "PathUtils.join: Could not append to path: NS_ERROR_FILE_UNRECOGNIZED_PATH",
+          );
+      }
+      return posix.join(base, ...parts);
+    },
     parent: (path: string) => path.slice(0, path.lastIndexOf("/")) || "/",
   };
   globals.IOUtils = {
@@ -353,6 +362,7 @@ test("reference-style images copy their definition once without changing prose o
     '![first][figure]\n![figure][]\n![figure]\n\n[figure]: <pictures/my image.png> "Title"\n\n`![code][hidden]`\n[hidden]: private.png\n',
   );
   const plan = buildNoteExport([source]);
+  assert.deepEqual(plan.warnings, []);
   assert.equal(plan.assets.length, 1);
   assert.equal(plan.assets[0].reference, "pictures/my image.png");
   assert.match(
@@ -361,4 +371,66 @@ test("reference-style images copy their definition once without changing prose o
   );
   assert.match(file(plan, source), /\[hidden\]: private.png/);
   assert.match(file(plan, source), /!\[figure\]\[\]/);
+});
+
+test("inline image export rewrites original escaped destination spelling", () => {
+  const source = note(
+    "AAAAAAAA",
+    "First.md",
+    "![entity](assets/a&amp;b.png)\n![escaped](assets/a\\!b.png)\n![angle](<assets/a&amp;b.png>)",
+  );
+  const plan = buildNoteExport([source]);
+  assert.deepEqual(plan.warnings, []);
+  assert.deepEqual(
+    plan.assets.map((asset) => asset.reference),
+    ["assets/a&b.png", "assets/a!b.png"],
+  );
+  assert.equal(
+    file(plan, source),
+    "![entity](assets/AAAAAAAA/a%26b.png)\n![escaped](assets/AAAAAAAA/a%21b.png)\n![angle](<assets/AAAAAAAA/a%26b.png>)",
+  );
+});
+
+test("HTML image relocation rewrites only the first exact src attribute across all quoting forms", () => {
+  const cases = [
+    '<img data-src="preview.png" src="actual.png" alt="Figure">',
+    '<img alt="src=other.png" src=actual.png>',
+    "<img title=\"src='other.png'\" data-src=\"preview.png\" src='actual.png'>",
+    '<IMG data-SRC=preview.png SRC = "actual.png" title="src=other.png">',
+    '<img src="actual.png" src="unused.png">',
+  ];
+  for (const format of ["wiki", "markdown"] as const) {
+    for (const input of cases) {
+      const source = note("AAAAAAAA", "First.md", input);
+      const plan = buildNoteExport([source], { format });
+      assert.equal(
+        file(plan, source),
+        input.replace("actual.png", "assets/AAAAAAAA/linked/1/actual.png"),
+      );
+      assert.deepEqual(plan.warnings, []);
+      assert.deepEqual(
+        plan.assets.map((asset) => asset.reference),
+        ["actual.png"],
+      );
+    }
+  }
+});
+
+test("joint note export rewrites both an embedded image and its outer note-link destination", () => {
+  const first = note(
+    "AAAAAAAA",
+    "First.md",
+    '[![Figure](actual.png)](Other.md#Results "Open results")',
+  );
+  const other = note("BBBBBBBB", "Other.md", "# Results");
+  for (const format of ["markdown", "wiki"] as const) {
+    const plan = buildNoteExport([first, other], { format });
+    assert.equal(
+      file(plan, first),
+      '[![Figure](assets/AAAAAAAA/linked/1/actual.png)](Other--BBBBBBBB.md#Results "Open results")',
+    );
+    assert.ok(plan.files.some((entry) => entry.path === "Other--BBBBBBBB.md"));
+    assert.equal(plan.assets[0].path, "assets/AAAAAAAA/linked/1/actual.png");
+    assert.deepEqual(plan.warnings, []);
+  }
 });

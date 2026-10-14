@@ -46,6 +46,8 @@ export interface OpenSession {
   imageRefreshTimer?: number;
   pendingImageSave?: boolean;
   titleSyncTimer?: number;
+  /** Title work survives a paused IME timer or an explicit draft snapshot. */
+  titleSyncPending?: boolean;
   applyingTitleSync?: boolean;
   pendingExplicitSave?: boolean;
   closing?: boolean;

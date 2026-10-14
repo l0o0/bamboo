@@ -33,6 +33,7 @@ let appearance: WhiteboardAppearance = {
 };
 let pendingSnapshot: CanvasDocument | null = null;
 let pendingTemplates: NoteTemplate[] = [];
+let editable = true;
 const deferredLabels = createDeferredLabels();
 let runtime: WhiteboardRuntime | null = null;
 let reactRoot: Root | null = null;
@@ -77,6 +78,8 @@ function handleParentMessage(data: ParentToWhiteboardMessage) {
   if (forwardAcademicParentMessage(runtime, data)) return;
   switch (data.type) {
     case "init":
+      editable = data.payload.editable ?? true;
+      runtime?.setEditable(editable);
       applyDocumentTheme(data.payload.theme);
       applyDocumentAppearance(
         data.payload.appearance ?? {
@@ -183,12 +186,14 @@ function boot() {
   reactRoot.render(
     <WhiteboardApp
       theme={theme}
+      editable={editable}
       colorScheme={colorScheme}
       appearance={appearance}
       labels={deferredLabels.current}
       initialSnapshot={pendingSnapshot ?? emptyCanvasDocument()}
       onReady={(next) => {
         runtime = next;
+        next.setEditable(editable);
         deferredLabels.attach(next);
         if (pendingSnapshot) next.loadSnapshot(pendingSnapshot);
         next.setTheme(theme);

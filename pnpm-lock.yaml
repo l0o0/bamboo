@@ -4,6 +4,11 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+patchedDependencies:
+  '@lezer/markdown@1.7.2':
+    hash: vqbbeiavlwesglekt5rsf57riy
+    path: patches/@lezer__markdown@1.7.2.patch
+
 importers:
 
   .:
@@ -67,7 +72,7 @@ importers:
         version: 1.2.3
       '@lezer/markdown':
         specifier: ^1.7.2
-        version: 1.7.2
+        version: 1.7.2(patch_hash=vqbbeiavlwesglekt5rsf57riy)
       '@mdit/plugin-footnote':
         specifier: ^1.1.1
         version: 1.1.1(markdown-it@15.0.2)
@@ -2559,7 +2564,7 @@ snapshots:
       '@codemirror/state': 6.7.6
       '@codemirror/view': 6.43.13
       '@lezer/common': 1.5.3
-      '@lezer/markdown': 1.7.2
+      '@lezer/markdown': 1.7.2(patch_hash=vqbbeiavlwesglekt5rsf57riy)
 
   '@codemirror/lang-python@6.2.1':
     dependencies:
@@ -2922,7 +2927,7 @@ snapshots:
     dependencies:
       '@lezer/common': 1.5.3
 
-  '@lezer/markdown@1.7.2':
+  '@lezer/markdown@1.7.2(patch_hash=vqbbeiavlwesglekt5rsf57riy)':
     dependencies:
       '@lezer/common': 1.5.3
       '@lezer/highlight': 1.2.3

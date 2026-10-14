@@ -7,6 +7,8 @@ import {
 } from "../model/file-attachment";
 import { nodeTextStyle } from "../whiteboard/document";
 import { IconFile } from "../whiteboard/icons";
+import { originalImagePreview } from "../whiteboard/file-import";
+import { useFullCanvasRender } from "../whiteboard/rendering";
 import { CardShell } from "./CardShell";
 import type { CanvasFlowNode } from "./types";
 
@@ -36,12 +38,18 @@ export function ItemNode({ data, selected }: NodeProps<CanvasFlowNode>) {
 
 export function PdfNode({ data, selected }: NodeProps<CanvasFlowNode>) {
   const labels = useWhiteboardLabels();
+  const fullRender = useFullCanvasRender();
   const model = data.model;
   const image = model.kind === "pdf" ? model.data.image : undefined;
   const fileData = model.kind === "pdf" ? model.data.fileData : undefined;
+  const imageContentType =
+    model.kind === "pdf" ? model.data.contentType : undefined;
   const imagePreview = useMemo(
-    () => previewImage(image, fileData),
-    [image, fileData],
+    () =>
+      fullRender
+        ? originalImagePreview(image, fileData, imageContentType)
+        : previewImage(image, fileData),
+    [image, fileData, imageContentType, fullRender],
   );
   if (model.kind !== "pdf") return null;
   const contentType =
@@ -70,6 +78,17 @@ export function PdfNode({ data, selected }: NodeProps<CanvasFlowNode>) {
           className="zmd-board-pdf-image"
           src={imagePreview}
           alt={model.data.title || labels.addPdf}
+          loading={fullRender ? "eager" : "lazy"}
+          decoding="async"
+          onError={(event) => {
+            const original = originalImagePreview(
+              undefined,
+              fileData,
+              imageContentType,
+            );
+            if (original && event.currentTarget.src !== original)
+              event.currentTarget.src = original;
+          }}
         />
       ) : model.data.source ? null : (
         <div className="zmd-board-pdf-page" aria-hidden="true">
@@ -96,13 +115,19 @@ export function PdfNode({ data, selected }: NodeProps<CanvasFlowNode>) {
 
 export function AttachmentNode({ data, selected }: NodeProps<CanvasFlowNode>) {
   const labels = useWhiteboardLabels();
+  const fullRender = useFullCanvasRender();
   const model = data.model;
   const image = model.kind === "attachment" ? model.data.image : undefined;
   const fileData =
     model.kind === "attachment" ? model.data.fileData : undefined;
+  const imageContentType =
+    model.kind === "attachment" ? model.data.contentType : undefined;
   const imagePreview = useMemo(
-    () => previewImage(image, fileData),
-    [image, fileData],
+    () =>
+      fullRender
+        ? originalImagePreview(image, fileData, imageContentType)
+        : previewImage(image, fileData),
+    [image, fileData, imageContentType, fullRender],
   );
   if (model.kind !== "attachment") return null;
   const contentType =
@@ -148,6 +173,17 @@ export function AttachmentNode({ data, selected }: NodeProps<CanvasFlowNode>) {
           className="zmd-board-pdf-image"
           src={imagePreview}
           alt={model.data.title || label("fileImage", "Image")}
+          loading={fullRender ? "eager" : "lazy"}
+          decoding="async"
+          onError={(event) => {
+            const original = originalImagePreview(
+              undefined,
+              fileData,
+              imageContentType,
+            );
+            if (original && event.currentTarget.src !== original)
+              event.currentTarget.src = original;
+          }}
         />
       ) : null}
       {metadata ? <p className="zmd-board-card-meta">{metadata}</p> : null}

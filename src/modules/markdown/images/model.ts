@@ -2,6 +2,7 @@ import { getString } from "../../../utils/locale";
 import { config } from "../../../../package.json";
 import { parser as markdownParser } from "@lezer/markdown";
 import MarkdownIt from "markdown-it";
+import { stripFrontmatter } from "../frontmatter";
 
 let unescapeMarkdownDestination: ((value: string) => string) | undefined;
 
@@ -41,6 +42,8 @@ export {
 export type { MarkdownImageReference } from "./html";
 import { parseHtmlImage } from "./html";
 import type { MarkdownImageReference } from "./html";
+import { normalizeAssetReference, parseWikiImage } from "./reference";
+export { normalizeAssetReference, parseWikiImage } from "./reference";
 
 export function validateImageInput(mimeType: string, size: number): string {
   const extension = MIME_EXTENSIONS[mimeType as SupportedImageMime];
@@ -75,22 +78,103 @@ export function buildAssetFilename(
   return `${Math.max(0, Math.floor(now))}-${token}.${extension}`;
 }
 
-export function normalizeAssetReference(source: string): string | null {
-  let value = source.trim();
-  if (value.startsWith("zotero-md://asset/")) {
-    value = `assets/${value.slice("zotero-md://asset/".length)}`;
+/** Try the literal filename before interpreting one layer of URI encoding. */
+export function assetReferenceCandidates(source: string): string[] {
+  const candidates: string[] = [];
+  const literal = normalizeAssetReference(source);
+  if (literal) candidates.push(literal);
+  try {
+    const decoded = normalizeAssetReference(decodeURIComponent(source));
+    if (decoded && !candidates.includes(decoded)) candidates.push(decoded);
+  } catch {
+    // A literal percent sign is a valid filename, even when it is not a URI.
   }
-  value = value.replace(/\\/g, "/");
-  // Tolerate a leading `./` (Obsidian-style relative paths). `../` and other
-  // traversal prefixes are deliberately rejected below by the `assets/` check.
-  if (value.startsWith("./")) value = value.slice(2);
-  if (!value.startsWith("assets/")) return null;
-  const name = value.slice("assets/".length);
-  if (!name || name.includes("/") || name === "." || name === "..") {
-    return null;
-  }
-  if (name.includes("\0") || /[?#]/.test(name)) return null;
-  return `assets/${name}`;
+  return candidates;
+}
+
+export function imageAssetFromMap<
+  T extends { dataUrl?: string; error?: string },
+>(source: string, assets: Readonly<Record<string, T>>): T | undefined {
+  const candidates = assetReferenceCandidates(source);
+  return (
+    candidates
+      .map((reference) => assets[reference])
+      .find((asset) => asset?.dataUrl) ??
+    candidates.map((reference) => assets[reference]).find(Boolean)
+  );
+}
+
+function unescapeDestination(value: string): string {
+  return (unescapeMarkdownDestination ??= new MarkdownIt().utils.unescapeAll)(
+    value,
+  );
+}
+
+/** Resolve cross-line CommonMark definitions without changing their source. */
+export function parseReferenceImageDocument(document: string): {
+  images: MarkdownImageReference[];
+  definitions: Array<{ from: number; to: number }>;
+} {
+  const { body: source } = stripFrontmatter(document);
+  const offset = document.length - source.length;
+  if (!source.includes("]:")) return { images: [], definitions: [] };
+  const definitionRanges: Array<{ from: number; to: number }> = [];
+  const definitions = new Map<string, { source: string; title?: string }>();
+  const labelKey = (label: string) =>
+    label.trim().replace(/\s+/g, " ").toUpperCase();
+  const tree = markdownParser.parse(source);
+  tree.iterate({
+    enter({ node }) {
+      if (node.name !== "LinkReference") return;
+      definitionRanges.push({ from: node.from + offset, to: node.to + offset });
+      const label = node.getChild("LinkLabel");
+      const url = node.getChild("URL");
+      if (!label || !url) return;
+      const key = labelKey(source.slice(label.from + 1, label.to - 1));
+      // CommonMark uses the first definition when a label is repeated.
+      if (definitions.has(key)) return;
+      const raw = source.slice(url.from, url.to);
+      const title = node.getChild("LinkTitle");
+      definitions.set(key, {
+        source: unescapeDestination(
+          raw.startsWith("<") && raw.endsWith(">") ? raw.slice(1, -1) : raw,
+        ),
+        ...(title
+          ? {
+              title: unescapeDestination(
+                source.slice(title.from + 1, title.to - 1),
+              ),
+            }
+          : {}),
+      });
+    },
+  });
+  const images: MarkdownImageReference[] = [];
+  tree.iterate({
+    enter({ node }) {
+      if (node.name !== "Image" || node.getChild("URL")) return;
+      const marks = node.getChildren("LinkMark");
+      if (marks.length < 2) return;
+      const alt = source.slice(marks[0].to, marks[1].from);
+      const label = node.getChild("LinkLabel");
+      const rawLabel = label ? source.slice(label.from + 1, label.to - 1) : "";
+      const definition = definitions.get(labelKey(rawLabel || alt));
+      if (!definition) return;
+      images.push({
+        from: node.from + offset,
+        to: node.to + offset,
+        alt: unescapeDestination(alt),
+        ...definition,
+      });
+    },
+  });
+  return { images, definitions: definitionRanges };
+}
+
+export function parseReferenceMarkdownImages(
+  document: string,
+): MarkdownImageReference[] {
+  return parseReferenceImageDocument(document).images;
 }
 
 export function mimeFromAssetPath(path: string): SupportedImageMime | null {
@@ -115,7 +199,7 @@ export function parseMarkdownImages(source: string): MarkdownImageReference[] {
     if (src === undefined) continue;
     images.push({
       alt: alt ?? "",
-      source: src,
+      source: unescapeDestination(src),
       from: match.index,
       to: match.index + match[0].length,
       ...(title !== undefined ? { title } : {}),
@@ -137,12 +221,28 @@ export function parseMarkdownImages(source: string): MarkdownImageReference[] {
     }
     images.push(image);
   }
+  for (const match of source.matchAll(/!\[\[[^\]\n]+\]\]/g)) {
+    if (
+      images.some(
+        (image) => image.from <= match.index && image.to > match.index,
+      )
+    )
+      continue;
+    const image = parseWikiImage(source, match.index);
+    if (image) images.push(image);
+  }
+  for (const image of parseReferenceMarkdownImages(source)) {
+    if (
+      !images.some((other) => other.from <= image.from && other.to >= image.to)
+    )
+      images.push(image);
+  }
   return images.sort((a, b) => a.from - b.from);
 }
 
 export function referencedAssets(source: string): string[] {
-  const refs = parseMarkdownImages(source).map((image) =>
-    normalizeAssetReference(image.source),
+  const refs: Array<string | null> = parseMarkdownImages(source).flatMap(
+    (image) => assetReferenceCandidates(image.source),
   );
   // Obsidian-style wikilinks `![[name.ext]]` refer to a sibling of the note
   // (here: the attachment's `assets/` folder). Counting them as references
@@ -157,8 +257,6 @@ export function referencedAssets(source: string): string[] {
   // without treating fenced examples or remote URLs as local references.
   if (source.includes("]:")) {
     // Keep this lazy: the same module also supplies lightweight editor helpers.
-    const unescapeDestination = (unescapeMarkdownDestination ??=
-      new MarkdownIt().utils.unescapeAll);
     markdownParser.parse(source).iterate({
       enter({ node }) {
         if (node.name !== "LinkReference") return;
@@ -168,8 +266,8 @@ export function referencedAssets(source: string): string[] {
         const literal =
           raw.startsWith("<") && raw.endsWith(">") ? raw.slice(1, -1) : raw;
         const destination = unescapeDestination(literal);
-        refs.push(normalizeAssetReference(literal));
-        refs.push(normalizeAssetReference(destination));
+        refs.push(...assetReferenceCandidates(literal));
+        refs.push(...assetReferenceCandidates(destination));
         // URL-encoded local filenames can point at the same physical asset.
         // Keep the literal spelling too; cleanup deliberately favors keeping
         // an extra file over deleting a possibly referenced image.

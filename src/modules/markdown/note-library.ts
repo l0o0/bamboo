@@ -9,12 +9,25 @@ import type { NoteDocument, PortableNote } from "./note-links";
 
 type NoteListener = (libraryID: number) => void;
 
+export interface NoteReadFailure {
+  key: string;
+  title: string;
+  reason: "not-downloaded" | "unavailable" | "read-error" | "index-error";
+  stage: "path" | "stat" | "read" | "parse";
+}
+
+interface IndexedNoteDocument extends NoteDocument {
+  readFailure?: NoteReadFailure;
+}
+
 interface LibraryCache {
-  notes: Map<string, NoteDocument>;
+  notes: Map<string, IndexedNoteDocument>;
   groupID: number | undefined | null;
   generation: number;
   loaded: boolean;
-  pending?: Promise<NoteDocument[]>;
+  pending?: Promise<IndexedNoteDocument[]>;
+  indexPending?: Promise<boolean>;
+  indexedGeneration?: number;
 }
 
 const libraries = new Map<number, LibraryCache>();
@@ -70,6 +83,23 @@ export function registerNoteLibraryObserver(): void {
   observerID = Zotero.Notifier.registerObserver(
     {
       notify(event, type, ids = [], extraData = {}) {
+        if (type === "sync") {
+          // Native Runner emits finish/sync, absent from the host's Event union.
+          if ((event as string) !== "finish") return;
+          // Normal attachment downloads save with skipAll, so no item/file
+          // notification follows. Retry only loaded libraries with failures.
+          const synced = new Set(ids.map(Number));
+          for (const [libraryID, entry] of [...libraries]) {
+            if (!entry.loaded || (ids.length && !synced.has(libraryID)))
+              continue;
+            for (const note of entry.notes.values()) {
+              if (!note.readError) continue;
+              invalidateNoteLibrary(libraryID);
+              break;
+            }
+          }
+          return;
+        }
         if (
           !(type === "item" || type === "file") ||
           !["add", "modify", "delete", "trash", "refresh", "move"].includes(
@@ -113,7 +143,7 @@ export function registerNoteLibraryObserver(): void {
         }
       },
     },
-    ["item", "file"],
+    ["item", "file", "sync"],
     "scholarcanvas-note-library",
   );
 }
@@ -202,6 +232,10 @@ export function noteMetadata(item: Zotero.Item): PortableNote | null {
       (item as any).isTrashed?.() ||
       !isMarkdownAttachment(item)
     )
+      return null;
+    // Items.getAll() excludes an attachment's own deleted flag, but includes
+    // children of a trashed parent. Native Item has no isTrashed() helper.
+    if (item.parentItemID && zotero()?.Items?.get?.(item.parentItemID)?.deleted)
       return null;
   } catch {
     return null;
@@ -293,11 +327,13 @@ async function readDocument(
   item: Zotero.Item,
   metadata: PortableNote,
   previous?: NoteDocument,
-): Promise<NoteDocument> {
+): Promise<IndexedNoteDocument> {
   const base = { ...metadata, path: previous?.path };
+  let stage: NoteReadFailure["stage"] = "path";
   try {
     const path = (await item.getFilePathAsync()) || undefined;
     if (!path) throw new Error("Attachment has no file path");
+    stage = "stat";
     const before = await fileStamp(path);
     if (
       before &&
@@ -309,15 +345,18 @@ async function readDocument(
     ) {
       return { ...previous, ...metadata, path };
     }
+    stage = "read";
     const raw = await zotero()?.File?.getContentsAsync?.(path);
     if (raw == null) throw new Error("Attachment contents are unavailable");
     const content = typeof raw === "string" ? raw : String(raw);
+    stage = "stat";
     const after = await fileStamp(path);
     const stable =
       before &&
       after &&
       before.fileModified === after.fileModified &&
       before.fileSize === after.fileSize;
+    stage = "parse";
     return {
       ...base,
       path,
@@ -326,6 +365,44 @@ async function readDocument(
       ...(stable ? after : {}),
     };
   } catch (error) {
+    let reason: NoteReadFailure["reason"] =
+      stage === "path"
+        ? "unavailable"
+        : stage === "parse"
+          ? "index-error"
+          : "read-error";
+    if (stage === "path") {
+      try {
+        // Classify only unavailable stored files with a valid native path and
+        // a pending download. Never download attachments during indexing.
+        const state = item.attachmentSyncState;
+        if (
+          item.isStoredFileAttachment?.() &&
+          item.getFilePath?.() &&
+          (state === 1 || state === 4)
+        )
+          reason = "not-downloaded";
+      } catch {
+        // Invalid or linked paths remain unavailable, without guessing why.
+      }
+    }
+    const readFailure: NoteReadFailure = {
+      key: metadata.key,
+      title: metadata.title,
+      reason,
+      stage,
+    };
+    try {
+      zotero()?.debug?.(
+        `[Scholar Sketch] Note indexing unavailable ${JSON.stringify({
+          libraryID: metadata.libraryID,
+          ...readFailure,
+          errorName: (error as { name?: string } | null)?.name,
+        })}`,
+      );
+    } catch {
+      // Diagnostics must not make an unavailable attachment break the library.
+    }
     // Keep a previous successful body available for in-memory callers, but
     // always surface the read failure so it cannot masquerade as an empty note.
     return {
@@ -333,6 +410,7 @@ async function readDocument(
       content: previous?.content ?? "",
       ...(previous?.path ? { path: previous.path } : {}),
       readError: error instanceof Error ? error.message : String(error),
+      readFailure,
     };
   }
 }
@@ -351,7 +429,7 @@ function notify(libraryID: number): void {
 export async function readLibraryNotes(
   libraryID: number,
   options: { refresh?: boolean; changedKeys?: ReadonlySet<string> } = {},
-): Promise<NoteDocument[]> {
+): Promise<IndexedNoteDocument[]> {
   if (!Number.isSafeInteger(libraryID) || libraryID <= 0) return [];
   const epoch = lifecycle;
   let entry = libraries.get(libraryID);
@@ -386,10 +464,13 @@ export async function readLibraryNotes(
     const persisted = options.refresh ? [] : await noteIndex().load(libraryID);
     const old = new Map(persisted.map((note) => [note.key, note]));
     for (const [key, note] of current.notes) old.set(key, note);
-    const staged = new Map<string, NoteDocument>();
+    const staged = new Map<string, IndexedNoteDocument>();
     const items = await loadItems(libraryID);
+    let scanned = 0;
     for (const item of items) {
       if (epoch !== lifecycle) return [];
+      if (++scanned % 24 === 0)
+        await new Promise<void>((resolve) => setTimeout(resolve, 0));
       const metadata = noteMetadata(item);
       if (!metadata) continue;
       const before = current.generation;
@@ -439,14 +520,24 @@ export async function readLibraryNotes(
     }
     current.notes = staged;
     const generation = current.generation;
-    void noteIndex().replace(
-      libraryID,
-      [...staged.values()],
-      () =>
-        libraries.get(libraryID) === current &&
-        current.generation === generation,
-      options.refresh,
-    );
+    current.indexPending = noteIndex()
+      .replace(
+        libraryID,
+        [...staged.values()],
+        () =>
+          libraries.get(libraryID) === current &&
+          current.generation === generation,
+        options.refresh,
+      )
+      .then((saved) => {
+        if (
+          saved &&
+          libraries.get(libraryID) === current &&
+          current.generation === generation
+        )
+          current.indexedGeneration = generation;
+        return saved;
+      });
     current.loaded = true;
     current.pending = undefined;
     return [...current.notes.values()];
@@ -472,11 +563,68 @@ export function updateIndexedNote(item: Zotero.Item, content: string): void {
     ...(previous?.path ? { path: previous.path } : {}),
   };
   // No file stamp: a later scan must verify this body against the actual file.
-  void noteIndex().save(note);
+  const saved = noteIndex().save(note);
   if (!entry) return;
+  const previousGeneration = entry.generation;
   entry.generation += 1;
+  const generation = entry.generation;
+  entry.indexPending = saved.then((success) => {
+    if (success && entry.indexedGeneration === previousGeneration)
+      entry.indexedGeneration = generation;
+    return success;
+  });
   entry.notes.set(metadata.key, note);
   notify(metadata.libraryID);
+}
+
+/** A current snapshot and its candidate index must describe the same generation. */
+export async function readLibrarySearchCandidates(
+  libraryID: number,
+  query: string,
+  isCancelled: () => boolean = () => false,
+): Promise<NoteDocument[]> {
+  const epoch = lifecycle;
+  const cancelled = () => epoch !== lifecycle || isCancelled();
+  while (!cancelled()) {
+    const notes = await readLibraryNotes(libraryID);
+    if (cancelled()) return [];
+    const current = libraries.get(libraryID);
+    if (!current) return notes;
+    await current.indexPending;
+    if (cancelled()) return [];
+    if (libraries.get(libraryID) !== current) continue;
+    const generation = current.generation;
+    if (current.indexedGeneration !== generation) {
+      current.indexPending = noteIndex().replace(
+        libraryID,
+        [...current.notes.values()],
+        () =>
+          libraries.get(libraryID) === current &&
+          current.generation === generation,
+      );
+      const saved = await current.indexPending;
+      if (cancelled()) return [];
+      if (
+        libraries.get(libraryID) !== current ||
+        current.generation !== generation
+      )
+        continue;
+      if (!saved) return [...current.notes.values()];
+      current.indexedGeneration = generation;
+    }
+    const keys = await noteIndex().searchCandidateKeys(libraryID, query);
+    if (cancelled()) return [];
+    if (
+      libraries.get(libraryID) !== current ||
+      current.generation !== generation
+    )
+      continue;
+    const snapshot = [...current.notes.values()];
+    // Candidate row order changes on saves; preserve the library's established
+    // order so the same first 100 matches remain visible.
+    return keys ? snapshot.filter((note) => keys.has(note.key)) : snapshot;
+  }
+  return [];
 }
 
 export function invalidateNoteLibrary(libraryID: number): void {
@@ -531,9 +679,10 @@ export async function getNoteBacklinks(item: Zotero.Item): Promise<{
     position: number;
   }[];
   unreadable: number;
+  failures: NoteReadFailure[];
 }> {
   const target = noteMetadata(item);
-  if (!target) return { entries: [], unreadable: 0 };
+  if (!target) return { entries: [], unreadable: 0, failures: [] };
   const notes = await readLibraryNotes(target.libraryID);
   const entries: {
     key: string;
@@ -544,11 +693,18 @@ export async function getNoteBacklinks(item: Zotero.Item): Promise<{
     excerpt: string;
     position: number;
   }[] = [];
-  let unreadable = 0;
+  const failures: NoteReadFailure[] = [];
   for (const source of notes) {
     if (source.key === target.key) continue;
     if (source.readError) {
-      unreadable += 1;
+      failures.push(
+        source.readFailure ?? {
+          key: source.key,
+          title: source.title,
+          reason: "read-error",
+          stage: "read",
+        },
+      );
       continue;
     }
     for (const link of source.links ?? extractNoteLinks(source.content)) {
@@ -566,5 +722,5 @@ export async function getNoteBacklinks(item: Zotero.Item): Promise<{
       });
     }
   }
-  return { entries, unreadable };
+  return { entries, unreadable: failures.length, failures };
 }

@@ -1,4 +1,5 @@
 import { isPdfDocumentLink } from "./document-link-shared";
+import { isEditorLinkIcon, type EditorLinkFilter } from "./editor-protocol";
 import { isMarkdownAttachment } from "./detect";
 import { isWhiteboardAttachment } from "../whiteboard/detect";
 import { getString } from "../../utils/locale";
@@ -29,7 +30,8 @@ import {
 /** Maximum number of suggestions returned to an editor completion popup. */
 export const MAX_DOCUMENT_LINK_RESULTS = 24;
 
-export type DocumentLinkCandidateKind = "markdown" | "canvas" | "regular";
+export type DocumentLinkCandidateKind =
+  "markdown" | "canvas" | "regular" | "note" | "attachment";
 
 export interface DocumentLinkCandidate {
   key: string;
@@ -39,6 +41,10 @@ export interface DocumentLinkCandidate {
   kind: DocumentLinkCandidateKind;
   /** Localized label for UI surfaces; the stable kind remains machine-readable. */
   kindLabel?: string;
+  /** Validated host-owned icon; never an attachment or network URL. */
+  icon?: string;
+  /** The first author of the item (or its parent for notes/attachments). */
+  author?: string;
   href: string;
   /** Actual attachment filename for Markdown notes. */
   filename?: string;
@@ -56,6 +62,10 @@ export function documentLinkKindLabel(kind: DocumentLinkCandidateKind): string {
       return getString("document-link-kind-canvas");
     case "regular":
       return getString("document-link-kind-regular");
+    case "note":
+      return getString("document-link-kind-note");
+    case "attachment":
+      return getString("document-link-kind-attachment");
   }
 }
 
@@ -90,16 +100,92 @@ function reportDocumentLinkResult(result: DocumentLinkOpenResult): void {
   }
 }
 
+const hostIconCache = new Map<string, string>();
+
+function itemAvailable(item: Zotero.Item): boolean {
+  try {
+    if (item.deleted || (item as any).isTrashed?.()) return false;
+    if (item.parentItemID) {
+      const parent = Zotero.Items.get(item.parentItemID);
+      if (
+        !parent ||
+        parent.libraryID !== item.libraryID ||
+        parent.deleted ||
+        (parent as any).isTrashed?.()
+      )
+        return false;
+    }
+    return true;
+  } catch {
+    // A missing/unloaded parent must not expose a child from the trash.
+    return false;
+  }
+}
+
+function itemPresentation(
+  item: Zotero.Item,
+  kind: DocumentLinkCandidateKind,
+): Pick<DocumentLinkCandidate, "kindLabel" | "icon"> {
+  let kindLabel = documentLinkKindLabel(kind);
+  if (kind === "regular" || kind === "note" || kind === "attachment") {
+    try {
+      const label = Zotero.ItemTypes.getLocalizedString(item.itemTypeID);
+      if (typeof label === "string" && label.length > 0 && label.length <= 100)
+        kindLabel = label;
+      if (kind === "attachment" && item.isPDFAttachment?.()) kindLabel = "PDF";
+    } catch {
+      // Older wrappers may not expose the localized native type registry.
+    }
+  }
+  try {
+    const name =
+      item.getItemTypeIconName?.() || String(item.itemTypeID || kind);
+    const dark = Zotero.getMainWindow?.()?.matchMedia?.(
+      "(prefers-color-scheme: dark)",
+    )?.matches;
+    const key = `${dark ? "dark" : "light"}:${Zotero.hiDPISuffix || ""}:${name}`;
+    let icon = hostIconCache.get(key);
+    if (!icon) {
+      const source = item.getImageSrc?.();
+      if (isEditorLinkIcon(source)) {
+        icon = source;
+        // Native getImageSrc logs a deprecation warning. Resolve each type
+        // once rather than repeatedly invoking it on every search keystroke.
+        if (hostIconCache.size < 256) hostIconCache.set(key, icon);
+      }
+    }
+    if (icon) return { kindLabel, icon };
+  } catch {
+    // Unsupported host types keep their label without exposing an icon URL.
+  }
+  return { kindLabel };
+}
+
 function candidateTitle(item: Zotero.Item): string {
-  const attachment = item.isAttachment();
-  const filename = attachment ? item.attachmentFilename || "" : "";
   let title = "";
   try {
     title = String(item.getField("title") || "");
   } catch {
     // Some lightweight test/runtime item wrappers expose filename only.
   }
-  const display = item.getDisplayTitle?.();
+  if (title) return documentLinkTitle(title);
+  let filename = "";
+  try {
+    if (
+      item.isAttachment() &&
+      item.attachmentLinkMode !== Zotero.Attachments.LINK_MODE_LINKED_URL
+    )
+      filename = item.attachmentFilename || "";
+  } catch {
+    // Native filename access can throw for an old/foreign linked-file path.
+    // A bad attachment path must not clear unrelated search results.
+  }
+  let display: unknown;
+  try {
+    display = item.getDisplayTitle?.();
+  } catch {
+    // Missing itemData still leaves a stable key/filename fallback.
+  }
   // getDisplayTitle() is Promise-like in some Zotero versions. Completion is
   // metadata-only and must never leak "[object Promise]" as a title.
   const fallback =
@@ -108,6 +194,73 @@ function candidateTitle(item: Zotero.Item): string {
       ? String(display)
       : item.key;
   return documentLinkTitle(title || filename || fallback);
+}
+
+function authorItem(item: Zotero.Item): Zotero.Item | undefined {
+  try {
+    if (item.isRegularItem?.()) return item;
+    if (!(item.isAttachment?.() || item.isNote?.()) || !item.parentItemID)
+      return undefined;
+    const parent = Zotero.Items.get(item.parentItemID);
+    return parent &&
+      parent.libraryID === item.libraryID &&
+      parent.isRegularItem?.() &&
+      itemAvailable(parent)
+      ? parent
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function firstAuthor(item: Zotero.Item): string | undefined {
+  try {
+    const source = authorItem(item);
+    const authorTypeID = Zotero.CreatorTypes?.getID("author");
+    if (!source || !authorTypeID) return undefined;
+    const author = source
+      .getCreators?.()
+      .find((creator) => creator.creatorTypeID === authorTypeID);
+    if (!author) return undefined;
+    const first = String(author.firstName || "").trim();
+    const last = String(author.lastName || "").trim();
+    // Zotero's single-field creators store an organization in lastName.
+    const name =
+      author.fieldMode === 1
+        ? last
+        : /^[\p{Script=Han}]+$/u.test(first) &&
+            /^[\p{Script=Han}]+$/u.test(last)
+          ? last + first
+          : [first, last].filter(Boolean).join(" ");
+    return name.replace(/\s+/g, " ").trim().slice(0, 200) || undefined;
+  } catch {
+    // Creators can be unavailable while a library is loading. Keep the title.
+    return undefined;
+  }
+}
+
+async function loadCandidateCreators(
+  items: Iterable<Zotero.Item>,
+): Promise<void> {
+  if (!Zotero.Items.loadDataTypes) return;
+  const sources = new Map<number, Zotero.Item>();
+  for (const item of items) {
+    const source = authorItem(item);
+    if (source) sources.set(source.id, source);
+  }
+  if (!sources.size) return;
+  try {
+    // Only candidate authors are needed; never load attachment/note bodies.
+    await Zotero.Items.loadDataTypes([...sources.values()], ["creators"]);
+  } catch {
+    for (const source of sources.values()) {
+      try {
+        await Zotero.Items.loadDataTypes([source], ["creators"]);
+      } catch {
+        // An unavailable creator record must not hide the other candidates.
+      }
+    }
+  }
 }
 
 function groupIDForLibrary(libraryID: number): number | false | null {
@@ -166,10 +319,22 @@ function candidateFromItem(
   note?: PortableNote & { readError?: string },
   heading?: string,
 ): DocumentLinkCandidate | null {
-  if (!item?.key || !Number.isSafeInteger(item.libraryID)) return null;
+  if (
+    !item?.key ||
+    !Number.isSafeInteger(item.libraryID) ||
+    !itemAvailable(item)
+  )
+    return null;
   let kind: DocumentLinkCandidateKind;
-  if (isMarkdownAttachment(item)) kind = "markdown";
-  else if (isWhiteboardAttachment(item)) kind = "canvas";
+  if (item.isAttachment()) {
+    kind = "attachment";
+    try {
+      if (isMarkdownAttachment(item)) kind = "markdown";
+      else if (isWhiteboardAttachment(item)) kind = "canvas";
+    } catch {
+      // An unreadable filename still leaves a usable native attachment link.
+    }
+  } else if ((item as Zotero.Item).isNote?.()) kind = "note";
   else if ((item as any).isRegularItem?.()) kind = "regular";
   else return null;
 
@@ -188,7 +353,10 @@ function candidateFromItem(
     return null;
   }
   if (kind === "markdown" && note) {
-    return candidateFromNote(note, item.id, heading);
+    return {
+      ...candidateFromNote(note, item.id, heading),
+      ...itemPresentation(item, kind),
+    };
   }
   return {
     key: item.key,
@@ -196,7 +364,7 @@ function candidateFromItem(
     ...(typeof groupID === "number" ? { groupID } : {}),
     title: candidateTitle(item),
     kind,
-    kindLabel: documentLinkKindLabel(kind),
+    ...itemPresentation(item, kind),
     href,
     itemID: item.id,
   };
@@ -223,7 +391,7 @@ function aliasValues(note: Pick<NoteDocument, "title" | "filename">): string[] {
 }
 
 function noteMatches(
-  note: NoteDocument,
+  note: Pick<NoteDocument, "title" | "filename">,
   query: string,
   exact: boolean,
 ): boolean {
@@ -284,6 +452,267 @@ export function searchLinkCandidates(
   return { status: "unresolved", candidates: [] };
 }
 
+type DocumentLinkSearchOptions = {
+  currentContent?: string;
+  filter?: EditorLinkFilter;
+  win?: Window;
+};
+
+async function loadLinkRecords(ids: readonly number[]): Promise<Zotero.Item[]> {
+  const api = Zotero.Items;
+  try {
+    const records = api.getAsync
+      ? await api.getAsync([...ids])
+      : api.get([...ids]);
+    return (Array.isArray(records) ? records : [records]).filter(
+      Boolean,
+    ) as Zotero.Item[];
+  } catch {
+    // A tab can become stale while its library is loading. Preserve the other
+    // candidates if one record disappeared after the search/state snapshot.
+    const records: Zotero.Item[] = [];
+    for (const id of ids) {
+      try {
+        const item = api.getAsync ? await api.getAsync(id) : api.get(id);
+        if (item && !Array.isArray(item)) records.push(item);
+      } catch {
+        // Skip just the stale record.
+      }
+    }
+    return records;
+  }
+}
+
+async function loadLinkItems(ids: readonly number[]): Promise<Zotero.Item[]> {
+  const items = await loadLinkRecords(ids);
+  const parentIDs = new Set<number>();
+  for (const item of items) {
+    try {
+      const id = item.parentItemID;
+      if (typeof id === "number" && Number.isSafeInteger(id) && id > 0)
+        parentIDs.add(id);
+    } catch {
+      // One stale child must not discard the rest of the metadata batch.
+    }
+  }
+  // Opening tabs from other libraries may reference parents/itemData that are
+  // not cached yet. itemData includes native note titles, never their bodies.
+  const parents = parentIDs.size ? await loadLinkRecords([...parentIDs]) : [];
+  if (Zotero.Items.loadDataTypes) {
+    try {
+      await Zotero.Items.loadDataTypes([...items, ...parents], ["itemData"]);
+    } catch {
+      for (const item of [...items, ...parents]) {
+        try {
+          await Zotero.Items.loadDataTypes([item], ["itemData"]);
+        } catch {
+          // The title accessor below can still fall back to a stable key.
+        }
+      }
+    }
+  }
+  return items;
+}
+
+function candidateMatchesQuery(
+  item: Zotero.Item,
+  query: string,
+  exact: boolean,
+): boolean {
+  const note = noteMetadata(item);
+  if (note) return noteMatches(note, query, exact);
+  const title = candidateTitle(item).toLocaleLowerCase();
+  const needle = query.toLocaleLowerCase();
+  return !needle || (exact ? title === needle : title.includes(needle));
+}
+
+function matchesFilter(item: Zotero.Item, filter: EditorLinkFilter): boolean {
+  if (filter === "regular") return Boolean(item.isRegularItem?.());
+  if (filter === "notes-attachments")
+    return Boolean(item.isNote?.() || item.isAttachment?.());
+  return true;
+}
+
+async function openTabItems(win?: Window): Promise<Zotero.Item[]> {
+  const owner = win as
+    (Window & { Zotero_Tabs?: { getState?: () => any[] } }) | undefined;
+  const tabs =
+    owner?.Zotero_Tabs ||
+    owner?.opener?.Zotero_Tabs ||
+    Zotero.getMainWindow?.()?.Zotero_Tabs;
+  const state = tabs?.getState?.();
+  if (!Array.isArray(state)) return [];
+  const ids = [
+    ...new Set(
+      state
+        .filter((tab) => tab.type !== "library")
+        .map((tab) => tab.data?.itemID)
+        .filter(
+          (id): id is number =>
+            typeof id === "number" && Number.isSafeInteger(id) && id > 0,
+        ),
+    ),
+  ];
+  const opened: Zotero.Item[] = [];
+  for (let offset = 0; offset < ids.length; offset += 48)
+    opened.push(...(await loadLinkItems(ids.slice(offset, offset + 48))));
+  const result = new Map<number, Zotero.Item>();
+  for (const item of opened) {
+    if (!itemAvailable(item)) continue;
+    result.set(item.id, item);
+    if (item.parentItemID) {
+      const parent = Zotero.Items.get(item.parentItemID);
+      if (parent && itemAvailable(parent)) result.set(parent.id, parent);
+    }
+  }
+  return [...result.values()];
+}
+
+/** Explicit popup scopes remain metadata-only unless a heading is requested. */
+async function searchFilteredDocumentLinks(
+  currentItem: Zotero.Item,
+  query: string,
+  exact: boolean,
+  options: DocumentLinkSearchOptions,
+): Promise<DocumentLinkCandidate[]> {
+  const filter = options.filter!;
+  const parts = noteQueryParts(query);
+  const headingQuery = filter !== "regular" && parts.heading !== undefined;
+  const name = headingQuery ? parts.name : query;
+  const selected = new Map<string, Zotero.Item>();
+  const addItems = (items: readonly Zotero.Item[]) => {
+    for (const item of items) {
+      try {
+        if (
+          (filter !== "open" && item.libraryID !== currentItem.libraryID) ||
+          !itemAvailable(item) ||
+          !matchesFilter(item, filter) ||
+          (headingQuery && !isMarkdownAttachment(item)) ||
+          !candidateMatchesQuery(item, name, exact)
+        )
+          continue;
+        const candidate = candidateFromItem(item);
+        if (!candidate) continue;
+        selected.set(`${item.libraryID}:${item.key}`, item);
+        if (!headingQuery && selected.size >= MAX_DOCUMENT_LINK_RESULTS) break;
+      } catch {
+        // Additional attachment/note scans may encounter malformed metadata.
+        // Preserve successful title matches and continue with the next record.
+        continue;
+      }
+    }
+  };
+  if (filter === "open") {
+    addItems(await openTabItems(options.win));
+  } else {
+    const Search = (globalThis as { Zotero?: any }).Zotero?.Search;
+    if (typeof Search !== "function") return [];
+    const collect = async (type?: "attachment" | "note") => {
+      try {
+        const search = new Search({ libraryID: currentItem.libraryID });
+        if (type) search.addCondition("itemType", "is", type);
+        else search.addCondition("title", exact ? "is" : "contains", name);
+        const searchIDs = await search.search();
+        const ids: number[] = Array.isArray(searchIDs) ? searchIDs : [];
+        for (let offset = 0; offset < ids.length; offset += 48) {
+          addItems(await loadLinkItems(ids.slice(offset, offset + 48)));
+          if (!headingQuery && selected.size >= MAX_DOCUMENT_LINK_RESULTS)
+            break;
+        }
+      } catch {
+        // Each index is optional enrichment. A failed attachment/note search
+        // must not erase candidates returned by the main title search.
+      }
+    };
+    await collect();
+    // Zotero titles may differ from Markdown filenames. Match filename aliases
+    // from attachment metadata, without building/reading the full body index.
+    if (
+      filter !== "regular" &&
+      name &&
+      selected.size < MAX_DOCUMENT_LINK_RESULTS
+    )
+      await collect("attachment");
+    // Native note titles live in itemNotes rather than the title field index.
+    if (
+      filter !== "regular" &&
+      !headingQuery &&
+      selected.size < MAX_DOCUMENT_LINK_RESULTS
+    )
+      await collect("note");
+    if (currentItem.key && itemAvailable(currentItem)) addItems([currentItem]);
+  }
+
+  const notesByLibrary = new Map<number, Map<string, NoteDocument>>();
+  if (headingQuery) {
+    for (const item of selected.values()) {
+      if (notesByLibrary.has(item.libraryID)) continue;
+      let notes: NoteDocument[] = [];
+      try {
+        notes = await readLibraryNotes(item.libraryID);
+      } catch {
+        // An unsaved current draft can still supply heading candidates.
+      }
+      notesByLibrary.set(
+        item.libraryID,
+        new Map(notes.map((note) => [note.key, note])),
+      );
+    }
+  }
+  const candidates: DocumentLinkCandidate[] = [];
+  candidateItems: for (const item of selected.values()) {
+    try {
+      let note: PortableNote | null;
+      try {
+        note = noteMetadata(item);
+      } catch {
+        // Metadata may change between matching and rendering this candidate.
+        note = null;
+      }
+      const sameLibrary = item.libraryID === currentItem.libraryID;
+      if (headingQuery) {
+        const saved = notesByLibrary.get(item.libraryID)?.get(item.key);
+        const content =
+          item.id === currentItem.id && options.currentContent !== undefined
+            ? options.currentContent
+            : saved && !saved.readError
+              ? saved.content
+              : undefined;
+        // A relative Markdown heading link cannot address a different library.
+        if (!note || content === undefined || !sameLibrary) continue;
+        for (const heading of noteHeadings(content)) {
+          if (!headingMatches(heading.text, parts.heading!, exact)) continue;
+          const candidate = candidateFromItem(item, note, heading.text);
+          if (candidate) candidates.push(candidate);
+          if (candidates.length >= MAX_DOCUMENT_LINK_RESULTS)
+            break candidateItems;
+        }
+      } else {
+        const candidate = candidateFromItem(
+          item,
+          sameLibrary ? note || undefined : undefined,
+        );
+        if (candidate) candidates.push(candidate);
+      }
+      if (candidates.length >= MAX_DOCUMENT_LINK_RESULTS) break;
+    } catch {
+      // A record can become unavailable while awaiting heading metadata.
+      // Preserve candidates from the other records in the same request.
+    }
+  }
+  const authorItems = candidates.flatMap((candidate) => {
+    const item = selected.get(`${candidate.libraryID}:${candidate.key}`);
+    return item ? [item] : [];
+  });
+  await loadCandidateCreators(authorItems);
+  for (const candidate of candidates) {
+    const item = selected.get(`${candidate.libraryID}:${candidate.key}`);
+    const author = item && firstAuthor(item);
+    if (author) candidate.author = author;
+  }
+  return candidates;
+}
+
 /**
  * Search metadata only. Zotero's indexed title search avoids reading every
  * attachment file; only a bounded set of item records is loaded afterward.
@@ -292,11 +721,28 @@ export async function searchDocumentLinks(
   currentItem: Zotero.Item,
   query: string,
   exact = false,
-  options: { currentContent?: string } = {},
+  options: DocumentLinkSearchOptions = {},
 ): Promise<DocumentLinkCandidate[]> {
   const needle = query.trim();
   if (!currentItem || !Number.isSafeInteger(currentItem.libraryID)) {
     return [];
+  }
+  if (options.filter) {
+    try {
+      return await searchFilteredDocumentLinks(
+        currentItem,
+        needle,
+        exact,
+        options,
+      );
+    } catch (error) {
+      try {
+        ztoolkit.log("Document-link completion search failed", error);
+      } catch {
+        // Completion must not interrupt editing if logging is unavailable.
+      }
+      return [];
+    }
   }
   const zotero = (globalThis as { Zotero?: any }).Zotero;
   const Search = zotero?.Search;
@@ -359,7 +805,14 @@ export async function searchDocumentLinks(
         const metadata = noteMetadata(item);
         if (metadata) metadataByKey.set(metadata.key, metadata);
         const candidate = candidateFromItem(item, metadata || undefined);
-        if (candidate) allCandidates.push(candidate);
+        // Unfiltered callers perform legacy wiki-title resolution. Keep their
+        // original scope while explicit completion filters include native items.
+        if (
+          candidate &&
+          candidate.kind !== "note" &&
+          candidate.kind !== "attachment"
+        )
+          allCandidates.push(candidate);
       }
     }
 
@@ -713,7 +1166,7 @@ async function openResolvedCandidate(
 ): Promise<DocumentLinkOpenResult> {
   const item =
     candidate.itemID != null ? Zotero.Items.get(candidate.itemID) : false;
-  if (!item) return { status: "unresolved" };
+  if (!item || !itemAvailable(item)) return { status: "unresolved" };
   try {
     if (candidate.kind === "markdown") {
       const note = options.note || noteMetadata(item);
@@ -794,6 +1247,18 @@ async function openResolvedCandidate(
       const pane =
         (win as _ZoteroTypes.MainWindow | undefined)?.ZoteroPane ||
         Zotero.getActiveZoteroPane?.();
+      if (candidate.kind === "note" && pane?.openNote) {
+        await pane.openNote(item.id);
+        return { status: "opened", candidate };
+      }
+      if (candidate.kind === "note" && pane?.openNoteWindow) {
+        await pane.openNoteWindow(item.id);
+        return { status: "opened", candidate };
+      }
+      if (candidate.kind === "attachment" && pane?.viewAttachment) {
+        await pane.viewAttachment(item.id);
+        return { status: "opened", candidate };
+      }
       if (pane?.selectItem) {
         await pane.selectItem(item.id);
         return { status: "opened", candidate };

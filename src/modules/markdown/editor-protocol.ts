@@ -2,6 +2,8 @@ import type { FontFamilyID } from "./preferences";
 import { validViewState, type DocumentViewState } from "./editor-view-state";
 import { parseDocumentLink } from "./document-link-shared";
 import { parseNoteLink, portableNoteFilename } from "./note-links";
+import type { EditorTableLabels } from "../../editor/table-labels";
+import { config } from "../../../package.json";
 
 /**
  * postMessage protocol between the Zotero tab (parent) and the
@@ -39,13 +41,28 @@ export interface ImageAssetMap {
 }
 
 /** Serializable metadata shown by the [[…]] completion popup. */
+export type EditorLinkFilter = "all" | "regular" | "notes-attachments" | "open";
+
+export interface EditorLinkLabels {
+  all: string;
+  regular: string;
+  notesAttachments: string;
+  open: string;
+  empty: string;
+  loading: string;
+}
+
 export interface EditorLinkCandidate {
   key: string;
   libraryID: number;
   groupID?: number;
   title: string;
-  kind: "markdown" | "canvas" | "regular";
+  kind: "markdown" | "canvas" | "regular" | "note" | "attachment";
   kindLabel?: string;
+  /** First creator display name, when the item has creator metadata. */
+  author?: string;
+  /** Packaged Zotero or addon icon; external image URLs are never accepted. */
+  icon?: string;
   href: string;
   /** Original Markdown attachment filename; enables portable Wiki insertion. */
   filename?: string;
@@ -68,6 +85,8 @@ export interface EditorInitPayload {
   /** Layout density for the editor host. */
   surface?: EditorSurface;
   imageLabels?: EditorImageLabels;
+  tableLabels?: EditorTableLabels;
+  linkLabels?: EditorLinkLabels;
   viewState?: DocumentViewState;
 }
 
@@ -199,6 +218,7 @@ export type ParentToEditorMessage = (
       payload: {
         requestId: number;
         query: string;
+        filter?: EditorLinkFilter;
         results: EditorLinkCandidate[];
       };
     }
@@ -208,6 +228,11 @@ export type ParentToEditorMessage = (
 
 /** iframe → parent */
 export type EditorToParentMessage = (
+  | {
+      source: typeof EDITOR_MESSAGE_SOURCE;
+      type: "composition";
+      payload: { active: boolean };
+    }
   | {
       source: typeof EDITOR_MESSAGE_SOURCE;
       type: "viewState";
@@ -236,6 +261,7 @@ export type EditorToParentMessage = (
         requestId: number;
         rev: number;
         value: string;
+        /** Exact statistics for this snapshot value, reusable by the parent. */
         stats: EditorStats;
       };
     }
@@ -247,7 +273,7 @@ export type EditorToParentMessage = (
   | {
       source: typeof EDITOR_MESSAGE_SOURCE;
       type: "linkSearch";
-      payload: { requestId: number; query: string };
+      payload: { requestId: number; query: string; filter?: EditorLinkFilter };
     }
   | {
       source: typeof EDITOR_MESSAGE_SOURCE;
@@ -295,6 +321,14 @@ export function isEditorProtocolMessage(
 }
 
 function isLinkMessagePayloadValid(data: Record<string, unknown>): boolean {
+  if (data.type === "composition") {
+    const payload = data.payload as { active?: unknown } | null;
+    return (
+      !!payload &&
+      typeof payload === "object" &&
+      typeof payload.active === "boolean"
+    );
+  }
   if (data.type === "setAppearance") {
     const payload = data.payload as Partial<EditorAppearance> | null;
     return (
@@ -321,19 +355,22 @@ function isLinkMessagePayloadValid(data: Record<string, unknown>): boolean {
     const payload = data.payload as {
       requestId?: unknown;
       query?: unknown;
+      filter?: unknown;
     };
     return (
       !!payload &&
       typeof payload === "object" &&
       validRequestID(payload.requestId) &&
       typeof payload.query === "string" &&
-      payload.query.length <= 512
+      payload.query.length <= 512 &&
+      (payload.filter === undefined || isEditorLinkFilter(payload.filter))
     );
   }
   if (data.type === "linkSearchResults") {
     const payload = data.payload as {
       requestId?: unknown;
       query?: unknown;
+      filter?: unknown;
       results?: unknown;
     };
     return (
@@ -342,6 +379,7 @@ function isLinkMessagePayloadValid(data: Record<string, unknown>): boolean {
       validRequestID(payload.requestId) &&
       typeof payload.query === "string" &&
       payload.query.length <= 512 &&
+      (payload.filter === undefined || isEditorLinkFilter(payload.filter)) &&
       Array.isArray(payload.results) &&
       payload.results.length <= 24 &&
       payload.results.every(isEditorLinkCandidate)
@@ -352,6 +390,30 @@ function isLinkMessagePayloadValid(data: Record<string, unknown>): boolean {
 
 function validRequestID(value: unknown): value is number {
   return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
+}
+
+export function isEditorLinkFilter(value: unknown): value is EditorLinkFilter {
+  return (
+    value === "all" ||
+    value === "regular" ||
+    value === "notes-attachments" ||
+    value === "open"
+  );
+}
+
+export function isEditorLinkIcon(value: unknown): value is string {
+  if (typeof value !== "string" || value.length > 512) return false;
+  const prefix = value.startsWith("chrome://zotero/skin/")
+    ? "chrome://zotero/skin/"
+    : `chrome://${config.addonRef}/content/icons/`;
+  if (!value.startsWith(prefix)) return false;
+  const path = value.slice(prefix.length);
+  return (
+    /^[A-Za-z0-9_/@.-]+\.(?:svg|png)$/.test(path) &&
+    path
+      .split("/")
+      .every((part) => part !== "" && part !== "." && part !== "..")
+  );
 }
 
 function isEditorLinkCandidate(value: unknown): value is EditorLinkCandidate {
@@ -400,9 +462,16 @@ function isEditorLinkCandidate(value: unknown): value is EditorLinkCandidate {
       (typeof candidate.kindLabel === "string" &&
         candidate.kindLabel.length > 0 &&
         candidate.kindLabel.length <= 100)) &&
+    (candidate.author === undefined ||
+      (typeof candidate.author === "string" &&
+        candidate.author.trim().length > 0 &&
+        candidate.author.length <= 200)) &&
+    (candidate.icon === undefined || isEditorLinkIcon(candidate.icon)) &&
     (candidate.kind === "markdown" ||
       candidate.kind === "canvas" ||
-      candidate.kind === "regular") &&
+      candidate.kind === "regular" ||
+      candidate.kind === "note" ||
+      candidate.kind === "attachment") &&
     typeof candidate.href === "string" &&
     candidate.href.length <= 4096 &&
     (candidate.filename === undefined ||
@@ -429,6 +498,7 @@ export function applyDocChanges(
   return next;
 }
 
+/** Exact UTF-16 chars, LF lines and Chinese-character/whitespace word counts. */
 export function computeStats(text: string): EditorStats {
   return {
     chars: text.length,

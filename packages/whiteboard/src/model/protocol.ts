@@ -179,6 +179,14 @@ export interface WhiteboardLabels {
   groupSelection: string;
   removeFromGroup: string;
   ungroup?: string;
+  joinGroup?: string;
+  groupLabel?: string;
+  unnamedGroup?: string;
+  groupMembers?: string;
+  groupJoined?: string;
+  noGroups?: string;
+  quoteCreateClaim?: string;
+  quoteCreateEvidence?: string;
   fitSelection: string;
   drawTools: string;
   selectionDetails: string;
@@ -271,6 +279,7 @@ export interface WhiteboardLabels {
 
 export interface WhiteboardInitPayload {
   theme: WhiteboardTheme;
+  editable?: boolean;
   colorScheme?: ColorSchemeID;
   appearance?: WhiteboardAppearance;
   snapshot?: CanvasDocument | null;
@@ -994,6 +1003,14 @@ const whiteboardLabelStringKeys: Record<
   groupSelection: true,
   removeFromGroup: true,
   ungroup: true,
+  joinGroup: true,
+  groupLabel: true,
+  unnamedGroup: true,
+  groupMembers: true,
+  groupJoined: true,
+  noGroups: true,
+  quoteCreateClaim: true,
+  quoteCreateEvidence: true,
   fitSelection: true,
   drawTools: true,
   selectionDetails: true,
@@ -1092,6 +1109,14 @@ function isWhiteboardLabels(value: unknown): value is WhiteboardLabels {
     "layoutAllConfirm",
     "batchStyle",
     "ungroup",
+    "joinGroup",
+    "groupLabel",
+    "unnamedGroup",
+    "groupMembers",
+    "groupJoined",
+    "noGroups",
+    "quoteCreateClaim",
+    "quoteCreateEvidence",
     "shortcutFreeMove",
     "shortcutNudge",
     "shortcutNudgeLarge",
@@ -1692,9 +1717,19 @@ function validateParentToWhiteboardMessageForChannel(
         hasExactKeys(
           payload,
           ["theme"],
-          ["snapshot", "labels", "templates", "colorScheme", "appearance"],
+          [
+            "snapshot",
+            "labels",
+            "templates",
+            "colorScheme",
+            "appearance",
+            "editable",
+          ],
         ) &&
         (payload.theme === "light" || payload.theme === "dark") &&
+        (!hasOwn(payload, "editable") ||
+          payload.editable === undefined ||
+          typeof payload.editable === "boolean") &&
         (!hasOwn(payload, "colorScheme") ||
           payload.colorScheme === undefined ||
           payload.colorScheme === "traditional" ||

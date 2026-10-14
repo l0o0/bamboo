@@ -854,6 +854,16 @@ class SidebarController {
         documentSyncRegistry.markEdited(sourceID);
         this.scheduleAutosave();
       },
+      onCompositionChange: (active) => {
+        if (active) {
+          if (this.autosaveTimer != null) {
+            this.win.clearTimeout(this.autosaveTimer);
+            this.autosaveTimer = null;
+          }
+        } else if (this.save?.dirty) {
+          this.scheduleAutosave();
+        }
+      },
       onSave: () => this.requestSave(true),
       onResolveAsset: (reference) => {
         const current = Zotero.Items.get(this.itemID ?? -1);
@@ -861,11 +871,13 @@ class SidebarController {
           ? resolveImageAssetEntry(current, reference)
           : Promise.resolve({ error: getString("sidebar-attachment-gone") });
       },
-      onLinkSearch: async (query) => {
+      onLinkSearch: async (query, filter) => {
         // The editor may remain alive for one tick while Zotero switches the
         // selected item. Never return candidates for a different document.
         if (seq !== this.renderSeq || this.item?.id !== item.id) return [];
         return searchDocumentLinks(item, query, false, {
+          filter,
+          win: this.win,
           currentContent: this.editor?.getValue() ?? content,
         });
       },
@@ -880,6 +892,7 @@ class SidebarController {
     this.editor = editor;
     editor.setMode("live");
     const save: SaveCoordinator = new SaveCoordinator({
+      canAutosave: () => !editor.isComposing(),
       getSnapshot: async () => ({
         rev: save.currentRev,
         value: await editor.requestSnapshot(),
@@ -1018,7 +1031,9 @@ class SidebarController {
   private scheduleAutosave(): void {
     if (this.autosaveTimer != null) {
       this.win.clearTimeout(this.autosaveTimer);
+      this.autosaveTimer = null;
     }
+    if (this.editor?.isComposing()) return;
     this.autosaveTimer = this.win.setTimeout(() => {
       this.autosaveTimer = null;
       if (this.save?.dirty) {
@@ -1029,6 +1044,7 @@ class SidebarController {
 
   private requestSave(force: boolean): void {
     if (!this.save) return;
+    if (!force && this.editor?.isComposing()) return;
     void this.save.request({ force }).catch((error) => {
       ztoolkit.log("Sidebar save failed", error);
       this.updateSummary();

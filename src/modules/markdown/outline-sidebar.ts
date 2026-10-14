@@ -1,4 +1,5 @@
 import type { EditorOutlineItem } from "./editor-protocol";
+import { createSidebarMotion } from "./sidebar-motion";
 
 export const OUTLINE_AUTO_HIDE_WIDTH = 680;
 
@@ -51,6 +52,8 @@ export function mountOutlineSidebar(options: {
   let itemsByID = new Map<string, EditorOutlineItem>();
   let activeID: string | null = null;
   let autoHidden = false;
+  let previousWidth: number | undefined;
+  const motion = createSidebarMotion(sidebar, toolbarToggle, "left");
 
   const syncActive = () => {
     let activeElement: HTMLElement | null = null;
@@ -77,18 +80,26 @@ export function mountOutlineSidebar(options: {
     }
   };
 
-  const syncExpanded = (expanded: boolean) => {
-    root.classList.toggle("is-outline-collapsed", !expanded);
-    toolbarToggle.setAttribute(
-      "aria-expanded",
-      String(expanded && !autoHidden),
+  const syncExpanded = (expanded: boolean, animate = false) => {
+    const visible = expanded && !autoHidden;
+    const changed =
+      toolbarToggle.getAttribute("aria-expanded") !== String(visible);
+    motion.update(
+      visible,
+      () => {
+        root.classList.toggle("is-outline-collapsed", !expanded);
+        toolbarToggle.setAttribute("aria-expanded", String(visible));
+      },
+      animate,
     );
-    sidebar.setAttribute("aria-hidden", String(!expanded || autoHidden));
-    if (expanded && !autoHidden) syncActive();
+    if (visible && changed) syncActive();
   };
 
   const syncWidth = () => {
     const width = root.getBoundingClientRect().width || root.clientWidth;
+    if (width === previousWidth) return;
+    previousWidth = width;
+    motion.finish();
     autoHidden = width > 0 && width < OUTLINE_AUTO_HIDE_WIDTH;
     root.classList.toggle("is-outline-auto-hidden", autoHidden);
     syncExpanded(getExpanded());
@@ -165,15 +176,15 @@ export function mountOutlineSidebar(options: {
     : null;
   resizeObserver?.observe(root);
   syncWidth();
-  syncExpanded(getExpanded());
 
   return {
     update,
     setActive,
-    setExpanded: syncExpanded,
+    setExpanded: (expanded) => syncExpanded(expanded, true),
     isVisible: () => getExpanded() && !autoHidden,
     destroy: () => {
       resizeObserver?.disconnect();
+      motion.destroy();
       list.removeEventListener("click", onListClick);
       list.removeEventListener("keydown", onListKeyDown);
       toolbarToggle.removeEventListener("click", onToolbarToggle);

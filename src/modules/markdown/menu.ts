@@ -2,11 +2,15 @@ import { showAnnotationExport } from "./annotations";
 import { registerFileHistoryMenu } from "../file-history-ui";
 import { getString } from "../../utils/locale";
 import { getPref } from "../../utils/prefs";
-import { createMarkdownAttachment, createMarkdownForSelection } from "./create";
+import { createMarkdownAttachment } from "./create";
 import { isMarkdownAttachment } from "./detect";
-import { openMarkdownAttachment } from "./open";
 import { resolveConfiguredShortcut } from "./shortcut";
 import { openMarkdownWindow } from "./window";
+import { openMarkdownTab } from "./tab";
+import { exportSelectedNotes } from "./export-notes";
+import { createWhiteboardAttachment } from "../whiteboard/create";
+import { openWhiteboardTab } from "../whiteboard/tab";
+import { rememberWhiteboard } from "../whiteboard/open";
 
 const itemMenuCleanups = new Map<Window, () => void>();
 let shortcutCallback: ((ev: KeyboardEvent, options: any) => void) | null = null;
@@ -46,12 +50,6 @@ export function registerItemContextMenu(win: _ZoteroTypes.MainWindow) {
   createItem.setAttribute("class", "menuitem-iconic");
   createItem.style.listStyleImage = `url(${icon()})`;
 
-  const openItem = doc.createXULElement("menuitem") as HTMLElement;
-  openItem.id = `${addon.data.config.addonRef}-item-open-md`;
-  openItem.setAttribute("label", getString("menuitem-open-md"));
-  openItem.setAttribute("class", "menuitem-iconic");
-  openItem.style.listStyleImage = `url(${icon()})`;
-
   const windowItem = doc.createXULElement("menuitem") as HTMLElement;
   windowItem.id = `${addon.data.config.addonRef}-item-open-md-window`;
   windowItem.setAttribute("label", getString("more-open-window"));
@@ -66,9 +64,126 @@ export function registerItemContextMenu(win: _ZoteroTypes.MainWindow) {
     });
   };
 
-  const onCreate = () => void createMarkdownForSelection();
-  const onOpen = () => void openSelectedMarkdown(win);
-  const onShowing = () => {
+  let disposed = false;
+  let busy = false;
+  const shouldContinue = () => !disposed && !win.closed;
+  const scholarMenu = doc.createXULElement("menu") as HTMLElement;
+  scholarMenu.id = `${addon.data.config.addonRef}-item-scholar-sketch`;
+  scholarMenu.setAttribute("label", addon.data.config.addonName);
+  scholarMenu.setAttribute("class", "menu-iconic");
+  scholarMenu.style.listStyleImage = `url(${icon()})`;
+  const scholarPopup = doc.createXULElement("menupopup") as HTMLElement;
+  const canvasItem = doc.createXULElement("menuitem") as HTMLElement;
+  canvasItem.id = `${addon.data.config.addonRef}-item-create-canvas`;
+  canvasItem.setAttribute("label", getString("menuitem-new-whiteboard"));
+  const exportItem = doc.createXULElement("menuitem") as HTMLElement;
+  exportItem.id = `${addon.data.config.addonRef}-item-export-md`;
+  exportItem.setAttribute("label", getString("menuitem-export-selected-md"));
+  scholarPopup.append(canvasItem, createItem, exportItem);
+  scholarMenu.append(scholarPopup);
+  const editableParent = (item: Zotero.Item | undefined) => {
+    if (!item?.isRegularItem() || item.deleted || !item.isEditable())
+      return false;
+    const library = Zotero.Libraries.get(item.libraryID);
+    return Boolean(library && library.editable && library.filesEditable);
+  };
+  const selectedMarkdown = (selected: Zotero.Item[]) => {
+    if (selected.length && selected.every(isMarkdownAttachment))
+      return selected;
+    const parent = selected.length === 1 ? selected[0] : undefined;
+    if (!parent?.isRegularItem() || parent.deleted) return [];
+    return parent
+      .getAttachments()
+      .map((id) => Zotero.Items.get(id))
+      .filter((item): item is Zotero.Item =>
+        Boolean(
+          item &&
+          !item.deleted &&
+          item.libraryID === parent.libraryID &&
+          item.parentItemID === parent.id &&
+          isMarkdownAttachment(item),
+        ),
+      );
+  };
+  const reportError = (error: unknown) => {
+    ztoolkit.log("Scholar Sketch item command failed", error);
+    if (shouldContinue())
+      new ztoolkit.ProgressWindow(addon.data.config.addonName)
+        .createLine({
+          text: `${getString("markdown-transfer-failed")}: ${error instanceof Error ? error.message : String(error)}`,
+          type: "fail",
+        })
+        .show();
+  };
+  const create = async (kind: "markdown" | "whiteboard") => {
+    if (!shouldContinue() || busy) return;
+    const selected = win.ZoteroPane?.getSelectedItems?.() || [];
+    const parent = selected.length === 1 ? selected[0] : undefined;
+    if (!editableParent(parent)) return;
+    busy = true;
+    try {
+      const item =
+        kind === "markdown"
+          ? await createMarkdownAttachment(parent, {
+              open: false,
+              silent: true,
+              win,
+              requireParent: true,
+              shouldContinue,
+            })
+          : await createWhiteboardAttachment(parent, {
+              select: false,
+              reportError: false,
+              win,
+            });
+      if (!item) throw new Error("No attachment was created");
+      if (!shouldContinue()) return;
+      await win.ZoteroPane.selectItem(item.id);
+      if (!shouldContinue()) return;
+      const options = { win, shouldOpen: shouldContinue };
+      const tab =
+        kind === "markdown"
+          ? await openMarkdownTab(item, options)
+          : await openWhiteboardTab(item, options);
+      if (tab && shouldContinue() && kind === "whiteboard")
+        rememberWhiteboard(item.id);
+    } finally {
+      busy = false;
+    }
+  };
+  const onCreate = () => void create("markdown").catch(reportError);
+  const onCreateCanvas = () => void create("whiteboard").catch(reportError);
+  const onExport = () => {
+    if (!shouldContinue() || busy) return;
+    const selected = selectedMarkdown([
+      ...(win.ZoteroPane?.getSelectedItems?.() || []),
+    ]);
+    if (!selected.length) return;
+    busy = true;
+    void exportSelectedNotes(win, selected, "markdown", { shouldContinue })
+      .then((result) => {
+        if (result && shouldContinue())
+          new ztoolkit.ProgressWindow(addon.data.config.addonName)
+            .createLine({
+              text: getString("note-export-complete", {
+                args: {
+                  count: result.notes,
+                  directory: result.directory,
+                  warnings: result.warnings.length,
+                },
+              }),
+              type: "success",
+            })
+            .show();
+      })
+      .catch(reportError)
+      .finally(() => {
+        busy = false;
+      });
+  };
+  const onShowing = (event?: Event) => {
+    if (event && event.target !== popup && event.target !== scholarPopup)
+      return;
     const items = win.ZoteroPane?.getSelectedItems?.() || [];
     const one = items.length === 1 ? items[0] : undefined;
     const isMarkdown = !!one && isMarkdownAttachment(one);
@@ -81,25 +196,43 @@ export function registerItemContextMenu(win: _ZoteroTypes.MainWindow) {
         one.isRegularItem() ||
         (one.isAttachment() && one.attachmentContentType === "application/pdf")
       );
-    createItem.hidden = !one || isMarkdown;
-    openItem.hidden = !isMarkdown;
+    const regular = Boolean(one?.isRegularItem());
+    const markdownSelection = Boolean(
+      items.length && items.every(isMarkdownAttachment),
+    );
+    scholarMenu.hidden = !regular && !markdownSelection;
+    createItem.hidden = !regular;
+    canvasItem.hidden = !regular;
+    exportItem.hidden = !regular && !markdownSelection;
+    for (const item of [createItem, canvasItem]) {
+      if (!busy && shouldContinue() && editableParent(one))
+        item.removeAttribute("disabled");
+      else item.setAttribute("disabled", "true");
+    }
+    if (busy || !selectedMarkdown(items).length)
+      exportItem.setAttribute("disabled", "true");
+    else exportItem.removeAttribute("disabled");
     windowItem.hidden = !isMarkdown;
   };
 
   createItem.addEventListener("command", onCreate);
-  openItem.addEventListener("command", onOpen);
+  canvasItem.addEventListener("command", onCreateCanvas);
+  exportItem.addEventListener("command", onExport);
   windowItem.addEventListener("command", onOpenWindow);
   popup.addEventListener("popupshowing", onShowing);
-  popup.append(createItem, openItem, windowItem);
+  popup.append(scholarMenu, windowItem);
+  onShowing();
 
   itemMenuCleanups.set(win, () => {
+    disposed = true;
     removeHistoryMenu();
     annotationsItem.remove();
     popup.removeEventListener("popupshowing", onShowing);
     createItem.removeEventListener("command", onCreate);
-    openItem.removeEventListener("command", onOpen);
+    canvasItem.removeEventListener("command", onCreateCanvas);
+    exportItem.removeEventListener("command", onExport);
     createItem.remove();
-    openItem.remove();
+    scholarMenu.remove();
     windowItem.removeEventListener("command", onOpenWindow);
     windowItem.remove();
   });
@@ -158,14 +291,4 @@ export function registerShortcuts() {
   };
 
   ztoolkit.Keyboard.register(shortcutCallback);
-}
-
-async function openSelectedMarkdown(win?: _ZoteroTypes.MainWindow) {
-  const pane = win?.ZoteroPane || Zotero.getActiveZoteroPane();
-  const items = pane?.getSelectedItems?.() || [];
-  for (const item of items) {
-    if (isMarkdownAttachment(item)) {
-      await openMarkdownAttachment(item);
-    }
-  }
 }

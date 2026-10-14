@@ -275,6 +275,8 @@ type PropertiesPanelProps = {
   viewAnnotationsRef?: Ref<HTMLButtonElement>;
   onRemoveFromGroup?: (nodeId: string) => void;
   onCopy: (nodeId: string) => void;
+  onJoinGroup?: (nodeId: string) => void;
+  groupTitle?: string;
   onDelete: (nodeId: string) => void;
   noteTemplates?: NoteTemplate[];
   onBadgeChange?: (nodeId: string, badge: string) => void;
@@ -404,6 +406,12 @@ function PropertiesPanelView(
             <span>{labels.viewAnnotations}</span>
           </button>
         ) : null}
+        {model.kind !== "frame" && props.onJoinGroup ? (
+          <button type="button" onClick={() => props.onJoinGroup?.(node.id)}>
+            <IconOpen />
+            <span>{labels.joinGroup ?? "Join group"}</span>
+          </button>
+        ) : null}
         {frameId !== undefined && props.onRemoveFromGroup ? (
           <button
             type="button"
@@ -419,6 +427,11 @@ function PropertiesPanelView(
       <div className="zmd-board-properties-details-body">
         <div className="zmd-board-properties-details-meta">
           <strong>{flowNodeText(node) || kindLabel}</strong>
+          {props.groupTitle ? (
+            <p>
+              {labels.groupLabel ?? "Group"}: {props.groupTitle}
+            </p>
+          ) : null}
           {subtitle ? <p>{subtitle}</p> : null}
           {hasSource ? (
             <p

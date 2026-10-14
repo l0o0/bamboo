@@ -20,6 +20,9 @@ export async function createMarkdownAttachment(
     libraryID?: number;
     /** Target collection; null means library root, omitted uses selection. */
     collectionID?: number | null;
+    win?: _ZoteroTypes.MainWindow;
+    requireParent?: boolean;
+    shouldContinue?: () => boolean;
   } = {},
 ): Promise<Zotero.Item | null> {
   const {
@@ -43,6 +46,23 @@ export async function createMarkdownAttachment(
     }
   }
 
+  const pane = options.win?.ZoteroPane || Zotero.getActiveZoteroPane();
+  const checkParent = () => {
+    if (!options.requireParent) return;
+    const library = parent && Zotero.Libraries.get(parent.libraryID);
+    if (
+      !parent?.isRegularItem() ||
+      parent.deleted ||
+      !parent.isEditable() ||
+      !library ||
+      !library.editable ||
+      !library.filesEditable
+    )
+      throw new Error("The selected parent item is unavailable or read-only");
+  };
+  checkParent();
+  if (options.shouldContinue?.() === false) return null;
+
   const filename = defaultMarkdownFilename();
   const documentTitle = markdownDocumentTitle(filename);
 
@@ -61,11 +81,11 @@ export async function createMarkdownAttachment(
     filename,
   );
 
-  await IOUtils.makeDirectory(tmpDirectory, { ignoreExisting: true });
-  await Zotero.File.putContentsAsync(tmpPath, content);
-
   try {
-    const pane = Zotero.getActiveZoteroPane();
+    await IOUtils.makeDirectory(tmpDirectory, { ignoreExisting: true });
+    await Zotero.File.putContentsAsync(tmpPath, content);
+    if (options.shouldContinue?.() === false) return null;
+    checkParent();
     // Standalone attachments need a real libraryID; fall back to user library.
     // Child attachments inherit library from parentItemID (do not pass both
     // parentItemID and collections — Zotero throws).

@@ -33,7 +33,14 @@ function installAttachmentGlobals(
         getValidFileName: (value: string) => value,
         putContentsAsync: async () => {},
       },
-      Libraries: { userLibraryID: 101 },
+      Libraries: {
+        userLibraryID: 101,
+        get: (id: number) =>
+          [101, 202, 505].includes(id) ? { libraryID: id } : false,
+      },
+      Collections: {
+        get: (id: number) => (id === 303 ? { id, libraryID: 202 } : false),
+      },
       getActiveZoteroPane: () => ({
         getSelectedCollections: () => [303],
         getSelectedLibraryIDs: () => [202],

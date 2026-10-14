@@ -61,6 +61,7 @@ export interface FakeItem {
   readonly libraryID: number;
   readonly itemType: string;
   readonly parentID?: number;
+  readonly parentItemID?: number;
   readonly parentItem: FakeItem | null;
   note?: string;
   attachmentContentType?: string;
@@ -88,6 +89,12 @@ export interface FakeItem {
   isAnnotation(): boolean;
 }
 
+export interface FakeSearch {
+  libraryID: number;
+  addCondition(field: string, operator: string, value: string): number;
+  search(): Promise<number[]>;
+}
+
 export interface FakeZotero {
   readonly __fakeZotero: true;
   readonly initializationPromise: Promise<void>;
@@ -109,6 +116,7 @@ export interface FakeZotero {
   readonly Groups: {
     get(groupID: number): FakeLibrary | false;
   };
+  readonly Search: new (options?: { libraryID?: number }) => FakeSearch;
   readonly Items: {
     get(itemID: number): FakeItem | false;
     get(itemID: number[]): (FakeItem | false)[];
@@ -271,6 +279,9 @@ export function createFakeZotero(
       get parentID() {
         return data.parentID;
       },
+      get parentItemID() {
+        return data.parentID;
+      },
       get parentItem() {
         return data.parentID == null
           ? null
@@ -331,6 +342,8 @@ export function createFakeZotero(
         data.annotationSortIndex = value;
       },
       getField(field: string) {
+        if (field === "title" && data.itemType === "note")
+          return item.getNoteTitle();
         return field === "note"
           ? (data.note ?? "")
           : (data.fields?.[field] ?? "");
@@ -441,6 +454,45 @@ export function createFakeZotero(
   const userLibraryID = () =>
     librariesData.find((library) => library.libraryType === "user")
       ?.libraryID ?? 1;
+  class MetadataSearch implements FakeSearch {
+    libraryID: number;
+    private conditions: Array<[string, string, string]> = [];
+    constructor(options: { libraryID?: number } = {}) {
+      this.libraryID = options.libraryID ?? userLibraryID();
+    }
+    addCondition(field: string, operator: string, value: string): number {
+      if (!(
+        (field === "title" && (operator === "is" || operator === "contains")) ||
+        (field === "itemType" && operator === "is")
+      )) {
+        throw new Error(
+          `Fake Zotero Search does not support ${field} ${operator}`,
+        );
+      }
+      this.conditions.push([field, operator, value]);
+      return this.conditions.length - 1;
+    }
+    async search(): Promise<number[]> {
+      return itemsData
+        .filter(
+          (data) =>
+            data.libraryID === this.libraryID &&
+            this.conditions.every(([field, operator, value]) => {
+              if (field === "itemType") return data.itemType === value;
+              // Native Zotero indexes note titles in itemNotes, not the itemData
+              // title field. Callers must query notes separately to include them.
+              if (data.itemType === "note") return false;
+              const title = (data.fields?.title ?? "").toLocaleLowerCase();
+              const needle = value.toLocaleLowerCase();
+              return operator === "is"
+                ? title === needle
+                : title.includes(needle);
+            }),
+        )
+        .map((data) => data.id);
+    }
+  }
+
   const getMainWindow = () => ({
     ZoteroPane: {
       getSelectedItems(asIDs = false) {
@@ -505,6 +557,7 @@ export function createFakeZotero(
         );
       },
     },
+    Search: MetadataSearch,
     Items: {
       get: itemGet,
       getAsync: itemGetAsync,

@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.2.7 - 2026-10-15
+
+### Features
+
+- Add responsive Markdown toolbar grouping, smooth button transitions, sidebar motion, and subtle icon feedback with reduced-motion support
+- Enhance `[[` references with Zotero item icons, first-author metadata, All / Regular items / Notes and attachments / Open tabs filters, and keyboard navigation
+- Add whiteboard connection continuations, annotation-to-note creation, and explicit group membership
+- Consolidate document creation and recent whiteboards in the Scholar Sketch toolbar menu
+- Add actionable backlink indexing diagnostics and refine settings presentation
+
+### Fixes and performance
+
+- Improve IME composition handling, incremental live preview, long-document search, and on-demand link resolution
+- Fix missing results under the All reference filter
+- Improve inline, display, and numbered formulas, reference-style and Wiki images, and special-character filenames
+- Fix Markdown import/export paths and image relocation, and flush pending edits before exporting
+- Reduce whiteboard image memory and rendering work with thumbnails, visible-area rendering, and zoom-aware summaries while preserving complete, original-quality exports
+- Improve whiteboard draft persistence and remove redundant menu entries
+
 ## 0.1.3 - 2026-08-17
 
 ### Features

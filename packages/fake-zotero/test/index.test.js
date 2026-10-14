@@ -53,3 +53,62 @@ test("install refuses existing values and restore protects replacements", () => 
   restoreAgain();
   assert.equal("Zotero" in target, false);
 });
+
+test("metadata search scopes libraries and preserves native note title semantics", async () => {
+  const fake = createFakeZotero({
+    items: [
+      {
+        id: 1,
+        key: "PAPER001",
+        itemType: "journalArticle",
+        fields: { title: "Research" },
+      },
+      {
+        id: 2,
+        key: "ATTACH01",
+        itemType: "attachment",
+        parentID: 1,
+        fields: { title: "Research notes" },
+      },
+      {
+        id: 3,
+        key: "NATIVE01",
+        itemType: "note",
+        parentID: 1,
+        note: "<p>Research summary</p>",
+      },
+      {
+        id: 4,
+        key: "OTHER001",
+        libraryID: 7,
+        itemType: "journalArticle",
+        fields: { title: "Research" },
+      },
+    ],
+  });
+  const partial = new fake.Zotero.Search({ libraryID: 1 });
+  partial.addCondition("title", "contains", "RESEARCH");
+  assert.deepEqual(await partial.search(), [1, 2]);
+  const exact = new fake.Zotero.Search({ libraryID: 7 });
+  exact.addCondition("title", "is", "research");
+  assert.deepEqual(await exact.search(), [4]);
+  partial.addCondition("itemType", "is", "attachment");
+  assert.deepEqual(await partial.search(), [2]);
+  const notes = new fake.Zotero.Search({ libraryID: 1 });
+  notes.addCondition("itemType", "is", "note");
+  assert.deepEqual(await notes.search(), [3]);
+  assert.equal(fake.Zotero.Items.get(3).getField("title"), "Research summary");
+  assert.equal(fake.Zotero.Items.get(2).parentItemID, 1);
+  assert.throws(
+    () => notes.addCondition("note", "contains", "summary"),
+    /does not support/,
+  );
+  assert.throws(
+    () => notes.addCondition("title", "isNot", "summary"),
+    /does not support/,
+  );
+  fake.Zotero.Items.get(2).setField("title", "Changed");
+  assert.deepEqual(await partial.search(), []);
+  fake.reset();
+  assert.deepEqual(await partial.search(), [2]);
+});

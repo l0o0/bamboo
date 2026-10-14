@@ -8,6 +8,7 @@ import { injectMarkdownStyles } from "./styles";
 import type { SettingsPageID } from "./settings-pages";
 
 let activeSettingsDestroy: (() => void) | null = null;
+const preferencePaneBindings = new WeakMap<Document, () => void>();
 
 export function markdownSettingsAbout() {
   return {
@@ -71,14 +72,31 @@ export function openMarkdownSettings(
 }
 
 export function bindMarkdownSettingsPreferencePane(doc: Document): () => void {
+  preferencePaneBindings.get(doc)?.();
   const entry = doc.getElementById("zotero-markdown-open-settings");
-  if (!entry || entry.getAttribute("data-zmd-bound") === "true")
-    return () => {};
+  if (!entry) return () => {};
+  const pane = doc.getElementById("zotero-markdown-preferences");
+  const github = doc.getElementById("zotero-markdown-github");
   const onOpen = () => openMarkdownSettings();
-  entry.setAttribute("data-zmd-bound", "true");
-  entry.addEventListener("click", onOpen);
-  return () => {
-    entry.removeEventListener("click", onOpen);
-    entry.removeAttribute("data-zmd-bound");
+  const onGitHub = (event: Event) => {
+    event.preventDefault();
+    const url = github?.getAttribute("href");
+    if (url) Zotero.launchURL(url);
   };
+  entry.addEventListener("click", onOpen);
+  github?.addEventListener("click", onGitHub);
+  let destroyed = false;
+  const destroy = () => {
+    if (destroyed) return;
+    destroyed = true;
+    entry.removeEventListener("click", onOpen);
+    github?.removeEventListener("click", onGitHub);
+    pane?.removeEventListener("unload", destroy);
+    doc.defaultView?.removeEventListener("unload", destroy);
+    preferencePaneBindings.delete(doc);
+  };
+  pane?.addEventListener("unload", destroy);
+  doc.defaultView?.addEventListener("unload", destroy);
+  preferencePaneBindings.set(doc, destroy);
+  return destroy;
 }

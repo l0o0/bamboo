@@ -1,13 +1,14 @@
 import { registerFileHistoryMenu } from "../file-history-ui";
 import { getString } from "../../utils/locale";
 import {
-  createWhiteboardAttachment,
-  createWhiteboardFromCollection,
-} from "./create";
+  getSelectedCollections,
+  getSelectedLibraryIDs,
+} from "../../compat/zotero-pane";
+import { createWhiteboardFromCollection } from "./create";
 import { isWhiteboardAttachment } from "./detect";
-import { openWhiteboardAttachment, recentWhiteboardIDs } from "./open";
+import { rememberWhiteboard, recentWhiteboardIDs } from "./open";
 import { createExampleWhiteboard } from "./tutorial";
-import { openWhiteboardWindow } from "./tab";
+import { openWhiteboardTab, openWhiteboardWindow } from "./tab";
 
 const itemCleanups = new Map<Window, () => void>();
 
@@ -15,20 +16,26 @@ function icon() {
   return `chrome://${addon.data.config.addonRef}/content/icons/favicon.png`;
 }
 
-async function createAndOpen(parent?: Zotero.Item | null) {
-  const attachment = await createWhiteboardAttachment(parent);
-  if (attachment) await openWhiteboardAttachment(attachment);
-}
-
 export function registerWhiteboardMenus(win: _ZoteroTypes.MainWindow) {
   unregisterWhiteboardMenus(win);
   const doc = win.document;
-  const tools =
-    (doc.querySelector("#menu_ToolsPopup") as HTMLElement | null) ||
-    (doc.querySelector("#menu_toolsPopup") as HTMLElement | null);
   const itemPopup = doc.querySelector("#zotero-itemmenu") as HTMLElement | null;
 
   const cleanups: Array<() => void> = [];
+  let disposed = false;
+  const shouldOpen = () => !disposed && !win.closed;
+  const reportError = (error: unknown) => {
+    ztoolkit.log("Whiteboard menu command failed", error);
+    if (shouldOpen())
+      new ztoolkit.ProgressWindow(addon.data.config.addonName)
+        .createLine({ text: getString("whiteboard-open-failed"), type: "fail" })
+        .show();
+  };
+  const openCanvas = async (item: Zotero.Item, canOpen = shouldOpen) => {
+    if (!canOpen()) return;
+    const tabID = await openWhiteboardTab(item, { win, shouldOpen: canOpen });
+    if (tabID && canOpen()) rememberWhiteboard(item.id);
+  };
 
   const help = doc.querySelector("#menu_HelpPopup");
   if (help) {
@@ -55,47 +62,80 @@ export function registerWhiteboardMenus(win: _ZoteroTypes.MainWindow) {
     cleanups.push(() => example.remove());
   }
 
-  if (tools) {
-    const item = doc.createXULElement("menuitem") as HTMLElement;
-    item.id = `${addon.data.config.addonRef}-tools-whiteboard`;
-    item.setAttribute("label", getString("menuitem-new-whiteboard"));
-    item.setAttribute("class", "menuitem-iconic");
-    item.style.listStyleImage = `url(${icon()})`;
-    item.addEventListener("command", () => {
-      void createAndOpen(null);
-    });
-    tools.appendChild(item);
-    cleanups.push(() => item.remove());
-
+  {
+    let creationPopup: HTMLElement | null = null;
+    const shouldOpenFromToolbar = () =>
+      shouldOpen() && Boolean(creationPopup?.isConnected);
+    const separator = doc.createXULElement("menuseparator") as HTMLElement;
+    separator.id = `${addon.data.config.addonRef}-toolbar-whiteboard-separator`;
     const fromCollection = doc.createXULElement("menuitem") as HTMLElement;
-    fromCollection.id = `${addon.data.config.addonRef}-tools-whiteboard-collection`;
+    fromCollection.id = `${addon.data.config.addonRef}-toolbar-whiteboard-collection`;
     fromCollection.setAttribute(
       "label",
       getString("menuitem-new-whiteboard-from-collection"),
     );
     fromCollection.setAttribute("class", "menuitem-iconic");
     fromCollection.style.listStyleImage = `url(${icon()})`;
-    fromCollection.addEventListener("command", () => {
-      void createWhiteboardFromCollection();
-    });
-    tools.appendChild(fromCollection);
-    cleanups.push(() => fromCollection.remove());
+    let creatingCollection = false;
+    const refreshCollection = () => {
+      const pane = win.ZoteroPane;
+      const libraryID = getSelectedLibraryIDs(pane)[0];
+      const library = libraryID && Zotero.Libraries.get(libraryID);
+      const collectionID = getSelectedCollections(pane, true).find((id) => {
+        if (!Number.isInteger(id) || id <= 0) return false;
+        const collection = Zotero.Collections.get(id);
+        return (
+          collection &&
+          !collection.deleted &&
+          collection.libraryID === libraryID
+        );
+      });
+      if (
+        shouldOpenFromToolbar() &&
+        !creatingCollection &&
+        collectionID &&
+        library &&
+        library.editable &&
+        library.filesEditable &&
+        (typeof pane?.canEdit !== "function" || pane.canEdit())
+      )
+        fromCollection.removeAttribute("disabled");
+      else fromCollection.setAttribute("disabled", "true");
+    };
+    const onCollection = () => {
+      if (!shouldOpenFromToolbar() || creatingCollection) return;
+      refreshCollection();
+      if (fromCollection.getAttribute("disabled") === "true") return;
+      creatingCollection = true;
+      refreshCollection();
+      void createWhiteboardFromCollection({
+        win,
+        shouldOpen: shouldOpenFromToolbar,
+      })
+        .catch(reportError)
+        .finally(() => {
+          creatingCollection = false;
+          if (shouldOpen()) refreshCollection();
+        });
+    };
+    fromCollection.addEventListener("command", onCollection);
 
     const recentMenu = doc.createXULElement("menu") as HTMLElement;
-    recentMenu.id = `${addon.data.config.addonRef}-tools-whiteboard-recent`;
+    recentMenu.id = `${addon.data.config.addonRef}-toolbar-whiteboard-recent`;
     recentMenu.setAttribute("label", getString("menuitem-recent-whiteboards"));
     recentMenu.setAttribute("class", "menuitem-iconic");
     recentMenu.style.listStyleImage = `url(${icon()})`;
     const recentPopup = doc.createXULElement("menupopup") as HTMLElement;
     recentMenu.appendChild(recentPopup);
-    const refreshRecent = () => {
+    const refreshRecent = (event: Event) => {
+      if (event.target !== recentPopup || !shouldOpen()) return;
       while (recentPopup.firstChild) {
         (recentPopup.firstChild as HTMLElement).remove();
       }
       const ids = recentWhiteboardIDs();
       for (const id of ids) {
         const item = Zotero.Items.get(id);
-        if (!item || !isWhiteboardAttachment(item)) continue;
+        if (!item || item.deleted || !isWhiteboardAttachment(item)) continue;
         const recentItem = doc.createXULElement("menuitem") as HTMLElement;
         recentItem.setAttribute(
           "label",
@@ -104,7 +144,7 @@ export function registerWhiteboardMenus(win: _ZoteroTypes.MainWindow) {
         recentItem.setAttribute("class", "menuitem-iconic");
         recentItem.style.listStyleImage = `url(${icon()})`;
         recentItem.addEventListener("command", () => {
-          void openWhiteboardAttachment(item);
+          void openCanvas(item, shouldOpenFromToolbar).catch(reportError);
         });
         recentPopup.appendChild(recentItem);
       }
@@ -119,10 +159,43 @@ export function registerWhiteboardMenus(win: _ZoteroTypes.MainWindow) {
       }
     };
     recentPopup.addEventListener("popupshowing", refreshRecent);
-    tools.appendChild(recentMenu);
-    cleanups.push(() => recentMenu.remove());
-  } else {
-    ztoolkit.log("Tools popup missing; whiteboard tools menu not registered");
+    const onCreationShowing = (event: Event) => {
+      if (event.target === creationPopup) refreshCollection();
+    };
+    // Hooks normally create the toolbar first. Watch its host as well so a
+    // deferred toolbar or a recreated button retains these secondary commands.
+    const observer = new win.MutationObserver(() => attachToToolbar());
+    let observedHost: Element | null = null;
+    const attachToToolbar = () => {
+      if (disposed) return;
+      const toolbar = doc.getElementById("zotero-items-toolbar");
+      const host = toolbar ?? doc.documentElement;
+      if (host !== observedHost) {
+        observer.disconnect();
+        observer.observe(host, { childList: true, subtree: !toolbar });
+        observedHost = host;
+      }
+      const popup = doc
+        .getElementById(`${addon.data.config.addonRef}-create-document`)
+        ?.querySelector("menupopup") as HTMLElement | null;
+      if (popup === creationPopup) return;
+      creationPopup?.removeEventListener("popupshowing", onCreationShowing);
+      creationPopup = popup;
+      if (!popup) return;
+      popup.append(separator, fromCollection, recentMenu);
+      popup.addEventListener("popupshowing", onCreationShowing);
+      refreshCollection();
+    };
+    attachToToolbar();
+    cleanups.push(() => {
+      observer.disconnect();
+      creationPopup?.removeEventListener("popupshowing", onCreationShowing);
+      fromCollection.removeEventListener("command", onCollection);
+      recentPopup.removeEventListener("popupshowing", refreshRecent);
+      separator.remove();
+      fromCollection.remove();
+      recentMenu.remove();
+    });
   }
 
   if (itemPopup) {
@@ -153,7 +226,7 @@ export function registerWhiteboardMenus(win: _ZoteroTypes.MainWindow) {
     const onOpen = () => {
       const selected = win.ZoteroPane?.getSelectedItems?.() || [];
       const canvas = selected.find(isWhiteboardAttachment);
-      if (canvas) void openWhiteboardAttachment(canvas);
+      if (canvas) void openCanvas(canvas).catch(reportError);
     };
     const onShowing = () => {
       const selected = win.ZoteroPane?.getSelectedItems?.() || [];
@@ -175,6 +248,7 @@ export function registerWhiteboardMenus(win: _ZoteroTypes.MainWindow) {
   }
 
   itemCleanups.set(win, () => {
+    disposed = true;
     for (const cleanup of cleanups) cleanup();
   });
 }

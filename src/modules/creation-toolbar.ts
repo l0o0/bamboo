@@ -8,6 +8,9 @@ import { openMarkdownTab } from "./markdown/tab";
 import { createWhiteboardAttachment } from "./whiteboard/create";
 import { rememberWhiteboard } from "./whiteboard/open";
 import { openWhiteboardTab } from "./whiteboard/tab";
+import { isMarkdownAttachment } from "./markdown/detect";
+import { exportSelectedNotes } from "./markdown/export-notes";
+import { importMarkdownFile } from "./markdown/transfer";
 
 const cleanups = new Map<Window, () => void>();
 
@@ -98,7 +101,21 @@ export function registerCreationToolbar(win: _ZoteroTypes.MainWindow): void {
   whiteboard.setAttribute("label", getString("menuitem-new-whiteboard"));
   whiteboard.setAttribute("class", "menuitem-iconic");
   whiteboard.setAttribute("image", `${icons}attachment-canvas.svg`);
-  popup.append(markdown, whiteboard);
+  const transferSeparator = doc.createXULElement("menuseparator");
+  transferSeparator.id = `${ref}-markdown-transfer-separator`;
+  const importMarkdown = doc.createXULElement("menuitem") as XUL.MenuItem;
+  importMarkdown.id = `${ref}-import-markdown`;
+  importMarkdown.setAttribute("label", getString("toolbar-import-markdown"));
+  const exportMarkdown = doc.createXULElement("menuitem") as XUL.MenuItem;
+  exportMarkdown.id = `${ref}-export-markdown`;
+  exportMarkdown.setAttribute("label", getString("toolbar-export-markdown"));
+  popup.append(
+    markdown,
+    whiteboard,
+    transferSeparator,
+    importMarkdown,
+    exportMarkdown,
+  );
   button.append(popup);
 
   let disposed = false;
@@ -110,10 +127,19 @@ export function registerCreationToolbar(win: _ZoteroTypes.MainWindow): void {
     } catch (error) {
       ztoolkit.log("Cannot resolve document creation target", error);
     }
-    for (const item of [markdown, whiteboard]) {
+    for (const item of [markdown, whiteboard, importMarkdown]) {
       if (editable) item.removeAttribute("disabled");
       else item.setAttribute("disabled", "true");
     }
+    const selected = win.ZoteroPane?.getSelectedItems?.() ?? [];
+    if (
+      !disposed &&
+      !busy &&
+      selected.length &&
+      selected.every(isMarkdownAttachment)
+    )
+      exportMarkdown.removeAttribute("disabled");
+    else exportMarkdown.setAttribute("disabled", "true");
   };
 
   const create = async (kind: "markdown" | "whiteboard") => {
@@ -135,6 +161,7 @@ export function registerCreationToolbar(win: _ZoteroTypes.MainWindow): void {
               silent: true,
               libraryID: target.libraryID,
               collectionID: target.collectionID,
+              win,
             })
           : await createWhiteboardAttachment(target.parent, {
               select: false,
@@ -182,6 +209,67 @@ export function registerCreationToolbar(win: _ZoteroTypes.MainWindow): void {
   };
   const onMarkdown = () => void create("markdown");
   const onWhiteboard = () => void create("whiteboard");
+  const transfer = async (kind: "import" | "export") => {
+    if (disposed || busy || win.closed) return;
+    const shouldContinue = () => !disposed && !win.closed;
+    try {
+      const target = creationTarget(win);
+      const selected = [...(win.ZoteroPane?.getSelectedItems?.() ?? [])];
+      if (kind === "import" && !target.editable) return;
+      if (
+        kind === "export" &&
+        (!selected.length || !selected.every(isMarkdownAttachment))
+      )
+        return;
+      busy = true;
+      refresh();
+      if (kind === "import") {
+        const item = await importMarkdownFile(win, target, { shouldContinue });
+        if (!item || !shouldContinue()) return;
+        await target.pane.selectItem(item.id);
+        if (!shouldContinue()) return;
+        await openMarkdownTab(item, { win, shouldOpen: shouldContinue });
+        if (shouldContinue())
+          new ztoolkit.ProgressWindow(addon.data.config.addonName)
+            .createLine({
+              text: getString("markdown-import-complete"),
+              type: "success",
+            })
+            .show();
+      } else {
+        const result = await exportSelectedNotes(win, selected, "markdown", {
+          shouldContinue,
+        });
+        if (result && shouldContinue())
+          new ztoolkit.ProgressWindow(addon.data.config.addonName)
+            .createLine({
+              text: getString("note-export-complete", {
+                args: {
+                  count: result.notes,
+                  directory: result.directory,
+                  warnings: result.warnings.length,
+                },
+              }),
+              type: "success",
+            })
+            .show();
+      }
+    } catch (error) {
+      ztoolkit.log("Scholar Sketch Markdown transfer failed", error);
+      if (shouldContinue())
+        new ztoolkit.ProgressWindow(addon.data.config.addonName)
+          .createLine({
+            text: `${getString("markdown-transfer-failed")}: ${error instanceof Error ? error.message : String(error)}`,
+            type: "fail",
+          })
+          .show();
+    } finally {
+      busy = false;
+      if (!disposed && !win.closed) refresh();
+    }
+  };
+  const onImport = () => void transfer("import");
+  const onExport = () => void transfer("export");
   const onShowing = (event: Event) => {
     if (event.target === popup) refresh();
   };
@@ -215,6 +303,8 @@ export function registerCreationToolbar(win: _ZoteroTypes.MainWindow): void {
 
   markdown.addEventListener("command", onMarkdown);
   whiteboard.addEventListener("command", onWhiteboard);
+  importMarkdown.addEventListener("command", onImport);
+  exportMarkdown.addEventListener("command", onExport);
   popup.addEventListener("popupshowing", onShowing);
   toolbar.addEventListener("keydown", onKeyDown, true);
   win.addEventListener("unload", onUnload);
@@ -225,6 +315,8 @@ export function registerCreationToolbar(win: _ZoteroTypes.MainWindow): void {
     disposed = true;
     markdown.removeEventListener("command", onMarkdown);
     whiteboard.removeEventListener("command", onWhiteboard);
+    importMarkdown.removeEventListener("command", onImport);
+    exportMarkdown.removeEventListener("command", onExport);
     popup.removeEventListener("popupshowing", onShowing);
     toolbar.removeEventListener("keydown", onKeyDown, true);
     win.removeEventListener("unload", onUnload);

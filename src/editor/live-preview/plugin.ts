@@ -10,6 +10,9 @@ import {
   EditorState,
   StateEffect,
   StateField,
+  ChangeSet,
+  type ChangeDesc,
+  type Transaction,
   type Extension,
 } from "@codemirror/state";
 import {
@@ -28,8 +31,18 @@ import { fencedCodeLineKindsFromLines, parseListPrefix } from "./structure";
 import { parseInlineL2 } from "./inline";
 import { requestLiveAsset } from "./assets";
 import { cachedLineParse } from "./line-cache";
+import { parseMathRanges, type MathRange } from "./math-syntax";
+import { MathWidget } from "./math";
+import { renderMath } from "../../modules/markdown/math";
 import type { DocLines, LineInfo } from "./types";
-import { normalizeAssetReference } from "../../modules/markdown/images/model";
+import {
+  assetReferenceCandidates,
+  imageAssetFromMap,
+  parseReferenceImageDocument,
+  type MarkdownImageReference,
+} from "../../modules/markdown/images/model";
+import { planLiveImageDecorations } from "./images";
+import { editorTableLabels } from "../table-config";
 import type { ImageAssetMap } from "../../modules/markdown/editor-protocol";
 import { imageDebug } from "../image-debug";
 import {
@@ -157,7 +170,11 @@ class ImageWidget extends WidgetType {
       this.dataUrl || (/^https?:\/\//i.test(this.source) ? this.source : "");
     // Re-request on every render while the asset is unresolved: `assets.ts`
     // dedupes in-flight requests and cooldowns retries after failures.
-    if (!this.dataUrl) requestLiveAsset(this.source);
+    if (!this.dataUrl) {
+      const candidates = assetReferenceCandidates(this.source);
+      for (const reference of candidates.length ? candidates : [this.source])
+        requestLiveAsset(reference);
+    }
     imageDebug("widget-render", {
       source: this.source,
       documentFrom: this.documentFrom,
@@ -510,7 +527,8 @@ class TableEdgeActionsWidget extends WidgetType {
     this.railResizeObserver = null;
   }
 
-  toDOM() {
+  toDOM(view: EditorView) {
+    const labels = view.state.facet(editorTableLabels);
     const wrapper = document.createElement("span");
     wrapper.className = "zmd-lp-table-edge-actions";
     wrapper.contentEditable = "false";
@@ -592,11 +610,11 @@ class TableEdgeActionsWidget extends WidgetType {
 
     // Row reorder handle on body rows only; the header stays fixed.
     if (this.rowIndex > 0) {
-      addDragHandle("row", "拖动调整行顺序");
+      addDragHandle("row", labels["drag-row"]);
     }
     if (this.firstRow) {
       for (let columnIndex = 0; columnIndex < this.columnCount; columnIndex++) {
-        addDragHandle("column", "拖动调整列顺序", columnIndex);
+        addDragHandle("column", labels["drag-column"], columnIndex);
       }
     }
 
@@ -610,7 +628,7 @@ class TableEdgeActionsWidget extends WidgetType {
         "append-column",
         this.columnPosition,
         "is-column is-first-row",
-        "在右侧新增列",
+        labels["append-column"],
       );
       const syncRailHeight = () => {
         const rows = Array.from(
@@ -645,7 +663,7 @@ class TableEdgeActionsWidget extends WidgetType {
       }
     }
     if (this.finalRow) {
-      addButton("append-row", this.rowPosition, "is-row", "在下方新增行");
+      addButton("append-row", this.rowPosition, "is-row", labels["append-row"]);
     }
     return wrapper;
   }
@@ -656,7 +674,13 @@ class TableEdgeActionsWidget extends WidgetType {
 }
 
 function appendRenderedInline(parent: HTMLElement, value: string) {
-  const ranges = parseInlineL2(value).sort((a, b) => a.from - b.from);
+  const formulas = parseMathRanges(value);
+  const ranges = [
+    ...parseInlineL2(value).filter(
+      (range) => !intersects(range.from, range.to, formulas),
+    ),
+    ...formulas.map((formula) => ({ ...formula, kind: "math" as const })),
+  ].sort((a, b) => a.from - b.from);
   let cursor = 0;
   for (const range of ranges) {
     if (range.from > cursor) {
@@ -665,7 +689,9 @@ function appendRenderedInline(parent: HTMLElement, value: string) {
     if (range.kind !== "mark") {
       const span = document.createElement("span");
       span.className = `zmd-lp-${range.kind}`;
-      span.textContent = value.slice(range.from, range.to);
+      if (range.kind === "math")
+        span.innerHTML = renderMath(range.content, range.display);
+      else span.textContent = value.slice(range.from, range.to);
       parent.appendChild(span);
     }
     cursor = Math.max(cursor, range.to);
@@ -683,38 +709,27 @@ function intersects(
 }
 
 /** Structural line decorations must come from a StateField, not a ViewPlugin. */
-function buildBlockDecorations(state: EditorState): DecorationSet {
-  try {
-    console.log("[Bamboo][EditorDebug] block-decorations-start", {
-      lines: state.doc.lines,
-      length: state.doc.length,
-    });
-  } catch {
-    // ignore console failures in chrome documents
-  }
+export function buildBlockDecorations(
+  state: EditorState,
+  lineNumbers?: ReadonlySet<number>,
+): DecorationSet {
   const ranges: ReturnType<Decoration["range"]>[] = [];
-  const lines: Array<{ from: number; to: number; text: string }> = [];
-  for (let n = 1; n <= state.doc.lines; n++) {
-    const line = state.doc.line(n);
-    lines.push({ from: line.from, to: line.to, text: line.text });
-  }
-  const lineTexts = lines.map((line) => line.text);
-  const fm = frontmatterLineNumbersFromLines(lineTexts);
-  const fencedCode = fencedCodeLineKindsFromLines(lineTexts);
-  const tableRows = new Map(
-    liveTableRows(state).map((row) => [row.line, row] as const),
-  );
-  const tableDelimiterLines = new Set(
-    [...tableRows.values()]
-      .filter((row) => row.kind === "header")
-      .map((row) => row.line + 1),
-  );
+  const structure = state.field(liveStructure);
+  const { fm, fencedCode, tableDelimiterLines } = structure;
+  const lines = linesToBuild(state, lineNumbers);
 
   for (let index = 0; index < lines.length; index++) {
     const line = lines[index];
-    const lineNumber = index + 1;
+    const lineNumber = line.number;
     if (fm.has(lineNumber)) continue;
-    const tableRow = tableRows.get(lineNumber);
+    if (
+      mathOnLine(state, structure, lineNumber).some(
+        (formula) =>
+          formula.display || formula.from < line.from || formula.to > line.to,
+      )
+    )
+      continue;
+    const tableRow = tableRowAt(state, structure, lineNumber);
     if (tableRow) {
       const rowClasses = ["zmd-lp-table-row", `zmd-lp-table-${tableRow.kind}`];
       if (tableRow.isLast) rowClasses.push("zmd-lp-table-last-row");
@@ -738,7 +753,7 @@ function buildBlockDecorations(state: EditorState): DecorationSet {
       );
       continue;
     }
-    const codeLineKind = fencedCode[index];
+    const codeLineKind = fencedCode[lineNumber - 1];
     if (codeLineKind) {
       ranges.push(
         Decoration.line({
@@ -763,25 +778,442 @@ function buildBlockDecorations(state: EditorState): DecorationSet {
       ranges.push(Decoration.line({ class: "zmd-lp-quote" }).range(line.from));
     }
   }
-  const decorations = Decoration.set(ranges, true);
-  try {
-    console.log("[Bamboo][EditorDebug] block-decorations-complete", {
-      count: ranges.length,
-    });
-  } catch {
-    // ignore console failures in chrome documents
-  }
-  return decorations;
+  return Decoration.set(ranges, true);
 }
 
-const livePreviewBlockDecorations = StateField.define<DecorationSet>({
+export const livePreviewBlockDecorations = StateField.define<DecorationSet>({
   create: buildBlockDecorations,
-  update: (decorations, transaction) =>
-    transaction.docChanged
+  update: (decorations, transaction) => {
+    if (transaction.docChanged) {
+      if (!canUpdateLocally(transaction))
+        return buildBlockDecorations(transaction.state);
+      const lines = changedLines(transaction);
+      return replaceLineDecorations(
+        decorations.map(transaction.changes),
+        transaction.state,
+        lines,
+        buildBlockDecorations(transaction.state, lines),
+      );
+    }
+    return transaction.state.field(liveStructure) !==
+      transaction.startState.field(liveStructure)
       ? buildBlockDecorations(transaction.state)
-      : decorations,
+      : decorations;
+  },
   provide: (field) => EditorView.decorations.from(field),
 });
+
+function referenceImagesByLine(state: EditorState) {
+  const images = new Map<number, MarkdownImageReference[]>();
+  const references = parseReferenceImageDocument(state.doc.toString());
+  const definitionLines = new Set<number>();
+  for (const range of references.definitions)
+    for (
+      let number = state.doc.lineAt(range.from).number;
+      number <= state.doc.lineAt(range.to).number;
+      number++
+    )
+      definitionLines.add(number);
+  for (const image of references.images) {
+    const line = state.doc.lineAt(image.from);
+    // A ViewPlugin cannot replace line breaks. Keep multiline alt text as
+    // source; reading mode still uses the full CommonMark image renderer.
+    if (image.to > line.to) continue;
+    const entries = images.get(line.number) ?? [];
+    entries.push({
+      ...image,
+      from: image.from - line.from,
+      to: image.to - line.from,
+    });
+    images.set(line.number, entries);
+  }
+  return { images, definitionLines };
+}
+
+function buildStructure(state: EditorState) {
+  const lines = state.doc.toJSON();
+  const fm = frontmatterLineNumbersFromLines(lines);
+  const fencedCode = fencedCodeLineKindsFromLines(lines);
+  const excludedMath: Array<{ from: number; to: number }> = [];
+  syntaxTree(state).iterate({
+    enter({ node }) {
+      if (
+        !/^(?:FencedCode|CodeBlock|InlineCode|HTMLBlock|CommentBlock|ProcessingInstructionBlock|URL|Image|LinkReference)$/.test(
+          node.name,
+        )
+      )
+        return;
+      excludedMath.push({ from: node.from, to: node.to });
+      return false;
+    },
+  });
+  for (let number = 1; number <= lines.length; number++) {
+    if (fm.has(number) || fencedCode[number - 1]) {
+      const line = state.doc.line(number);
+      excludedMath.push({ from: line.from, to: line.to });
+    }
+  }
+  const formulas = parseMathRanges(state.doc.toString(), excludedMath);
+  const mathLines = new Map<number, MathRange[]>();
+  for (const formula of formulas)
+    for (
+      let number = state.doc.lineAt(formula.from).number;
+      number <= state.doc.lineAt(formula.to).number;
+      number++
+    ) {
+      const entries = mathLines.get(number) ?? [];
+      entries.push(formula);
+      mathLines.set(number, entries);
+    }
+  const tableRows = new Map(
+    liveTableRows(state)
+      .filter(
+        (row) =>
+          !mathLines
+            .get(row.line)
+            ?.some(
+              (formula) =>
+                formula.display ||
+                state.doc.lineAt(formula.from).number !==
+                  state.doc.lineAt(formula.to).number,
+            ),
+      )
+      .map((row) => [row.line, row] as const),
+  );
+  const markers = liveBlockMarkers(state);
+  const imageLines = new Map<string, Set<number>>();
+  const { images: references, definitionLines: structuralLines } =
+    referenceImagesByLine(state);
+  syntaxTree(state).iterate({
+    enter({ node }) {
+      if (
+        !/^(?:HTMLBlock|CommentBlock|ProcessingInstructionBlock)$/.test(
+          node.name,
+        )
+      )
+        return;
+      for (
+        let number = state.doc.lineAt(node.from).number;
+        number <= state.doc.lineAt(node.to).number;
+        number++
+      )
+        structuralLines.add(number);
+    },
+  });
+  const allImageLines = new Set<number>();
+  for (let index = 0; index < lines.length; index++) {
+    if (!lines[index].includes("![") && !/<img\b/i.test(lines[index])) continue;
+    for (const image of [
+      ...cachedLineParse(lines[index], false).images,
+      ...(references.get(index + 1) ?? []),
+    ]) {
+      allImageLines.add(index + 1);
+      for (const reference of assetReferenceCandidates(image.source)) {
+        const entries = imageLines.get(reference) ?? new Set<number>();
+        entries.add(index + 1);
+        imageLines.set(reference, entries);
+      }
+    }
+  }
+  const tableLines = new Map<number, Set<number>>();
+  for (const row of tableRows.values()) {
+    const entries = tableLines.get(row.tableFrom) ?? new Set<number>();
+    entries.add(row.line);
+    tableLines.set(row.tableFrom, entries);
+  }
+  const widgetLines = new Set([
+    ...markers.tasks.keys(),
+    ...markers.rules.keys(),
+    ...tableRows.keys(),
+    ...allImageLines,
+    ...mathLines.keys(),
+  ]);
+  for (const entries of imageLines.values())
+    for (const number of entries) widgetLines.add(number);
+  return {
+    fm,
+    fencedCode,
+    formulas,
+    mathLines,
+    tableRows,
+    tableLines,
+    tableDelimiterLines: new Set(
+      [...tableRows.values()]
+        .filter((row) => row.kind === "header")
+        .map((row) => row.line + 1),
+    ),
+    markers,
+    references,
+    imageLines,
+    widgetLines,
+    structuralLines,
+    mapping: ChangeSet.empty(state.doc.length).desc as ChangeDesc,
+    mappedEdits: 0,
+    tree: syntaxTree(state),
+    syntaxPending: syntaxTree(state).length < state.doc.length,
+  };
+}
+
+type LiveStructure = ReturnType<typeof buildStructure>;
+
+function mappedMath(
+  state: EditorState,
+  structure: LiveStructure,
+  formula: MathRange,
+): MathRange {
+  const from = structure.mapping.mapPos(formula.from, 1);
+  const to = structure.mapping.mapPos(formula.to, -1);
+  return {
+    ...formula,
+    from,
+    to,
+    content: state.doc.sliceString(
+      from + formula.delimiterLength,
+      to - formula.delimiterLength,
+    ),
+  };
+}
+
+function mathOnLine(
+  state: EditorState,
+  structure: LiveStructure,
+  number: number,
+): MathRange[] {
+  return (structure.mathLines.get(number) ?? []).map((formula) =>
+    mappedMath(state, structure, formula),
+  );
+}
+
+/** Direct decorations can replace line breaks, unlike ViewPlugin decorations. */
+export function buildMathDecorations(state: EditorState): DecorationSet {
+  const structure = state.field(liveStructure);
+  const decorations: ReturnType<Decoration["range"]>[] = [];
+  for (const original of structure.formulas) {
+    const formula = mappedMath(state, structure, original);
+    const first = state.doc.lineAt(formula.from).number;
+    const last = state.doc.lineAt(formula.to).number;
+    // The table widget owns its cell DOM, including rendered inline math.
+    if (structure.tableRows.has(first)) continue;
+    const editing = state.selection.ranges.some(
+      (selection) =>
+        state.doc.lineAt(selection.from).number <= last &&
+        state.doc.lineAt(selection.to).number >= first,
+    );
+    decorations.push(
+      editing
+        ? syntaxRange(formula.from, formula.to)
+        : Decoration.replace({
+            widget: new MathWidget(formula),
+            block: formula.display,
+            inclusive: false,
+          }).range(formula.from, formula.to),
+    );
+  }
+  return Decoration.set(decorations, true);
+}
+
+export const livePreviewMathDecorations = StateField.define<DecorationSet>({
+  create: buildMathDecorations,
+  update(decorations, transaction) {
+    return transaction.docChanged ||
+      transaction.selection ||
+      transaction.state.field(liveStructure) !==
+        transaction.startState.field(liveStructure)
+      ? buildMathDecorations(transaction.state)
+      : decorations;
+  },
+  provide: (field) => EditorView.decorations.from(field),
+});
+
+function canUpdateLocally(transaction: Transaction): boolean {
+  const structure = transaction.startState.field(liveStructure);
+  if (structure.syntaxPending) {
+    const tree = syntaxTree(transaction.state);
+    const mappedCoverage = transaction.changes.mapPos(structure.tree.length, 1);
+    // A partial cache describes only the previously parsed coverage. Keep
+    // safe local edits cheap while that coverage is stable, but refresh when
+    // parsing advances (or retreats) so newly known markers are not lost.
+    if (
+      tree.length === transaction.state.doc.length ||
+      tree.length !== mappedCoverage
+    )
+      return false;
+  }
+  if (structure.mappedEdits >= 128) return false;
+  let local = true;
+  transaction.changes.iterChanges((fromA, toA, fromB, toB) => {
+    const before = transaction.startState.doc.lineAt(fromA);
+    const after = transaction.state.doc.lineAt(fromB);
+    if (
+      before.number !== transaction.startState.doc.lineAt(toA).number ||
+      after.number !== transaction.state.doc.lineAt(toB).number ||
+      !before.text.trim() ||
+      !after.text.trim() ||
+      structure.fm.has(before.number) ||
+      structure.fencedCode[before.number - 1] ||
+      structure.tableRows.has(before.number) ||
+      structure.structuralLines.has(before.number)
+    ) {
+      local = false;
+      return;
+    }
+    let beforeText = before.text;
+    let afterText = after.text;
+    const beforeMath = mathOnLine(
+      transaction.startState,
+      structure,
+      before.number,
+    );
+    if (beforeMath.length) {
+      const afterMath = parseMathRanges(after.text).map((formula) => ({
+        ...formula,
+        from: after.from + formula.from,
+        to: after.from + formula.to,
+      }));
+      const changedText =
+        transaction.startState.doc.sliceString(fromA, toA) +
+        transaction.state.doc.sliceString(fromB, toB);
+      const stable =
+        beforeMath.length === afterMath.length &&
+        !/[\\$[\]()`*_~<>]/.test(changedText) &&
+        beforeMath.every(
+          (formula, index) =>
+            !formula.display &&
+            formula.from >= before.from &&
+            formula.to <= before.to &&
+            afterMath[index].display === formula.display &&
+            afterMath[index].delimiterLength === formula.delimiterLength &&
+            afterMath[index].from ===
+              transaction.changes.mapPos(formula.from, 1) &&
+            afterMath[index].to === transaction.changes.mapPos(formula.to, -1),
+        );
+      if (!stable) {
+        local = false;
+        return;
+      }
+      // Preserve structure outside the unchanged delimiters. Pure TeX text /
+      // number edits do not need another full-document structural scan.
+      const mask = (text: string, formulas: MathRange[], base: number) => {
+        const parts: string[] = [];
+        let from = 0;
+        for (const formula of formulas) {
+          parts.push(text.slice(from, formula.from - base), "MATH");
+          from = formula.to - base;
+        }
+        parts.push(text.slice(from));
+        return parts.join("");
+      };
+      beforeText = mask(before.text, beforeMath, before.from);
+      afterText = mask(after.text, afterMath, after.from);
+    }
+    // Plain paragraph edits are line-local. Structural Markdown, indentation,
+    // table pipes and image/definition syntax can affect neighboring lines.
+    const structural =
+      /(?:!\[|<[!/?a-z]|-->|\?>|\]\]>|\]:|\||\$|\\[()[\]])|^\s*(?:>|`|~|#{1,6}(?:\s|$)|(?:[-+*]|\d{1,9}[.)])\s|[-=_*]{3,})|^[ \t]{4}/i;
+    if (structural.test(beforeText) || structural.test(afterText))
+      local = false;
+  });
+  return local;
+}
+
+const liveStructure = StateField.define<LiveStructure>({
+  create: buildStructure,
+  update: (structure, transaction) => {
+    if (transaction.docChanged) {
+      return canUpdateLocally(transaction)
+        ? {
+            ...structure,
+            mapping: structure.widgetLines.size
+              ? structure.mapping.composeDesc(transaction.changes)
+              : ChangeSet.empty(transaction.state.doc.length).desc,
+            mappedEdits: structure.widgetLines.size
+              ? structure.mappedEdits + 1
+              : 0,
+            tree: syntaxTree(transaction.state),
+          }
+        : buildStructure(transaction.state);
+    }
+    return structure.syntaxPending &&
+      syntaxTree(transaction.state) !== structure.tree
+      ? buildStructure(transaction.state)
+      : structure;
+  },
+});
+
+function linesToBuild(state: EditorState, lineNumbers?: ReadonlySet<number>) {
+  return lineNumbers
+    ? [...lineNumbers]
+        .sort((a, b) => a - b)
+        .map((number) => state.doc.line(number))
+    : Array.from({ length: state.doc.lines }, (_, index) =>
+        state.doc.line(index + 1),
+      );
+}
+
+function tableRowAt(
+  state: EditorState,
+  structure: LiveStructure,
+  number: number,
+) {
+  const row = structure.tableRows.get(number);
+  if (!row) return undefined;
+  const map = (position: number) => structure.mapping.mapPos(position);
+  return {
+    ...row,
+    from: map(row.from),
+    to: map(row.to),
+    tableFrom: map(row.tableFrom),
+    cells: row.cells.map((cell) => ({
+      ...cell,
+      from: map(cell.from),
+      to: map(cell.to),
+      outerFrom: map(cell.outerFrom),
+      outerTo: map(cell.outerTo),
+    })),
+  };
+}
+
+function changedLines(transaction: Transaction) {
+  const lines = new Set<number>();
+  transaction.changes.iterChangedRanges((_fromA, _toA, fromB, toB) => {
+    for (
+      let number = transaction.state.doc.lineAt(fromB).number;
+      number <= transaction.state.doc.lineAt(toB).number;
+      number++
+    )
+      lines.add(number);
+  });
+  // Interactive widgets and table attributes carry document positions in
+  // addition to their mapped Decoration ranges. Refresh only those whose
+  // positions shifted, so clicking a later image/task still targets its source.
+  for (const number of transaction.startState.field(liveStructure)
+    .widgetLines) {
+    const from = transaction.startState.doc.line(number).from;
+    if (transaction.changes.mapPos(from) !== from) lines.add(number);
+  }
+  return lines;
+}
+
+function replaceLineDecorations(
+  decorations: DecorationSet,
+  state: EditorState,
+  lineNumbers: ReadonlySet<number>,
+  additions: DecorationSet,
+) {
+  for (const number of lineNumbers) {
+    const line = state.doc.line(number);
+    decorations = decorations.update({
+      filterFrom: line.from,
+      filterTo: line.to,
+      filter: (from) => from < line.from || from > line.to,
+    });
+  }
+  const add: ReturnType<Decoration["range"]>[] = [];
+  additions.between(0, state.doc.length, (from, to, value) => {
+    add.push(value.range(from, to));
+  });
+  return decorations.update({ add, sort: true });
+}
 
 /**
  * Build live-preview decorations.
@@ -790,15 +1222,17 @@ const livePreviewBlockDecorations = StateField.define<DecorationSet>({
  * - Active lines: show markers with muted style, keep structural/inline styles.
  * - Frontmatter: no live styling.
  */
-function buildDecorations(
+export function buildLivePreviewDecorations(
   state: EditorState,
   composing: boolean,
   imageAssets: ImageAssetMap,
   activeCell: TableCellEditTarget | null,
   tableSelection: TableSelection,
+  lineNumbers?: ReadonlySet<number>,
 ): DecorationSet {
   const ranges: ReturnType<Decoration["range"]>[] = [];
-  const markers = liveBlockMarkers(state);
+  const structure = state.field(liveStructure);
+  const markers = structure.markers;
   const doc = asDocLines(state);
   const sel = state.selection.main;
   const active = activeLinesFromSelection(doc, sel.from, sel.to);
@@ -808,38 +1242,45 @@ function buildDecorations(
   // Single pass over all lines; the parsed text array feeds the frontmatter /
   // fenced-code passes and the main decoration loop, so a full rebuild is
   // one scan instead of three.
-  const lines: Array<{ from: number; to: number; text: string }> = [];
-  for (let n = 1; n <= state.doc.lines; n++) {
-    const line = state.doc.line(n);
-    lines.push({ from: line.from, to: line.to, text: line.text });
-  }
-  const lineTexts = lines.map((line) => line.text);
-  const fm = frontmatterLineNumbersFromLines(lineTexts);
-  const fencedCode = fencedCodeLineKindsFromLines(lineTexts);
-  const tableRows = new Map(
-    liveTableRows(state).map((row) => [row.line, row] as const),
-  );
-  const tableDelimiterLines = new Set(
-    [...tableRows.values()]
-      .filter((row) => row.kind === "header")
-      .map((row) => row.line + 1),
-  );
+  const lines = linesToBuild(state, lineNumbers);
+  const { fm, fencedCode, tableDelimiterLines } = structure;
 
   for (let index = 0; index < lines.length; index++) {
     const line = lines[index];
-    const n = index + 1;
+    const n = line.number;
     if (fm.has(n)) continue;
 
     const text = line.text;
     const base = line.from;
+    const formulas = mathOnLine(state, structure, n);
+    // A multiline formula is rendered by its direct StateField. Do not let
+    // TeX pipes/stars/indentation turn its source into a table or list.
+    if (
+      formulas.some(
+        (formula) =>
+          formula.display || formula.from < base || formula.to > line.to,
+      )
+    )
+      continue;
+    const formulaOffsets = formulas.map((formula) => ({
+      from: formula.from - base,
+      to: formula.to - base,
+    }));
     const isActive = active.has(n);
     const hideMarks = !isActive;
     const parsed = cachedLineParse(text, isActive);
-    const images = parsed.images;
-    const imagePlans = parsed.imagePlans;
+    const references = structure.references.get(n);
+    const images = references
+      ? [...parsed.images, ...references].sort((a, b) => a.from - b.from)
+      : parsed.images;
+    const imagePlans = (
+      references
+        ? planLiveImageDecorations(text, isActive, images)
+        : parsed.imagePlans
+    ).filter((image) => !intersects(image.from, image.to, formulaOffsets));
     const codeLineKind = fencedCode[n - 1];
 
-    const tableRow = tableRows.get(n);
+    const tableRow = tableRowAt(state, structure, n);
     if (tableRow) {
       let cursor = line.from;
       tableRow.cells.forEach((cell, index) => {
@@ -927,7 +1368,11 @@ function buildDecorations(
       continue;
     }
 
-    const rule = markers.rules.get(n);
+    const originalRule = markers.rules.get(n);
+    const rule = originalRule && {
+      from: structure.mapping.mapPos(originalRule.from),
+      to: structure.mapping.mapPos(originalRule.to),
+    };
     if (rule) {
       ranges.push(
         hideMarks
@@ -939,7 +1384,11 @@ function buildDecorations(
       );
       continue;
     }
-    const task = markers.tasks.get(n);
+    const originalTask = markers.tasks.get(n);
+    const task = originalTask && {
+      from: structure.mapping.mapPos(originalTask.from),
+      to: structure.mapping.mapPos(originalTask.to),
+    };
     if (task) {
       ranges.push(
         hideMarks
@@ -958,8 +1407,7 @@ function buildDecorations(
     }
 
     for (const image of imagePlans) {
-      const normalized = normalizeAssetReference(image.source);
-      const resolved = normalized ? imageAssets[normalized] : undefined;
+      const resolved = imageAssetFromMap(image.source, imageAssets);
       const widget = new ImageWidget(
         image.alt,
         image.source,
@@ -1020,6 +1468,10 @@ function buildDecorations(
     const inlines = parsed.inlines;
     for (const r of inlines) {
       if (r.from >= r.to) continue;
+      if (intersects(r.from, r.to, formulaOffsets)) continue;
+      // Link paint is viewport-local. Its syntax markers must move with it,
+      // while structural/image/table decorations remain document-wide.
+      if (r.linkSource || r.kind === "link") continue;
       if (hideMarks && intersects(r.from, r.to, images)) continue;
       const from = base + r.from;
       const to = base + r.to;
@@ -1037,13 +1489,6 @@ function buildDecorations(
         );
       } else if (r.kind === "code") {
         ranges.push(Decoration.mark({ class: "zmd-lp-code" }).range(from, to));
-      } else if (r.kind === "link") {
-        ranges.push(
-          Decoration.mark({
-            class: "zmd-lp-link",
-            attributes: r.href ? { "data-zmd-link": r.href } : undefined,
-          }).range(from, to),
-        );
       }
     }
   }
@@ -1057,9 +1502,12 @@ class LivePreviewPlugin {
   imageAssets: ImageAssetMap = {};
   activeCell: TableCellEditTarget | null = null;
   tableSelection: TableSelection = null;
+  private compositionEndTimer: number | undefined;
+  private compositionEpoch = 0;
+  private destroyed = false;
 
-  constructor(view: EditorView) {
-    this.decorations = buildDecorations(
+  constructor(private readonly view: EditorView) {
+    this.decorations = buildLivePreviewDecorations(
       view.state,
       this.composing,
       this.imageAssets,
@@ -1069,11 +1517,13 @@ class LivePreviewPlugin {
   }
 
   update(update: ViewUpdate) {
-    // IME `compositionend` can be lost on blur / window teardown; without a
-    // reset the line would stay styled as the active line forever. Reset
-    // when the editor no longer has focus; the next rebuild applies it.
+    const oldAssets = this.imageAssets;
+    const oldCell = this.activeCell;
+    const oldSelection = this.tableSelection;
+    // IME `compositionend` can be lost on blur / window teardown. Release the
+    // bookkeeping without an extra dispatch that could discard native input.
     if (this.composing && !update.view.hasFocus) {
-      this.composing = false;
+      this.clearComposing();
     }
     let effectChanged = false;
     let activeEffectSet = false;
@@ -1099,44 +1549,157 @@ class LivePreviewPlugin {
         update.changes.mapPos(this.activeCell.tableFrom, 1),
       );
     }
-    if (
-      effectChanged ||
-      update.docChanged ||
-      update.selectionSet ||
+    const fullRebuild =
       update.state.readOnly !== update.startState.readOnly ||
       update.state.facet(EditorView.editable) !==
         update.startState.facet(EditorView.editable) ||
-      syntaxTree(update.state) !== syntaxTree(update.startState)
-      // Deliberately NOT `viewportChanged` / `geometryChanged`: the
-      // decoration set is document-wide and CodeMirror renders it per
-      // viewport itself, so scrolling or resizing must not trigger a full
-      // O(doc) rebuild on every frame.
-    ) {
-      this.decorations = buildDecorations(
+      (!update.docChanged &&
+        update.state.field(liveStructure) !==
+          update.startState.field(liveStructure)) ||
+      update.transactions.some(
+        (transaction) =>
+          transaction.docChanged && !canUpdateLocally(transaction),
+      );
+    if (fullRebuild) {
+      this.decorations = buildLivePreviewDecorations(
         update.state,
         this.composing,
         this.imageAssets,
         this.activeCell,
         this.tableSelection,
       );
+      return;
     }
+    if (!effectChanged && !update.docChanged && !update.selectionSet) return;
+    const lines = new Set<number>();
+    if (update.docChanged) {
+      this.decorations = this.decorations.map(update.changes);
+      for (const transaction of update.transactions)
+        if (transaction.docChanged)
+          for (const number of changedLines(transaction)) lines.add(number);
+    }
+    if (update.selectionSet) {
+      for (const state of [update.startState, update.state])
+        for (const number of activeLinesFromSelection(
+          asDocLines(state),
+          state.selection.main.from,
+          state.selection.main.to,
+        ))
+          lines.add(number);
+    }
+    const structure = update.state.field(liveStructure);
+    if (oldAssets !== this.imageAssets) {
+      for (const reference of new Set([
+        ...Object.keys(oldAssets),
+        ...Object.keys(this.imageAssets),
+      ])) {
+        if (
+          oldAssets[reference]?.dataUrl ===
+            this.imageAssets[reference]?.dataUrl &&
+          oldAssets[reference]?.error === this.imageAssets[reference]?.error
+        )
+          continue;
+        for (const number of structure.imageLines.get(reference) ?? [])
+          lines.add(number);
+      }
+    }
+    if (
+      effectChanged &&
+      (oldCell !== this.activeCell || oldSelection !== this.tableSelection)
+    ) {
+      for (const target of [
+        oldCell,
+        oldSelection,
+        this.activeCell,
+        this.tableSelection,
+      ]) {
+        if (!target) continue;
+        const current =
+          target === oldCell || target === oldSelection
+            ? update.changes.mapPos(target.tableFrom)
+            : target.tableFrom;
+        const original = structure.mapping.invertedDesc.mapPos(current);
+        for (const number of structure.tableLines.get(original) ?? [])
+          lines.add(number);
+      }
+    }
+    if (!lines.size) return;
+    if (lines.size > 128) {
+      this.decorations = buildLivePreviewDecorations(
+        update.state,
+        this.composing,
+        this.imageAssets,
+        this.activeCell,
+        this.tableSelection,
+      );
+      return;
+    }
+    this.decorations = replaceLineDecorations(
+      this.decorations,
+      update.state,
+      lines,
+      buildLivePreviewDecorations(
+        update.state,
+        this.composing,
+        this.imageAssets,
+        this.activeCell,
+        this.tableSelection,
+        lines,
+      ),
+    );
   }
 
   setComposing(view: EditorView, value: boolean) {
-    if (this.composing === value) return;
-    this.composing = value;
-    this.decorations = buildDecorations(
-      view.state,
-      this.composing,
-      this.imageAssets,
-      this.activeCell,
-      this.tableSelection,
-    );
-    view.dispatch({});
+    this.cancelCompositionEnd();
+    if (value) {
+      this.composing = true;
+      return;
+    }
+    if (!this.composing) return;
+    const ownerWindow = view.dom.ownerDocument.defaultView;
+    if (!ownerWindow) {
+      this.composing = false;
+      return;
+    }
+    const epoch = this.compositionEpoch;
+    // CodeMirror commits pending native mutations after compositionend. An
+    // eager dispatch here clears those records and can restore the old text.
+    // The selection already exposes this line's syntax, so neither composition
+    // event requires a redraw; subsequent native transactions update it normally.
+    this.compositionEndTimer = ownerWindow.setTimeout(() => {
+      this.compositionEndTimer = undefined;
+      if (
+        this.destroyed ||
+        epoch !== this.compositionEpoch ||
+        view.compositionStarted
+      )
+        return;
+      this.composing = false;
+    }, 0);
+  }
+
+  private cancelCompositionEnd() {
+    this.compositionEpoch += 1;
+    if (this.compositionEndTimer !== undefined) {
+      this.view.dom.ownerDocument.defaultView?.clearTimeout(
+        this.compositionEndTimer,
+      );
+      this.compositionEndTimer = undefined;
+    }
+  }
+
+  clearComposing() {
+    this.cancelCompositionEnd();
+    this.composing = false;
+  }
+
+  destroy() {
+    this.destroyed = true;
+    this.clearComposing();
   }
 }
 
-const livePreviewViewPlugin = ViewPlugin.fromClass(LivePreviewPlugin, {
+export const livePreviewViewPlugin = ViewPlugin.fromClass(LivePreviewPlugin, {
   decorations: (v) => v.decorations,
   eventHandlers: {
     compositionstart(this: LivePreviewPlugin, _event, view) {
@@ -1145,10 +1708,154 @@ const livePreviewViewPlugin = ViewPlugin.fromClass(LivePreviewPlugin, {
     compositionend(this: LivePreviewPlugin, _event, view) {
       this.setComposing(view, false);
     },
+    blur(this: LivePreviewPlugin) {
+      this.clearComposing();
+    },
   },
 });
 
+/** Inline-only link paint; viewport changes never rebuild block or image layout. */
+export function buildVisibleLinkDecorations(
+  state: EditorState,
+  visibleRanges: readonly { from: number; to: number }[],
+  composing = false,
+): DecorationSet {
+  const structure = state.field(liveStructure);
+  const tree = syntaxTree(state);
+  const lines = new Map<number, Array<{ from: number; to: number }>>();
+  for (const range of visibleRanges) {
+    const first = state.doc.lineAt(range.from).number;
+    const last = state.doc.lineAt(Math.max(range.from, range.to - 1)).number;
+    for (let number = first; number <= last; number += 1) {
+      const ranges = lines.get(number) ?? [];
+      ranges.push(range);
+      lines.set(number, ranges);
+    }
+  }
+  const selection = state.selection.main;
+  const firstActive = state.doc.lineAt(selection.from).number;
+  const lastActive = state.doc.lineAt(
+    selection.empty ? selection.to : Math.max(selection.from, selection.to - 1),
+  ).number;
+  const composingLine = composing ? state.doc.lineAt(selection.head).number : 0;
+  const decorations: ReturnType<Decoration["range"]>[] = [];
+  const forbidden =
+    /^(?:FencedCode|CodeBlock|InlineCode|CodeText|HTMLBlock|HTMLTag|CommentBlock|Comment|ProcessingInstructionBlock|LinkReference|Image)$/;
+  const inForbiddenSyntax = (position: number, side: -1 | 1): boolean => {
+    let node = tree.resolveInner(position, side);
+    while (node) {
+      if (forbidden.test(node.name)) return true;
+      if (!node.parent) break;
+      node = node.parent;
+    }
+    return false;
+  };
+  for (const [number, visible] of lines) {
+    if (
+      structure.fm.has(number) ||
+      structure.fencedCode[number - 1] ||
+      structure.tableRows.has(number) ||
+      structure.tableDelimiterLines.has(number) ||
+      structure.structuralLines.has(number)
+    )
+      continue;
+    const line = state.doc.line(number);
+    const active =
+      (number >= firstActive && number <= lastActive) ||
+      number === composingLine;
+    const parsed = cachedLineParse(line.text, active);
+    const images = [
+      ...parsed.images,
+      ...(structure.references.get(number) ?? []),
+    ];
+    const accepted = new Map<number, boolean>();
+    for (const range of parsed.inlines) {
+      const source = range.linkSource;
+      if (!source || range.from >= range.to) continue;
+      let allowed = accepted.get(source.from);
+      if (allowed === undefined) {
+        const from = line.from + source.from;
+        const to = line.from + source.to;
+        allowed =
+          source.to <= line.length &&
+          to <= tree.length &&
+          visible.some((part) => from < part.to && to > part.from) &&
+          !intersects(source.from, source.to, images) &&
+          !mathOnLine(state, structure, number).some(
+            (formula) => from < formula.to && to > formula.from,
+          ) &&
+          !inForbiddenSyntax(from, 1) &&
+          !inForbiddenSyntax(to, -1);
+        accepted.set(source.from, allowed);
+      }
+      if (!allowed) continue;
+      const from = line.from + range.from;
+      const to = line.from + range.to;
+      if (range.kind === "link") {
+        decorations.push(
+          Decoration.mark({
+            class: "zmd-lp-link",
+            // This is a styling marker. Click handlers resolve current source.
+            attributes: { "data-zmd-link": "" },
+          }).range(from, to),
+        );
+      } else if (range.kind === "mark") {
+        // A cached line never includes a newline. Viewport-dependent replace
+        // decorations must not span lines or introduce block widgets.
+        decorations.push(active ? syntaxRange(from, to) : hideRange(from, to));
+      }
+    }
+  }
+  return Decoration.set(decorations, true);
+}
+
+class VisibleLinksPlugin {
+  decorations: DecorationSet;
+  private composing = false;
+
+  constructor(private readonly view: EditorView) {
+    this.decorations = this.build();
+  }
+
+  private build(): DecorationSet {
+    this.composing =
+      this.view.plugin(livePreviewViewPlugin)?.composing ?? false;
+    return buildVisibleLinkDecorations(
+      this.view.state,
+      this.view.visibleRanges,
+      this.composing,
+    );
+  }
+
+  update(update: ViewUpdate): void {
+    if (
+      update.docChanged ||
+      update.selectionSet ||
+      update.viewportChanged ||
+      syntaxTree(update.state) !== syntaxTree(update.startState) ||
+      update.state.field(liveStructure) !==
+        update.startState.field(liveStructure) ||
+      this.composing !==
+        (update.view.plugin(livePreviewViewPlugin)?.composing ?? false)
+    )
+      this.decorations = this.build();
+  }
+}
+
+export const livePreviewVisibleLinks = ViewPlugin.fromClass(
+  VisibleLinksPlugin,
+  {
+    decorations: (plugin) => plugin.decorations,
+  },
+);
+
 /** Live preview decorations (headings, emphasis, list, quote, link, code). */
 export function livePreviewPlugin(): Extension {
-  return [livePreviewBlockDecorations, livePreviewViewPlugin];
+  return [
+    liveStructure,
+    livePreviewMathDecorations,
+    livePreviewBlockDecorations,
+    livePreviewViewPlugin,
+    livePreviewVisibleLinks,
+  ];
 }

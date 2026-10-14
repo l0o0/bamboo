@@ -75,7 +75,11 @@ test("standalone window commands are shown only for one matching attachment", as
     for (const extension of ["md", "canvas", "pdf"]) {
       const item = {
         isAttachment: () => true,
+        isEditable: () => true,
+        isRegularItem: () => false,
+        libraryID: 1,
         attachmentFilename: `file.${extension}`,
+        attachmentContentType: extension === "pdf" ? "application/pdf" : "",
       };
       selected = [item];
       popup.dispatchEvent(new window.Event("popupshowing"));

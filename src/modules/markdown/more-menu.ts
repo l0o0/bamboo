@@ -2,6 +2,8 @@ import { getString } from "../../utils/locale";
 import type { FluentMessageId } from "../../../typings/i10n";
 
 export type MoreMenuAction =
+  | "save"
+  | "redo"
   | "open-window"
   | "search-library"
   | "history"
@@ -63,6 +65,8 @@ export const MORE_MENU_SECTIONS: readonly (readonly MoreMenuItem[])[] = [
 
 /** Fluent key for a kebab-menu action label. */
 export function moreMenuLabelKey(action: MoreMenuAction): FluentMessageId {
+  if (action === "save") return "tab-save";
+  if (action === "redo") return "tab-redo";
   return `more-${action}` as FluentMessageId;
 }
 

@@ -1,5 +1,13 @@
 import { createElement, Fragment, memo, type ComponentType } from "react";
-import { NodeResizer, type NodeProps } from "@xyflow/react";
+import { NodeResizer, useStore, type NodeProps } from "@xyflow/react";
+import { CardShell } from "./CardShell";
+import { useWhiteboardLabels, noteTypeLabel } from "../chrome/labels";
+import { getNoteType } from "../model/academic";
+import {
+  COMPACT_CARD_ZOOM,
+  compactCardTitle,
+  useFullCanvasRender,
+} from "../whiteboard/rendering";
 import {
   ACADEMIC_SOURCE_CARD_SIZE,
   type CanvasNodeKind,
@@ -125,24 +133,67 @@ export function getNodeSpec(kind: CanvasNodeKind): WhiteboardNodeSpec {
 export const canvasNodeTypes = Object.fromEntries(
   NODE_SPECS.map((spec) => {
     const Component = memo(spec.Component);
-    return [
-      spec.kind,
-      (props: NodeProps<CanvasFlowNode>) =>
-        createElement(
-          Fragment,
-          null,
-          createElement(Component, props),
-          spec.kind !== "line" && spec.kind !== "arrow"
-            ? createElement(NodeResizer, {
-                isVisible: Boolean(props.selected && props.isConnectable),
-                minWidth: spec.kind === "frame" ? 160 : 60,
-                minHeight: spec.kind === "frame" ? 100 : 40,
-                handleClassName: "zmd-board-resize-handle",
-                lineClassName: "zmd-board-resize-line",
-                color: "var(--zmd-board-accent, #2563eb)",
-              })
-            : null,
-        ),
-    ];
+    function RenderNode(props: NodeProps<CanvasFlowNode>) {
+      // Subscribe to a boolean: panning and zooming within one detail level
+      // do not rerender every card. Selected cards always remain interactive.
+      const zoomedOut = useStore(
+        (state) => state.transform[2] < COMPACT_CARD_ZOOM,
+      );
+      const fullRender = useFullCanvasRender();
+      const labels = useWhiteboardLabels();
+      const model = props.data.model;
+      const supportsCompact = [
+        "note",
+        "literature",
+        "quote",
+        "item",
+        "pdf",
+        "attachment",
+      ].includes(spec.kind);
+      const compact =
+        supportsCompact && zoomedOut && !props.selected && !fullRender;
+      const kindLabel =
+        model.kind === "note"
+          ? noteTypeLabel(labels, getNoteType(model))
+          : model.kind === "literature"
+            ? labels.kindLiterature
+            : model.kind === "quote"
+              ? labels.kindQuote
+              : model.kind === "item"
+                ? labels.addItem
+                : model.kind === "pdf"
+                  ? labels.addPdf
+                  : labels.fileGeneric;
+      return createElement(
+        Fragment,
+        null,
+        compact
+          ? createElement(CardShell, {
+              kind: model.kind,
+              kindLabel,
+              ...(model.kind === "note"
+                ? { noteType: getNoteType(model) }
+                : {}),
+              nodeStyle: model.style,
+              children: createElement(
+                "p",
+                { className: "zmd-board-card-title zmd-board-card-summary" },
+                compactCardTitle(model) || kindLabel,
+              ),
+            })
+          : createElement(Component, props),
+        spec.kind !== "line" && spec.kind !== "arrow"
+          ? createElement(NodeResizer, {
+              isVisible: Boolean(props.selected && props.isConnectable),
+              minWidth: spec.kind === "frame" ? 160 : 60,
+              minHeight: spec.kind === "frame" ? 100 : 40,
+              handleClassName: "zmd-board-resize-handle",
+              lineClassName: "zmd-board-resize-line",
+              color: "var(--zmd-board-accent, #2563eb)",
+            })
+          : null,
+      );
+    }
+    return [spec.kind, RenderNode];
   }),
 ) as Record<CanvasNodeKind, WhiteboardNodeSpec["Component"]>;

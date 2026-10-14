@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { tableMenuItems } from "../src/editor/table-menu.ts";
 import type { TableTarget } from "../src/editor/table-operations.ts";
 import type { TableSelection } from "../src/editor/table-selection.ts";
+import { DEFAULT_TABLE_LABELS } from "../src/editor/table-labels.ts";
 
 function target(overrides: Partial<TableTarget> = {}): TableTarget {
   return {
@@ -93,6 +94,11 @@ describe("table context menu state", () => {
       .map((item) => item.action);
     assert.ok(actions.includes("clear-selection"));
     assert.ok(actions.includes("delete-selection"));
+    assert.ok(!actions.includes("delete-row"));
+    assert.equal(
+      actions.filter((action) => action.startsWith("delete-")).length,
+      1,
+    );
     assert.ok(actions.includes("insert-row-above"));
     assert.ok(!actions.includes("insert-column-left"));
     assert.ok(
@@ -126,5 +132,43 @@ describe("table context menu state", () => {
     };
     const items = tableMenuItems(target(), true, selection).flat();
     assert.ok(items.every((item) => item.disabled));
+  });
+
+  it("uses the supplied locale for both cell and selected-row commands", () => {
+    const labels = {
+      ...DEFAULT_TABLE_LABELS,
+      "delete-row": "删除行",
+      "delete-selected-row": "删除选中的行",
+      "align-left": "左对齐",
+    };
+    const cell = tableMenuItems(target(), false, null, labels).flat();
+    assert.equal(
+      cell.find((item) => item.action === "delete-row")?.label,
+      "删除行",
+    );
+    const selected = tableMenuItems(
+      target(),
+      false,
+      {
+        kind: "row",
+        tableFrom: 0,
+        rowIndex: 1,
+      },
+      labels,
+    ).flat();
+    assert.equal(
+      selected.find((item) => item.action === "delete-selection")?.label,
+      "删除选中的行",
+    );
+    assert.equal(
+      selected.find((item) => item.action === "align-selection-left")?.label,
+      "左对齐",
+    );
+    assert.equal(
+      tableMenuItems(target(), false)
+        .flat()
+        .find((item) => item.action === "delete-row")?.label,
+      "Delete row",
+    );
   });
 });

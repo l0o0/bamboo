@@ -5,8 +5,10 @@ import {
   bindNoteLibraryWindow,
   rebuildNoteLibrary,
   subscribeNoteLibrary,
+  type NoteReadFailure,
 } from "./note-library";
 import type { PortableNote } from "./note-links";
+import { createSidebarMotion } from "./sidebar-motion";
 
 /** Keep sidebar visibility independent from the currently displayed note. */
 export function mountBacklinksSidebar(
@@ -16,26 +18,42 @@ export function mountBacklinksSidebar(
   onLayoutChange?: () => void,
 ): () => void {
   let expanded: boolean | undefined;
-  const sync = () => {
+  let visible: boolean | undefined;
+  let narrow: boolean | undefined;
+  let previousWidth: number | undefined;
+  const motion = createSidebarMotion(sidebar, toggle, "right");
+  const sync = (animate = false) => {
     const width = root.getBoundingClientRect().width || root.clientWidth;
-    const narrow = width > 0 && width < 1000;
-    const visible = expanded ?? !narrow;
-    if (!visible && sidebar.contains(sidebar.ownerDocument.activeElement))
-      toggle.focus();
-    sidebar.hidden = !visible;
-    sidebar.classList.toggle("is-floating", narrow);
-    toggle.setAttribute("aria-expanded", String(visible));
-    sidebar.setAttribute("aria-hidden", String(!visible));
-    onLayoutChange?.();
+    const widthChanged = previousWidth !== width;
+    previousWidth = width;
+    const nextNarrow = width > 0 && width < 1000;
+    const nextVisible = expanded ?? !nextNarrow;
+    if (nextVisible === visible && nextNarrow === narrow) {
+      if (widthChanged) motion.finish();
+      return;
+    }
+    const wasDocked = visible === true && narrow === false;
+    visible = nextVisible;
+    narrow = nextNarrow;
+    motion.update(
+      visible,
+      () => {
+        sidebar.hidden = !nextVisible;
+        sidebar.classList.toggle("is-floating", nextNarrow);
+        toggle.setAttribute("aria-expanded", String(nextVisible));
+      },
+      animate,
+    );
+    if (wasDocked !== (visible && !narrow)) onLayoutChange?.();
   };
   const onToggle = () => {
-    expanded = sidebar.hidden === true;
-    sync();
+    expanded = !visible;
+    sync(true);
   };
   const onKeyDown = (event: KeyboardEvent) => {
     if (event.key !== "Escape") return;
     expanded = false;
-    sync();
+    sync(true);
     toggle.focus();
     event.preventDefault();
   };
@@ -43,11 +61,14 @@ export function mountBacklinksSidebar(
   toggle.addEventListener("click", onToggle);
   sidebar.addEventListener("keydown", onKeyDown);
   const ResizeObserverCtor = root.ownerDocument.defaultView?.ResizeObserver;
-  const observer = ResizeObserverCtor ? new ResizeObserverCtor(sync) : null;
+  const observer = ResizeObserverCtor
+    ? new ResizeObserverCtor(() => sync())
+    : null;
   observer?.observe(root);
   sync();
   return () => {
     observer?.disconnect();
+    motion.destroy();
     toggle.removeEventListener("click", onToggle);
     sidebar.removeEventListener("keydown", onKeyDown);
   };
@@ -72,10 +93,17 @@ export function mountNoteBacklinks(
       empty: string;
       incomplete: string;
       failed: string;
+      failureSummary?: string;
+      notDownloaded?: string;
+      unavailable?: string;
+      readError?: string;
+      indexError?: string;
+      locateNote?: string;
+      moreFailures?: string;
     };
   } = {},
 ): () => void {
-  const labels = options.labels ?? {
+  const labels: NonNullable<typeof options.labels> = options.labels ?? {
     title: getString("note-backlinks-title"),
     refresh: getString("note-backlinks-refresh"),
     loading: getString("note-backlinks-loading"),
@@ -109,11 +137,82 @@ export function mountNoteBacklinks(
   const status = doc.createElement("p");
   status.setAttribute("role", "status");
   status.style.cssText = "font-size:12px;white-space:pre-wrap";
+  const failures = doc.createElement("details");
+  failures.className = "zmd-backlinks-failures";
+  failures.hidden = true;
+  failures.style.cssText = "font-size:12px;margin:8px 0 12px";
+  const failureSummary = doc.createElement("summary");
+  const failureList = doc.createElement("ul");
+  failureList.style.cssText = "list-style:none;padding:0;margin:8px 0";
+  failures.append(failureSummary, failureList);
   const list = doc.createElement("div");
-  panel.append(summary, status, list);
+  panel.append(summary, status, failures, list);
   parent.append(panel);
   let disposed = false;
   let generation = 0;
+
+  const failureLabel = (reason: NoteReadFailure["reason"]) => {
+    if (reason === "not-downloaded")
+      return labels.notDownloaded ?? getString("note-backlinks-not-downloaded");
+    if (reason === "unavailable")
+      return labels.unavailable ?? getString("note-backlinks-unavailable");
+    if (reason === "index-error")
+      return labels.indexError ?? getString("note-backlinks-index-error");
+    return labels.readError ?? getString("note-backlinks-read-error");
+  };
+
+  const renderFailures = (values: readonly NoteReadFailure[]) => {
+    failures.hidden = values.length === 0;
+    failureList.replaceChildren();
+    failureSummary.textContent = `${
+      labels.failureSummary ?? getString("note-backlinks-failure-summary")
+    } (${values.length})`;
+    const api = (globalThis as { Zotero?: any }).Zotero;
+    const pane =
+      (win as _ZoteroTypes.MainWindow).ZoteroPane ||
+      api?.getActiveZoteroPane?.();
+    const canLocate =
+      typeof pane?.selectItem === "function" &&
+      typeof api?.Items?.getByLibraryAndKey === "function";
+    for (const failure of values.slice(0, 10)) {
+      const row = doc.createElement("li");
+      row.style.marginBlock = "6px";
+      const title = doc.createElement(canLocate ? "button" : "span");
+      title.textContent = failure.title;
+      if (title.tagName.toLowerCase() === "button") {
+        const button = title as HTMLButtonElement;
+        button.type = "button";
+        button.title =
+          labels.locateNote ?? getString("note-backlinks-locate-note");
+        button.dataset.noteKey = failure.key;
+        button.style.cssText =
+          "padding:0;border:0;background:transparent;color:inherit;font:inherit;text-align:start;text-decoration:underline;cursor:pointer;overflow-wrap:anywhere";
+        button.onclick = () => {
+          if (disposed) return;
+          void (async () => {
+            const source = api?.Items?.getByLibraryAndKey?.(
+              item.libraryID,
+              failure.key,
+            );
+            if (source && !disposed) await pane.selectItem(source.id);
+          })().catch(() => {
+            if (!disposed) status.textContent = labels.failed;
+          });
+        };
+      }
+      const reason = doc.createElement("span");
+      reason.style.cssText =
+        "display:block;color:var(--zmd-text-muted);margin-top:2px";
+      reason.textContent = failureLabel(failure.reason);
+      row.append(title, reason);
+      failureList.append(row);
+    }
+    if (values.length > 10) {
+      const more = doc.createElement("li");
+      more.textContent = `${labels.moreFailures ?? getString("note-backlinks-more-failures")} (${values.length - 10})`;
+      failureList.append(more);
+    }
+  };
 
   async function render() {
     const current = ++generation;
@@ -123,6 +222,7 @@ export function mountNoteBacklinks(
       const result = await getNoteBacklinks(item);
       if (disposed || current !== generation) return;
       list.replaceChildren();
+      renderFailures(result.failures);
       count.textContent = `(${result.entries.length})`;
       status.textContent = result.unreadable
         ? `${labels.incomplete} (${result.unreadable})`
@@ -162,6 +262,7 @@ export function mountNoteBacklinks(
     } catch (error) {
       if (!disposed && current === generation) {
         list.replaceChildren();
+        renderFailures([]);
         status.textContent = `${labels.failed}: ${String(error)}`;
       }
     } finally {

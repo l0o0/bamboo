@@ -217,6 +217,7 @@ export function createWhiteboardEditor(
     win?: Window;
     channel?: string;
     snapshot?: CanvasDocument | null;
+    editable?: boolean;
     labels?: WhiteboardLabels;
     templates?: NoteTemplate[];
     appearance?: WhiteboardAppearance;
@@ -385,6 +386,9 @@ export function createWhiteboardEditor(
           source: WHITEBOARD_MESSAGE_SOURCE,
           type: "init",
           payload: {
+            ...(options.editable !== undefined
+              ? { editable: options.editable }
+              : {}),
             theme: resolveEditorTheme(ownerWin),
             colorScheme: normalizeColorScheme(options.colorScheme),
             ...(options.appearance ? { appearance: options.appearance } : {}),

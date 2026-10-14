@@ -1,0 +1,78 @@
+diff --git a/dist/index.cjs b/dist/index.cjs
+index a7f1502ce9663cff433857f3e353acff9b381a98..ba2b8db524f121900f27b2ccb1b58e89410e950c 100644
+--- a/dist/index.cjs
++++ b/dist/index.cjs
+@@ -1507,12 +1507,15 @@ const DefaultInline = {
+                 let content = cx.takeContent(i);
+                 let link = cx.parts[i] = finishLink(cx, content, part.type == LinkStart ? Type.Link : Type.Image, part.from, start + 1);
+                 // Set any open-link markers before this link to invalid.
+-                if (part.type == LinkStart)
+-                    for (let j = 0; j < i; j++) {
++                if (part.type == LinkStart) {
++                    // Earlier parts already had their link openers disabled.
++                    for (let j = cx.linkMarkCutoff; j < i; j++) {
+                         let p = cx.parts[j];
+                         if (p instanceof InlineDelimiter && p.type == LinkStart)
+                             p.side = 0 /* Mark.None */;
+                     }
++                    cx.linkMarkCutoff = i + 1;
++                }
+                 return link.to;
+             }
+         }
+@@ -1656,6 +1659,8 @@ class InlineContext {
+         @internal
+         */
+         this.parts = [];
++        // LinkStart delimiters before this index have already been invalidated.
++        this.linkMarkCutoff = 0;
+     }
+     /**
+     Get the character code at the given (document-relative)
+@@ -1793,6 +1798,7 @@ class InlineContext {
+     takeContent(startIndex) {
+         let content = this.resolveMarkers(startIndex);
+         this.parts.length = startIndex;
++        this.linkMarkCutoff = Math.min(this.linkMarkCutoff, startIndex);
+         return content;
+     }
+     /**
+diff --git a/dist/index.js b/dist/index.js
+index e5725e7b76c21832da1a3d2ed188ae042c06224c..378a3df7b8371272ecfd1f6202fc7a06b8bed70c 100644
+--- a/dist/index.js
++++ b/dist/index.js
+@@ -1505,12 +1505,15 @@ const DefaultInline = {
+                 let content = cx.takeContent(i);
+                 let link = cx.parts[i] = finishLink(cx, content, part.type == LinkStart ? Type.Link : Type.Image, part.from, start + 1);
+                 // Set any open-link markers before this link to invalid.
+-                if (part.type == LinkStart)
+-                    for (let j = 0; j < i; j++) {
++                if (part.type == LinkStart) {
++                    // Earlier parts already had their link openers disabled.
++                    for (let j = cx.linkMarkCutoff; j < i; j++) {
+                         let p = cx.parts[j];
+                         if (p instanceof InlineDelimiter && p.type == LinkStart)
+                             p.side = 0 /* Mark.None */;
+                     }
++                    cx.linkMarkCutoff = i + 1;
++                }
+                 return link.to;
+             }
+         }
+@@ -1654,6 +1657,8 @@ class InlineContext {
+         @internal
+         */
+         this.parts = [];
++        // LinkStart delimiters before this index have already been invalidated.
++        this.linkMarkCutoff = 0;
+     }
+     /**
+     Get the character code at the given (document-relative)
+@@ -1791,6 +1796,7 @@ class InlineContext {
+     takeContent(startIndex) {
+         let content = this.resolveMarkers(startIndex);
+         this.parts.length = startIndex;
++        this.linkMarkCutoff = Math.min(this.linkMarkCutoff, startIndex);
+         return content;
+     }
+     /**

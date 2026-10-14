@@ -14,6 +14,18 @@ import {
   canvasFileToDocument,
 } from "../packages/whiteboard/src/model/canvas-file.ts";
 
+async function waitForWorkflow(predicate: () => boolean, description: string) {
+  const deadline = Date.now() + 5000;
+  while (!predicate()) {
+    assert.ok(Date.now() < deadline, `Timed out waiting for ${description}`);
+    // FileReader and React commit on separate turns. Leave each act scope so
+    // React can publish the update before checking the runtime/DOM again.
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    });
+  }
+}
+
 test("canvas editing keeps toolbars exclusive and preserves creation, history, and grouping", async () => {
   const window = new Window({ url: "https://example.test" });
   window.document.write(
@@ -160,9 +172,7 @@ test("canvas editing keeps toolbars exclusive and preserves creation, history, a
       ),
     );
     // React Flow invokes onInit on the next timer turn after initializing pan/zoom.
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 10));
-    });
+    await waitForWorkflow(() => bootstrapped, "React Flow initialization");
     const boardHost = container.querySelector<HTMLElement>(".zmd-board-host")!;
     assert.equal(boardHost.style.getPropertyValue("--zmd-board-bg"), "#123456");
     assert.match(
@@ -1049,7 +1059,7 @@ test("canvas editing keeps toolbars exclusive and preserves creation, history, a
     const imageNode = container.querySelector<HTMLElement>(
       '.react-flow__node[data-id="image"]',
     )!;
-    imageNode.focus();
+    await act(async () => imageNode.focus());
     await dispatch(imageNode.querySelector("img")!, "click");
     const viewerClose = container.querySelector<HTMLButtonElement>(
       ".zmd-board-image-viewer-close",
@@ -1209,10 +1219,15 @@ test("canvas editing keeps toolbars exclusive and preserves creation, history, a
           items: [{ type: "image/png", getAsFile: () => file }],
         },
       });
-      await act(async () => {
-        container.querySelector("textarea")!.dispatchEvent(paste);
-        await new Promise((resolve) => setTimeout(resolve, 10));
-      });
+      const pasteTarget =
+        container.querySelector<HTMLTextAreaElement>("textarea")!;
+      const beforePaste = pasteTarget.value;
+      await act(async () => pasteTarget.dispatchEvent(paste));
+      if (kind === "note")
+        await waitForWorkflow(
+          () => pasteTarget.value !== beforePaste,
+          "pasted image to reach the note editor",
+        );
       assert.equal(paste.defaultPrevented, kind === "note");
       const text =
         container.querySelector<HTMLTextAreaElement>("textarea")!.value;
@@ -1245,8 +1260,11 @@ test("canvas editing keeps toolbars exclusive and preserves creation, history, a
       noteFileInput.dispatchEvent(
         new window.Event("change", { bubbles: true }),
       );
-      await new Promise((resolve) => setTimeout(resolve, 25));
     });
+    await waitForWorkflow(() => {
+      const note = runtime!.getSnapshot().nodes[0];
+      return note.kind === "note" && !!note.attachments?.length;
+    }, "selected file to reach the edited note");
     const noteWithFile = runtime!.getSnapshot().nodes[0];
     assert.equal(runtime!.getSnapshot().nodes.length, 1);
     assert.equal(
@@ -1352,7 +1370,16 @@ test("canvas editing keeps toolbars exclusive and preserves creation, history, a
         connections: [],
       }),
     );
-    const dropFiles = async (target: Element) => {
+    const dropFiles = async (target: Element, nodeId: string) => {
+      const before = runtime!
+        .getSnapshot()
+        .nodes.find((node) => node.id === nodeId);
+      if (before?.kind !== "note") throw new Error("Expected drop target note");
+      const editor =
+        target.tagName.toLowerCase() === "textarea"
+          ? (target as HTMLTextAreaElement)
+          : null;
+      const beforeEditorValue = editor?.value;
       const event = new window.Event("drop", {
         bubbles: true,
         cancelable: true,
@@ -1370,13 +1397,23 @@ test("canvas editing keeps toolbars exclusive and preserves creation, history, a
         clientX: { value: 250 },
         clientY: { value: 250 },
       });
-      await act(async () => {
-        target.dispatchEvent(event);
-        await new Promise((resolve) => setTimeout(resolve, 25));
-      });
+      await act(async () => target.dispatchEvent(event));
+      await waitForWorkflow(() => {
+        const note = runtime!
+          .getSnapshot()
+          .nodes.find((node) => node.id === nodeId);
+        return (
+          note?.kind === "note" &&
+          (note.attachments?.length ?? 0) > (before.attachments?.length ?? 0) &&
+          (editor
+            ? editor.value !== beforeEditorValue
+            : note.content !== before.content)
+        );
+      }, `file and image import into ${nodeId}`);
     };
     await dropFiles(
       container.querySelector('.react-flow__node[data-id="attachment-note"]')!,
+      "attachment-note",
     );
     let imported = runtime!.getSnapshot().nodes[0];
     assert.equal(runtime!.getSnapshot().nodes.length, 1);
@@ -1411,7 +1448,7 @@ test("canvas editing keeps toolbars exclusive and preserves creation, history, a
       container.querySelector(".zmd-board-selection-edit")!,
       "click",
     );
-    await dropFiles(container.querySelector("textarea")!);
+    await dropFiles(container.querySelector("textarea")!, "attachment-note");
     imported = runtime!.getSnapshot().nodes[0];
     assert.equal(
       runtime!.getSnapshot().nodes.length,
@@ -1467,7 +1504,7 @@ test("canvas editing keeps toolbars exclusive and preserves creation, history, a
       container.querySelector(".zmd-board-selection-edit")!,
       "click",
     );
-    await dropFiles(container.querySelector("textarea")!);
+    await dropFiles(container.querySelector("textarea")!, "switch-a");
     // No textarea blur: focus may already have moved into a floating toolbar.
     await dispatch(
       container.querySelector('[data-id="switch-b"]')!,
@@ -1490,6 +1527,417 @@ test("canvas editing keeps toolbars exclusive and preserves creation, history, a
       container.querySelector<HTMLTextAreaElement>("textarea")!.value,
       "Second",
     );
+    assert.deepEqual(
+      errors,
+      [],
+      "existing workflow must render without React errors",
+    );
+    const groupDocument = {
+      version: 2 as const,
+      nodes: [
+        {
+          id: "member-a",
+          kind: "note" as const,
+          content: "First",
+          position: { x: 100, y: 100 },
+          width: 260,
+          height: 152,
+        },
+        {
+          id: "member-b",
+          kind: "note" as const,
+          content: "Second",
+          position: { x: 400, y: 100 },
+          width: 260,
+          height: 152,
+        },
+        {
+          id: "existing-frame",
+          kind: "frame" as const,
+          title: "Research",
+          position: { x: 600, y: 400 },
+          width: 200,
+          height: 160,
+        },
+      ],
+      connections: [],
+      viewport: { x: 0, y: 0, zoom: 1 },
+    };
+    await act(async () => runtime!.loadSnapshot(groupDocument));
+    await dispatch(container.querySelector('[data-id="member-a"]')!, "click");
+    await act(async () =>
+      window.dispatchEvent(
+        new window.KeyboardEvent("keydown", {
+          key: "Control",
+          code: "ControlLeft",
+          bubbles: true,
+        }),
+      ),
+    );
+    await dispatch(container.querySelector('[data-id="member-b"]')!, "click");
+    await act(async () =>
+      window.dispatchEvent(
+        new window.KeyboardEvent("keyup", {
+          key: "Control",
+          code: "ControlLeft",
+          bubbles: true,
+        }),
+      ),
+    );
+    const selectedBeforeJoin = Array.from(
+      container.querySelectorAll(".react-flow__node.selected"),
+      (node) => node.getAttribute("data-id"),
+    );
+    assert.deepEqual(selectedBeforeJoin.sort(), ["member-a", "member-b"]);
+    await dispatch(
+      container.querySelector('[data-id="member-a"]')!,
+      "contextmenu",
+    );
+    await dispatch(
+      Array.from(
+        container.querySelectorAll(".zmd-board-context-menu button"),
+      ).find((button) => button.textContent === "Join group")!,
+      "click",
+    );
+    assert.ok(
+      container.querySelector('[role="dialog"][aria-label="Join group"]'),
+    );
+    assert.ok(
+      container.querySelector('[data-id="existing-frame"].is-group-target'),
+      "keyboard focus previews the target frame",
+    );
+    await dispatch(
+      container.querySelector('[data-group-choice="existing-frame"]')!,
+      "click",
+    );
+    const joinedExistingGroup = runtime!.getSnapshot();
+    for (const id of ["member-a", "member-b"]) {
+      const member = joinedExistingGroup.nodes.find((node) => node.id === id)!;
+      assert.equal(member.kind !== "frame" && member.frameId, "existing-frame");
+      assert.deepEqual(
+        member.position,
+        groupDocument.nodes.find((node) => node.id === id)!.position,
+      );
+    }
+    assert.deepEqual(
+      Array.from(
+        container.querySelectorAll(".react-flow__node.selected"),
+        (node) => node.getAttribute("data-id"),
+      ).sort(),
+      selectedBeforeJoin,
+    );
+    assert.match(
+      container.querySelector('[role="status"]')!.textContent!,
+      /Joined Research/,
+    );
+    await act(async () => runtime!.undo());
+    assert.deepEqual(
+      runtime!.getSnapshot(),
+      groupDocument,
+      "joining the existing group undoes as one operation",
+    );
+    await act(async () => runtime!.setEditable(false));
+    await dispatch(
+      container.querySelector('[data-id="member-a"]')!,
+      "contextmenu",
+    );
+    const readonlyJoin = Array.from(
+      container.querySelectorAll<HTMLButtonElement>(
+        ".zmd-board-context-menu button",
+      ),
+    ).find((button) => button.textContent === "Join group")!;
+    assert.equal(readonlyJoin.disabled, true);
+    await dispatch(readonlyJoin, "click");
+    assert.equal(
+      container.querySelector(".zmd-board-group-picker-backdrop"),
+      null,
+    );
+    await act(async () => runtime!.setEditable(true));
+
+    const quoteDocument = {
+      version: 2 as const,
+      nodes: [
+        {
+          id: "quote",
+          kind: "quote" as const,
+          position: { x: 100, y: 100 },
+          width: 280,
+          height: 192,
+          source: {
+            library: { type: "user" as const },
+            itemKey: "PAPER123",
+            attachmentKey: "PDF12345",
+            annotationKey: "QUOTE123",
+          },
+          snapshot: { text: "A useful finding", citation: "Smith 2026" },
+        },
+      ],
+      connections: [],
+      viewport: { x: 0, y: 0, zoom: 1 },
+    };
+    await act(async () => runtime!.loadSnapshot(quoteDocument));
+    await dispatch(
+      container.querySelector('[data-id="quote"]')!,
+      "contextmenu",
+    );
+    await dispatch(
+      Array.from(
+        container.querySelectorAll(".zmd-board-context-menu button"),
+      ).find((button) => button.textContent === "Create a viewpoint")!,
+      "click",
+    );
+    const fromQuote = runtime!.getSnapshot();
+    assert.equal(fromQuote.nodes.length, 2);
+    const viewpoint = fromQuote.nodes.find((node) => node.id !== "quote")!;
+    assert.equal(viewpoint.kind, "note");
+    if (viewpoint.kind !== "note") throw new Error("Expected viewpoint note");
+    assert.equal(viewpoint.noteType, "claim");
+    assert.equal(viewpoint.references?.[0].source.itemKey, "PAPER123");
+    assert.equal(
+      fromQuote.connections[0].kind,
+      "basic",
+      "a user's interpretation must not be classified automatically",
+    );
+    assert.equal(
+      container.querySelector<HTMLTextAreaElement>(
+        ".zmd-board-editor textarea",
+      )!.value,
+      "",
+    );
+    await act(async () => runtime!.undo());
+    assert.deepEqual(runtime!.getSnapshot(), quoteDocument);
+
+    const continuationDocument = {
+      version: 2 as const,
+      nodes: [groupDocument.nodes[0]],
+      connections: [],
+      viewport: { x: 0, y: 0, zoom: 1 },
+    };
+    await act(async () => runtime!.loadSnapshot(continuationDocument));
+    const pointHit = window.document.elementFromPoint;
+    window.document.elementFromPoint = () => pane;
+    try {
+      const dragFromHandle = async (
+        cancel: boolean | "blur" | "pointercancel" | "touchcancel" = false,
+        touch = false,
+      ) => {
+        const handle = container.querySelector(
+          '[data-id="member-a"] .react-flow__handle-right',
+        )!;
+        if (touch) {
+          for (const [target, type, x, y] of [
+            [handle, "touchstart", 360, 176],
+            [pane, "touchmove", 640, 390],
+            [handle, "touchend", 640, 390],
+          ] as const) {
+            const event = new window.Event(type, {
+              bubbles: true,
+              cancelable: true,
+            });
+            Object.defineProperties(event, {
+              touches: {
+                value: type === "touchend" ? [] : [{ clientX: x, clientY: y }],
+              },
+              changedTouches: { value: [{ clientX: x, clientY: y }] },
+            });
+            await act(async () => target.dispatchEvent(event));
+          }
+        } else {
+          await dispatch(handle, "mousedown", {
+            button: 0,
+            buttons: 1,
+            clientX: 360,
+            clientY: 176,
+          });
+          await dispatch(pane, "mousemove", {
+            buttons: 1,
+            clientX: 640,
+            clientY: 390,
+          });
+          if (cancel === true)
+            await act(async () =>
+              window.dispatchEvent(
+                new window.KeyboardEvent("keydown", {
+                  key: "Escape",
+                  bubbles: true,
+                }),
+              ),
+            );
+          else if (cancel)
+            await act(async () =>
+              (cancel === "blur" ? window : pane).dispatchEvent(
+                new window.Event(cancel, { bubbles: true }),
+              ),
+            );
+          await dispatch(pane, "mouseup", {
+            button: 0,
+            clientX: 640,
+            clientY: 390,
+          });
+        }
+      };
+      await act(async () => {
+        await dragFromHandle();
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      });
+      const continued = runtime!.getSnapshot();
+      assert.equal(continued.nodes.length, 2);
+      assert.equal(continued.connections.length, 1);
+      assert.equal(continued.connections[0].source, "member-a");
+      assert.equal(continued.connections[0].sourceHandle, "right");
+      assert.ok(
+        container.querySelector(".zmd-board-editor textarea"),
+        "handle continuation immediately accepts input",
+      );
+      await act(async () => runtime!.undo());
+      assert.deepEqual(
+        runtime!.getSnapshot(),
+        continuationDocument,
+        "the new card and connection undo together",
+      );
+      await act(async () => {
+        await dragFromHandle(true);
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      });
+      assert.deepEqual(
+        runtime!.getSnapshot(),
+        continuationDocument,
+        "Escape cancels continuation without an undo entry",
+      );
+      for (const cancel of ["blur", "pointercancel", "touchcancel"] as const) {
+        await act(async () => {
+          await dragFromHandle(cancel);
+        });
+        assert.deepEqual(
+          runtime!.getSnapshot(),
+          continuationDocument,
+          `${cancel} cannot finish an old continuation later`,
+        );
+      }
+      await act(async () => {
+        await dragFromHandle(false, true);
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      });
+      assert.equal(
+        runtime!.getSnapshot().nodes.length,
+        2,
+        "touchend uses changedTouches and the actual drop hit",
+      );
+      await act(async () => runtime!.undo());
+      assert.deepEqual(runtime!.getSnapshot(), continuationDocument);
+      const reconnectDocument = {
+        ...continuationDocument,
+        nodes: [
+          groupDocument.nodes[0],
+          groupDocument.nodes[1],
+          {
+            ...groupDocument.nodes[1],
+            id: "member-c",
+            position: { x: 700, y: 100 },
+          },
+        ],
+        connections: [
+          {
+            id: "reconnect-edge",
+            kind: "basic" as const,
+            source: "member-a",
+            target: "member-b",
+            sourceHandle: "right",
+            targetHandle: "left",
+            arrow: true,
+            color: "#9ca3af",
+            dashed: false,
+          },
+        ],
+      };
+      await act(async () => runtime!.loadSnapshot(reconnectDocument));
+      await measureObservedElements();
+      window.document.elementFromPoint = () =>
+        container.querySelector(
+          '[data-id="member-c"] .react-flow__handle-left',
+        )!;
+      for (const cancel of ["Escape", "readonly", "snapshot"] as const) {
+        const anchor = container.querySelector(
+          '[data-id="reconnect-edge"] .react-flow__edgeupdater-target',
+        )!;
+        assert.ok(anchor);
+        await dispatch(anchor, "mousedown", {
+          button: 0,
+          buttons: 1,
+          clientX: 400,
+          clientY: 176,
+        });
+        await dispatch(pane, "mousemove", {
+          buttons: 1,
+          clientX: 700,
+          clientY: 176,
+        });
+        if (cancel === "Escape")
+          await act(async () =>
+            window.dispatchEvent(
+              new window.KeyboardEvent("keydown", {
+                key: "Escape",
+                bubbles: true,
+              }),
+            ),
+          );
+        if (cancel === "readonly")
+          await act(async () => runtime!.setEditable(false));
+        if (cancel === "snapshot")
+          await act(async () => runtime!.loadSnapshot(reconnectDocument));
+        await dispatch(pane, "mouseup", {
+          button: 0,
+          clientX: 700,
+          clientY: 176,
+        });
+        assert.deepEqual(
+          runtime!.getSnapshot(),
+          reconnectDocument,
+          `${cancel} prevents native reconnection from modifying the document`,
+        );
+        await act(async () => runtime!.setEditable(true));
+      }
+      const anchor = container.querySelector(
+        '[data-id="reconnect-edge"] .react-flow__edgeupdater-target',
+      )!;
+      await dispatch(anchor, "mousedown", {
+        button: 0,
+        buttons: 1,
+        clientX: 400,
+        clientY: 176,
+      });
+      await dispatch(pane, "mousemove", {
+        buttons: 1,
+        clientX: 700,
+        clientY: 176,
+      });
+      await dispatch(pane, "mouseup", {
+        button: 0,
+        clientX: 700,
+        clientY: 176,
+      });
+      assert.equal(
+        runtime!.getSnapshot().connections[0].target,
+        "member-c",
+        "the same native drag succeeds when not canceled",
+      );
+      await act(async () => runtime!.undo());
+      assert.deepEqual(runtime!.getSnapshot(), reconnectDocument);
+      await act(async () =>
+        runtime!.loadSnapshot({ ...reconnectDocument, connections: [] }),
+      );
+      window.document.elementFromPoint = () =>
+        container.querySelector('[data-id="member-b"]')!;
+      await act(async () => dragFromHandle());
+      assert.equal(
+        runtime!.getSnapshot().nodes.length,
+        3,
+        "dropping onto an existing card body cannot create a continuation",
+      );
+      assert.equal(runtime!.getSnapshot().connections.length, 0);
+    } finally {
+      window.document.elementFromPoint = pointHit;
+    }
     assert.deepEqual(errors, [], "workflow must render without React errors");
   } finally {
     console.error = previousConsoleError;

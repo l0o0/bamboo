@@ -33,6 +33,11 @@ class ImageControls {
   private readonly input: HTMLInputElement;
   private readonly sizeButtons: HTMLButtonElement[] = [];
   private selectedFrom: number | null = null;
+  private referenceCache: {
+    state: EditorView["state"];
+    from: number;
+    image: ReturnType<typeof parseMarkdownImages>[number] | null;
+  } | null = null;
   private image: HTMLImageElement | null = null;
   private drag: {
     x: number;
@@ -157,13 +162,18 @@ class ImageControls {
       this.selectedFrom > this.view.state.doc.length
     )
       return null;
-    const line = this.view.state.doc.lineAt(this.selectedFrom);
-    const image = parseMarkdownImages(line.text).find(
-      (entry) => line.from + entry.from === this.selectedFrom,
-    );
-    return image
-      ? { ...image, from: line.from + image.from, to: line.from + image.to }
-      : null;
+    const state = this.view.state;
+    if (
+      this.referenceCache?.state === state &&
+      this.referenceCache.from === this.selectedFrom
+    )
+      return this.referenceCache.image;
+    const image =
+      parseMarkdownImages(state.doc.toString()).find(
+        (entry) => entry.from === this.selectedFrom,
+      ) ?? null;
+    this.referenceCache = { state, from: this.selectedFrom, image };
+    return image;
   }
 
   private select(image: HTMLImageElement) {
@@ -290,6 +300,7 @@ class ImageControls {
   private clear() {
     this.cancelDrag();
     this.selectedFrom = null;
+    this.referenceCache = null;
     this.image = null;
     this.toolbar.hidden = true;
     this.frame.hidden = true;

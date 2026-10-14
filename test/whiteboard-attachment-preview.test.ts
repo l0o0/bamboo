@@ -13,6 +13,7 @@ import {
   PdfNode,
 } from "../packages/whiteboard/src/nodes/library.tsx";
 import type { CanvasFlowNode } from "../packages/whiteboard/src/nodes/types.ts";
+import { FullCanvasRenderContext } from "../packages/whiteboard/src/whiteboard/rendering.tsx";
 
 const PNG =
   "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+j9ioAAAAASUVORK5CYII=";
@@ -100,32 +101,36 @@ function setup(t: TestContext, Component: typeof AttachmentNode) {
   return {
     container,
     decodedInputs,
-    async render(cards: RenderCard[]) {
+    async render(cards: RenderCard[], fullRender = false) {
       await act(async () => {
         root.render(
           createElement(
             WhiteboardLabelsProvider,
             { value: labels },
             createElement(
-              ReactFlowProvider,
-              null,
-              ...cards.map(
-                ({
-                  model,
-                  selected = false,
-                  width = model.width,
-                  height = model.height,
-                }) =>
-                  createElement(Component, {
-                    key: model.id,
-                    id: model.id,
-                    type: model.kind,
-                    data: { model },
-                    selected,
-                    width,
-                    height,
-                    isConnectable: true,
-                  } as NodeProps<CanvasFlowNode>),
+              FullCanvasRenderContext.Provider,
+              { value: fullRender },
+              createElement(
+                ReactFlowProvider,
+                null,
+                ...cards.map(
+                  ({
+                    model,
+                    selected = false,
+                    width = model.width,
+                    height = model.height,
+                  }) =>
+                    createElement(Component, {
+                      key: model.id,
+                      id: model.id,
+                      type: model.kind,
+                      data: { model },
+                      selected,
+                      width,
+                      height,
+                      isConnectable: true,
+                    } as NodeProps<CanvasFlowNode>),
+                ),
               ),
             ),
           ),
@@ -147,6 +152,45 @@ for (const [kind, Component] of [
   ["pdf", PdfNode],
   ["attachment", AttachmentNode],
 ] as const) {
+  test(`${kind} PNG capture switches to original bytes and restores thumbnail rendering`, async (t) => {
+    const ui = setup(t, Component);
+    const original = imageModel(kind);
+    const model = { ...original, data: { ...original.data, image: GIF } };
+    await ui.render([{ model }]);
+    assert.equal(ui.imageSource(), GIF);
+    assert.equal(
+      ui.container.querySelector("img")?.getAttribute("loading"),
+      "lazy",
+    );
+    await ui.render([{ model }], true);
+    assert.equal(ui.imageSource(), PNG);
+    assert.equal(
+      ui.container.querySelector("img")?.getAttribute("loading"),
+      "eager",
+    );
+    const validations = ui.decodedInputs.length;
+    await ui.render([{ model, selected: true }], true);
+    assert.equal(ui.decodedInputs.length, validations);
+    await ui.render([{ model }]);
+    assert.equal(ui.imageSource(), GIF);
+  });
+
+  test(`${kind} broken thumbnail falls back to the safe original without an error loop`, async (t) => {
+    const ui = setup(t, Component);
+    const original = imageModel(kind);
+    const model = { ...original, data: { ...original.data, image: GIF } };
+    await ui.render([{ model }]);
+    const image = ui.container.querySelector("img")!;
+    await act(async () => {
+      image.dispatchEvent(new Event("error"));
+    });
+    assert.equal(ui.imageSource(), PNG);
+    await act(async () => {
+      image.dispatchEvent(new Event("error"));
+    });
+    assert.equal(ui.imageSource(), PNG);
+  });
+
   test(`${kind} preview survives selection, size, title, and model identity changes without decoding again`, async (t) => {
     const ui = setup(t, Component);
     const model = imageModel(kind);

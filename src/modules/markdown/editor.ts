@@ -1,5 +1,9 @@
 import { attachMarkdownIframeDrop } from "./iframe-drop";
 import {
+  DEFAULT_TABLE_LABELS,
+  type EditorTableLabels,
+} from "../../editor/table-labels";
+import {
   normalizeTheme,
   normalizeFontFamily,
   normalizeBackgroundColor,
@@ -18,6 +22,8 @@ import {
   applyDocChanges,
   computeStats,
   type EditorLinkCandidate,
+  type EditorLinkFilter,
+  isEditorLinkIcon,
   type EditorMode,
   type EditorOutlineItem,
   type EditorSurface,
@@ -46,6 +52,7 @@ export interface MarkdownEditorHandle {
     scrollDOM: HTMLElement;
   };
   getValue: () => string;
+  isComposing: () => boolean;
   requestSnapshot: () => Promise<string>;
   setValue: (value: string) => void;
   replaceRange: (from: number, to: number, insert: string) => void;
@@ -163,6 +170,7 @@ export function createMarkdownEditor(
     onViewState?: (state: DocumentViewState) => void;
     readOnly?: boolean;
     onChange?: (value: string) => void;
+    onCompositionChange?: (active: boolean) => void;
     onOutline?: (
       items: readonly EditorOutlineItem[],
       activeID: string | null,
@@ -177,7 +185,10 @@ export function createMarkdownEditor(
     onResolveAsset?: (
       reference: string,
     ) => Promise<{ dataUrl?: string; error?: string }>;
-    onLinkSearch?: (query: string) => Promise<EditorLinkCandidate[]>;
+    onLinkSearch?: (
+      query: string,
+      filter: EditorLinkFilter,
+    ) => Promise<EditorLinkCandidate[]>;
     onOpenLink?: (href: string) => void;
     win?: Window;
     channel?: string;
@@ -195,6 +206,7 @@ export function createMarkdownEditor(
     doc = "",
     readOnly = false,
     onChange,
+    onCompositionChange,
     onOutline,
     onOutlineActive,
     onSave,
@@ -270,7 +282,11 @@ export function createMarkdownEditor(
   );
   let iframeReady = false;
   let lastValue = doc;
-  let lastStats: EditorStats = computeStats(doc);
+  let composing = false;
+  let lastStats: EditorStats | undefined;
+  // Input changes only invalidate. Metadata callers can throttle their reads;
+  // every explicit read still returns exact statistics for the current mirror.
+  const getStats = () => (lastStats ??= computeStats(lastValue));
   let snapshotSeq = 0;
   const pendingSnapshots = new Map<
     number,
@@ -384,6 +400,13 @@ export function createMarkdownEditor(
 
     const data = event.data as EditorToParentMessage;
     switch (data.type) {
+      case "composition": {
+        if (composing !== data.payload.active) {
+          composing = data.payload.active;
+          onCompositionChange?.(composing);
+        }
+        break;
+      }
       case "ready": {
         ztoolkit.log("[Bamboo][EditorDebug] iframe-ready", { channel });
         iframeReady = true;
@@ -406,6 +429,23 @@ export function createMarkdownEditor(
             theme: currentTheme,
             mode: currentMode,
             surface,
+            linkLabels: {
+              all: getString("document-link-filter-all"),
+              regular: getString("document-link-filter-regular"),
+              notesAttachments: getString(
+                "document-link-filter-notes-attachments",
+              ),
+              open: getString("document-link-filter-open"),
+              empty: getString("document-link-filter-empty"),
+              loading: getString("document-link-filter-loading"),
+            },
+            tableLabels: Object.fromEntries(
+              (
+                Object.keys(DEFAULT_TABLE_LABELS) as Array<
+                  keyof EditorTableLabels
+                >
+              ).map((key) => [key, getString(`table-${key}`)]),
+            ) as EditorTableLabels,
             imageLabels: {
               toolbar: getString("image-size-toolbar"),
               width: getString("image-size-width"),
@@ -425,7 +465,7 @@ export function createMarkdownEditor(
       }
       case "change": {
         lastValue = applyDocChanges(lastValue, data.payload.changes);
-        lastStats = computeStats(lastValue);
+        lastStats = undefined;
         onChange?.(lastValue);
         break;
       }
@@ -480,8 +520,8 @@ export function createMarkdownEditor(
       }
       case "linkSearch": {
         if (!onLinkSearch) break;
-        const { requestId, query } = data.payload;
-        void onLinkSearch(query)
+        const { requestId, query, filter = "all" } = data.payload;
+        void onLinkSearch(query, filter)
           .then((results) => {
             if (destroyed) return;
             // Item IDs remain host-only; only stable Zotero URI metadata crosses
@@ -493,6 +533,9 @@ export function createMarkdownEditor(
                 };
               return {
                 ...safeCandidate,
+                icon: isEditorLinkIcon(candidate.icon)
+                  ? candidate.icon
+                  : undefined,
                 kindLabel:
                   candidate.kindLabel ||
                   getString(`document-link-kind-${candidate.kind}` as any),
@@ -501,7 +544,7 @@ export function createMarkdownEditor(
             sendOrQueue({
               source: EDITOR_MESSAGE_SOURCE,
               type: "linkSearchResults",
-              payload: { requestId, query, results: safeResults },
+              payload: { requestId, query, filter, results: safeResults },
             });
           })
           .catch((error) => {
@@ -510,7 +553,7 @@ export function createMarkdownEditor(
             sendOrQueue({
               source: EDITOR_MESSAGE_SOURCE,
               type: "linkSearchResults",
-              payload: { requestId, query, results: [] },
+              payload: { requestId, query, filter, results: [] },
             });
           });
         break;
@@ -640,12 +683,17 @@ export function createMarkdownEditor(
       scrollDOM: iframe,
     },
     getValue: () => lastValue,
+    isComposing: () => composing,
     requestSnapshot: () => {
-      if (destroyed) return Promise.resolve(lastValue);
+      if (destroyed) {
+        getStats();
+        return Promise.resolve(lastValue);
+      }
       const requestId = ++snapshotSeq;
       return new Promise<string>((resolve) => {
         const timer = ownerWin?.setTimeout?.(() => {
           pendingSnapshots.delete(requestId);
+          getStats();
           resolve(lastValue);
         }, 400) as unknown as number;
         pendingSnapshots.set(requestId, { resolve, timer });
@@ -658,7 +706,7 @@ export function createMarkdownEditor(
     },
     setValue: (value: string) => {
       lastValue = value;
-      lastStats = computeStats(value);
+      lastStats = undefined;
       sendOrQueue({
         source: EDITOR_MESSAGE_SOURCE,
         type: "setValue",
@@ -680,7 +728,7 @@ export function createMarkdownEditor(
       }
       sendOrQueue({ source: EDITOR_MESSAGE_SOURCE, type: "focus" });
     },
-    getStats: () => lastStats,
+    getStats,
     command: (command) => {
       sendOrQueue({
         source: EDITOR_MESSAGE_SOURCE,
@@ -747,6 +795,7 @@ export function createMarkdownEditor(
     destroy: () => {
       if (destroyed) return;
       destroyed = true;
+      composing = false;
       detachNativeDrop();
       preferenceRefreshers.delete(applyPreferences);
       if (readyTimer != null) {

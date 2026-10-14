@@ -526,7 +526,10 @@ function omitUndefinedRecordFields<T>(
   return clone as T;
 }
 
-function updateCanvasNodeText(model: CanvasNode, text: string): CanvasNode {
+export function updateCanvasNodeText(
+  model: CanvasNode,
+  text: string,
+): CanvasNode {
   switch (model.kind) {
     case "note":
       return { ...model, content: text };

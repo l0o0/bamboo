@@ -14,6 +14,7 @@ import {
 import type { ImageAssetMap } from "../editor-protocol";
 import { getString } from "../../../utils/locale";
 import { withAttachmentWrite } from "../../attachment-sync";
+import { ImageAssetCache } from "./asset-cache";
 
 function assertImageCapableItem(
   item: Zotero.Item,
@@ -53,9 +54,7 @@ export async function writeImageAsset(
   });
 }
 
-/** Bounded LRU cache of resolved asset data URLs (keyed by normalized ref). */
-const ASSET_CACHE_LIMIT = 200;
-const assetCache = new Map<string, { key: string; dataUrl: string }>();
+const assetCache = new ImageAssetCache();
 
 export async function resolveImageAsset(
   item: Zotero.Item,
@@ -71,23 +70,15 @@ export async function resolveImageAsset(
   const filename = normalized.slice("assets/".length);
   const path = PathUtils.join(root, "assets", filename);
   if (!(await IOUtils.exists(path))) {
+    assetCache.delete(path);
     throw new Error(getString("error-image-missing"));
   }
   const info = await IOUtils.stat(path);
-  const key = `${path}:${info.lastModified}:${info.size}`;
-  const cached = assetCache.get(normalized);
-  if (cached?.key === key) {
-    // LRU recency refresh.
-    assetCache.delete(normalized);
-    assetCache.set(normalized, cached);
-    return cached.dataUrl;
-  }
+  const revision = `${info.lastModified}:${info.size}`;
+  const cached = assetCache.get(path, revision);
+  if (cached !== undefined) return cached;
   const dataUrl = bytesToDataUrl(await IOUtils.read(path), mimeType);
-  if (assetCache.size >= ASSET_CACHE_LIMIT) {
-    const oldest = assetCache.keys().next().value;
-    if (oldest !== undefined) assetCache.delete(oldest);
-  }
-  assetCache.set(normalized, { key, dataUrl });
+  assetCache.set(path, revision, dataUrl);
   return dataUrl;
 }
 
@@ -107,16 +98,13 @@ export async function resolveImageAssets(
   markdown: string,
 ): Promise<ImageAssetMap> {
   const result: ImageAssetMap = {};
+  const references = referencedAssets(markdown);
+  let next = 0;
   await Promise.all(
-    referencedAssets(markdown).map(async (reference) => {
-      try {
-        result[reference] = {
-          dataUrl: await resolveImageAsset(item, reference),
-        };
-      } catch (error) {
-        result[reference] = {
-          error: error instanceof Error ? error.message : String(error),
-        };
+    Array.from({ length: Math.min(4, references.length) }, async () => {
+      while (next < references.length) {
+        const reference = references[next++];
+        result[reference] = await resolveImageAssetEntry(item, reference);
       }
     }),
   );
@@ -146,6 +134,7 @@ export async function cleanupUnusedImageAssets(
   for (let index = 0; index < children.length; index++) {
     if (removeSet.has(references[index])) {
       await IOUtils.remove(children[index]);
+      assetCache.delete(children[index]);
     }
   }
   if (plan.removeDirectory) {

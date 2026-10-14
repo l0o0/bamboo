@@ -1,6 +1,10 @@
-import type { TableAction, TableTarget } from "./table-operations";
-import type { TableSelectionAction } from "./table-operations";
+import type {
+  TableAction,
+  TableTarget,
+  TableSelectionAction,
+} from "./table-operations";
 import type { TableSelection } from "./table-selection";
+import { DEFAULT_TABLE_LABELS, type EditorTableLabels } from "./table-labels";
 
 export type TableMenuAction = TableAction | TableSelectionAction;
 
@@ -12,33 +16,31 @@ export interface TableMenuItem {
 }
 
 export type TableMenuGroups = TableMenuItem[][];
-
-const rowItems: Array<[TableAction, string]> = [
-  ["insert-row-above", "在上方插入行"],
-  ["insert-row-below", "在下方插入行"],
-  ["move-row-up", "向上移动行"],
-  ["move-row-down", "向下移动行"],
-  ["delete-row", "删除行"],
+type LabeledAction = TableAction & keyof EditorTableLabels;
+const rowItems: LabeledAction[] = [
+  "insert-row-above",
+  "insert-row-below",
+  "move-row-up",
+  "move-row-down",
+  "delete-row",
+];
+const columnItems: LabeledAction[] = [
+  "insert-column-left",
+  "insert-column-right",
+  "move-column-left",
+  "move-column-right",
+];
+const alignmentItems: LabeledAction[] = [
+  "align-default",
+  "align-left",
+  "align-center",
+  "align-right",
 ];
 
-const columnItems: Array<[TableAction, string]> = [
-  ["insert-column-left", "在左侧插入列"],
-  ["insert-column-right", "在右侧插入列"],
-  ["move-column-left", "向左移动列"],
-  ["move-column-right", "向右移动列"],
-];
-
-const alignmentItems: Array<[TableAction, string]> = [
-  ["align-default", "默认对齐"],
-  ["align-left", "左对齐"],
-  ["align-center", "居中对齐"],
-  ["align-right", "右对齐"],
-];
-
-function alignmentFor(action: TableMenuAction) {
-  if (action === "align-left") return "left";
-  if (action === "align-center") return "center";
-  if (action === "align-right") return "right";
+function alignmentFor(action: string) {
+  if (action.endsWith("-left")) return "left";
+  if (action.endsWith("-center")) return "center";
+  if (action.endsWith("-right")) return "right";
   return null;
 }
 
@@ -46,118 +48,62 @@ export function tableMenuItems(
   target: TableTarget,
   readOnly: boolean,
   selection: TableSelection = null,
+  labels: EditorTableLabels = DEFAULT_TABLE_LABELS,
 ): TableMenuGroups {
   const header = target.rowIndex === 0;
-  const firstBody = target.rowIndex === 1;
-  const lastBody = target.rowIndex === target.bodyRowCount;
   const disable = (action: TableAction) => {
     if (readOnly) return true;
-    if (action === "move-row-up") return header || firstBody;
-    if (action === "move-row-down") return header || lastBody;
+    if (action === "move-row-up") return header || target.rowIndex === 1;
+    if (action === "move-row-down")
+      return header || target.rowIndex === target.bodyRowCount;
     if (action === "delete-row") return header;
-    if (action === "delete-column") return target.columnCount <= 1;
-    if (action === "move-column-left" && target.columnIndex === 0) {
-      return true;
-    }
-    if (
-      action === "move-column-right" &&
-      target.columnIndex >= target.columnCount - 1
-    ) {
-      return true;
-    }
+    if (action === "move-column-left") return target.columnIndex === 0;
+    if (action === "move-column-right")
+      return target.columnIndex >= target.columnCount - 1;
     return false;
   };
-  const map = (items: Array<[TableAction, string]>) =>
-    items.map(([action, label]) => ({
+  const map = (actions: LabeledAction[]): TableMenuItem[] =>
+    actions.map((action) => ({
       action,
-      label,
+      label: labels[action],
       disabled: disable(action),
       ...(action.startsWith("align-")
         ? { checked: alignmentFor(action) === target.alignment }
         : {}),
     }));
-  if (selection) {
-    const selectionItems: TableMenuItem[] = [
-      ["clear-selection", "清空选中的单元格"],
-      [
-        "delete-selection",
-        selection.kind === "row" ? "删除选中的行" : "删除选中的列",
-      ],
-    ].map(([action, label]) => ({
-      action: action as TableSelectionAction,
-      label,
-      disabled:
-        readOnly ||
-        (action === "delete-selection" &&
-          (selection.kind === "row"
+  if (!selection) return [map(rowItems), map(columnItems), map(alignmentItems)];
+  const row = selection.kind === "row";
+  return [
+    // The selected row already has a delete command in the selection group.
+    map(
+      row ? rowItems.filter((action) => action !== "delete-row") : columnItems,
+    ),
+    [
+      {
+        action: "clear-selection",
+        label: labels["clear-selection"],
+        disabled: readOnly,
+      },
+      {
+        action: "delete-selection",
+        label: labels[row ? "delete-selected-row" : "delete-selected-column"],
+        disabled:
+          readOnly ||
+          (row
             ? selection.rowIndex < 1 || target.bodyRowCount < 1
-            : target.columnCount <= 1)),
-    }));
-    const selectedGroups =
-      selection.kind === "row"
-        ? [
-            map(rowItems),
-            selectionItems,
-            [
-              {
-                action: "align-selection-default" as const,
-                label: "默认对齐",
-                disabled: readOnly,
-                checked: false,
-              },
-              {
-                action: "align-selection-left" as const,
-                label: "左对齐",
-                disabled: readOnly,
-                checked: false,
-              },
-              {
-                action: "align-selection-center" as const,
-                label: "居中对齐",
-                disabled: readOnly,
-                checked: false,
-              },
-              {
-                action: "align-selection-right" as const,
-                label: "右对齐",
-                disabled: readOnly,
-                checked: false,
-              },
-            ],
-          ]
-        : [
-            map(columnItems),
-            selectionItems,
-            [
-              {
-                action: "align-selection-default" as const,
-                label: "默认对齐",
-                disabled: readOnly,
-                checked: target.alignment === null,
-              },
-              {
-                action: "align-selection-left" as const,
-                label: "左对齐",
-                disabled: readOnly,
-                checked: target.alignment === "left",
-              },
-              {
-                action: "align-selection-center" as const,
-                label: "居中对齐",
-                disabled: readOnly,
-                checked: target.alignment === "center",
-              },
-              {
-                action: "align-selection-right" as const,
-                label: "右对齐",
-                disabled: readOnly,
-                checked: target.alignment === "right",
-              },
-            ],
-          ];
-    return selectedGroups;
-  }
-  return [map(rowItems), map(columnItems), map(alignmentItems)];
+            : target.columnCount <= 1),
+      },
+    ],
+    alignmentItems.map((action) => ({
+      action: action.replace(
+        "align-",
+        "align-selection-",
+      ) as TableSelectionAction,
+      label: labels[action],
+      disabled: readOnly,
+      checked: !row && alignmentFor(action) === target.alignment,
+    })),
+  ];
 }
 
 export interface TableContextMenuOptions {

@@ -1,5 +1,9 @@
 import { CODE_FONT_FAMILY } from "../../ui/theme";
-import { decodeImageAttribute, normalizeAssetReference } from "./images/model";
+import {
+  assetReferenceCandidates,
+  decodeImageAttribute,
+  imageAssetFromMap,
+} from "./images/model";
 import { getString } from "../../utils/locale";
 import type { EditorOutlineItem, ImageAssetMap } from "./editor-protocol";
 import { THEME_TOKENS, themeTokenCss } from "./theme-tokens";
@@ -51,8 +55,10 @@ export function applyAssetsToHtml(html: string, assets: ImageAssetMap): string {
   return html.replace(
     /(<img\b[^>]*\bsrc=")([^"]+)(")/gi,
     (full, prefix: string, src: string, suffix: string) => {
-      const reference = normalizeAssetReference(decodeImageAttribute(src));
-      const dataUrl = reference ? assets[reference]?.dataUrl : undefined;
+      const dataUrl = imageAssetFromMap(
+        decodeImageAttribute(src),
+        assets,
+      )?.dataUrl;
       return dataUrl ? `${prefix}${dataUrl}${suffix}` : full;
     },
   );
@@ -381,9 +387,9 @@ export function hydratePreviewImages(
   assets: ImageAssetMap,
 ): void {
   for (const image of host.querySelectorAll("img")) {
-    const reference = normalizeAssetReference(image.getAttribute("src") || "");
-    if (!reference) continue;
-    const resolved = assets[reference];
+    const source = image.getAttribute("src") || "";
+    if (!assetReferenceCandidates(source).length) continue;
+    const resolved = imageAssetFromMap(source, assets);
     if (resolved?.dataUrl) {
       image.setAttribute("src", resolved.dataUrl);
       continue;
